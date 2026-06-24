@@ -1,8 +1,11 @@
 import { Platform } from 'react-native';
 
 // Set EXPO_PUBLIC_API_URL for deployed builds or physical-device testing.
+// Use ?? rather than || so an explicit empty string (same-origin relative
+// requests, e.g. the web build served by the API itself) isn't treated as
+// unset and overridden by the local-dev fallback.
 export const API_URL =
-  process.env.EXPO_PUBLIC_API_URL || (Platform.OS === 'web' ? 'http://localhost:5000' : 'http://192.168.1.68:5000');
+  process.env.EXPO_PUBLIC_API_URL ?? (Platform.OS === 'web' ? 'http://localhost:5000' : 'http://192.168.1.68:5000');
 
 export const EMERGENCY_NUMBER = '911';
 export const COUNTDOWN_SECONDS = 5;
