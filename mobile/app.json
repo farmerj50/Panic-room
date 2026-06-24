@@ -1,0 +1,86 @@
+{
+  "expo": {
+    "name": "PanicRoom",
+    "slug": "mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "backgroundModes": ["location", "fetch", "remote-notification"],
+      "infoPlist": {
+        "NSCameraUsageDescription": "PanicRoom records video evidence during emergencies.",
+        "NSMicrophoneUsageDescription": "PanicRoom records audio during emergencies.",
+        "NSLocationWhenInUseUsageDescription": "PanicRoom sends your location to help when an emergency is activated.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "PanicRoom continuously monitors your location so emergency contacts receive accurate GPS even when the app is in the background.",
+        "NSLocationAlwaysUsageDescription": "PanicRoom continuously monitors your location so emergency contacts receive accurate GPS even when the app is in the background.",
+        "UIBackgroundModes": ["location", "fetch", "remote-notification"]
+      }
+    },
+    "android": {
+      "package": "com.panicroom.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#0D1117",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.WAKE_LOCK",
+        "android.permission.USE_FULL_SCREEN_INTENT",
+        "android.permission.CALL_PHONE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "PanicRoom records video evidence during emergencies.",
+          "microphonePermission": "PanicRoom records audio during emergencies.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "PanicRoom sends your location to help when an emergency is activated.",
+          "locationAlwaysAndWhenInUsePermission": "PanicRoom continuously monitors your location so emergency contacts receive accurate GPS even when the app is in the background.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "PanicRoom records audio during emergencies."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#ef445b",
+          "androidMode": "default",
+          "androidCollapsedTitle": "PanicRoom SOS",
+          "iosDisplayInForeground": true
+        }
+      ]
+    ]
+  }
+}

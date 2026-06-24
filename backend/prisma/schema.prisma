@@ -1,0 +1,79 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model EmergencyEvent {
+  id                 String   @id @default(uuid())
+  createdAt          DateTime @default(now())
+  userId             String?
+  user               User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  latitude           Float?
+  longitude          Float?
+  latitudeEncrypted  String?
+  longitudeEncrypted String?
+  status             String   @default("ACTIVE")
+  audioUrl           String?
+  videoUrl           String?
+  contactNotified    Boolean  @default(false)
+
+  @@index([userId])
+}
+
+model TrustedContact {
+  id          String   @id @default(uuid())
+  createdAt   DateTime @default(now())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  phoneNumber String
+  isPriority  Boolean  @default(false)
+
+  @@index([userId])
+}
+
+model Recording {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fileUrl   String
+  type      String
+
+  @@index([userId])
+}
+
+model User {
+  id             String           @id @default(uuid())
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  emailHash      String           @unique
+  emailEncrypted String
+  nameEncrypted  String?
+  passwordHash   String
+  contacts       TrustedContact[]
+  emergencies    EmergencyEvent[]
+  recordings     Recording[]
+  privateData    PrivateData[]
+}
+
+model PrivateData {
+  id            String   @id @default(uuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key           String
+  dataEncrypted String
+
+  @@unique([userId, key])
+  @@index([userId])
+}

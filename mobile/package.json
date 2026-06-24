@@ -1,0 +1,48 @@
+{
+  "name": "mobile",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "^3.1.1",
+    "@react-navigation/bottom-tabs": "^7.17.1",
+    "@react-navigation/native": "^7.3.0",
+    "@react-navigation/native-stack": "^7.16.0",
+    "expo": "~56.0.9",
+    "expo-audio": "~56.0.11",
+    "expo-camera": "^56.0.7",
+    "expo-linear-gradient": "~56.0.4",
+    "expo-linking": "^56.0.13",
+    "expo-location": "^56.0.16",
+    "expo-notifications": "~56.0.18",
+    "expo-status-bar": "~56.0.4",
+    "expo-task-manager": "~56.0.19",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.85.3",
+    "react-native-gesture-handler": "~2.31.1",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "4.25.2",
+    "react-native-web": "^0.21.2"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.20.0",
+    "@types/react": "~19.2.2",
+    "@wdio/appium-service": "^9.29.0",
+    "@wdio/cli": "^9.29.0",
+    "@wdio/local-runner": "^9.29.0",
+    "@wdio/mocha-framework": "^9.29.0",
+    "@wdio/spec-reporter": "^9.29.0",
+    "appium": "^3.5.2",
+    "appium-uiautomator2-driver": "^7.6.2",
+    "typescript": "~6.0.3",
+    "webdriverio": "^9.29.0"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "e2e": "wdio run ./e2e/wdio.conf.js"
+  },
+  "private": true
+}

@@ -1,0 +1,27 @@
+# dependencies (backend/ and mobile/ have their own .gitignore for these too)
+node_modules/
+
+# env files / secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# agent/tooling local state
+.claude/
+.codex/
+
+# backend runtime artifacts
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# mobile e2e debug artifacts from manual troubleshooting (screenshots/XML dumps)
+mobile/e2e/debug-*.png
+mobile/e2e/debug-*.xml
+mobile/e2e/failure-*.png
+mobile/e2e/failure-*.xml
+mobile/e2e/manual-launch*.png
+mobile/e2e/state-check*.png
