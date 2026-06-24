@@ -22,7 +22,8 @@
     "react-native-gesture-handler": "~2.31.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",
-    "react-native-web": "^0.21.2"
+    "react-native-web": "^0.21.2",
+    "serve": "^14.2.6"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
@@ -42,7 +43,9 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "e2e": "wdio run ./e2e/wdio.conf.js"
+    "e2e": "wdio run ./e2e/wdio.conf.js",
+    "build:web": "expo export -p web",
+    "start:web": "serve dist -s -l tcp://0.0.0.0:${PORT:-3000}"
   },
   "private": true
 }
