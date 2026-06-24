@@ -25,3 +25,8 @@ export type TabParamList = {
   Profile: undefined;
   Journal: undefined;
 };
+
+export type UnauthStackParamList = {
+  Landing: undefined;
+  Auth: { mode?: 'login' | 'register' } | undefined;
+};

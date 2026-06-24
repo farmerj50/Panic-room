@@ -1,10 +1,10 @@
 describe('PanicRoom emergency activation flow', () => {
   it('activates emergency mode, starts recording, and cleanly stops on Exit', async () => {
-    // ── Register a fresh test account (app requires auth before Home) ────
+    // ── Land on the public landing page, then start registration ──────────
     // Generous timeout: fresh install + cold JS bundle fetch from Metro can take a while.
-    const registerModeBtn = await $('~auth-mode-register-btn');
-    await registerModeBtn.waitForDisplayed({ timeout: 60000, interval: 1000 });
-    await registerModeBtn.click();
+    const createAccountBtn = await $('~landing-create-account-btn');
+    await createAccountBtn.waitForDisplayed({ timeout: 60000, interval: 1000 });
+    await createAccountBtn.click(); // navigates straight into Auth with mode=register
 
     const emailInput = await $('~auth-email-input');
     const passwordInput = await $('~auth-password-input');

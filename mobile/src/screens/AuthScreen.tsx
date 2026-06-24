@@ -18,9 +18,11 @@ import { useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRoute, RouteProp } from '@react-navigation/native';
 
 import { useAuth } from '../context/AuthContext';
 import { saveContactToBackend } from '../services/contactService';
+import type { UnauthStackParamList } from '../navigation/types';
 import heroBg from '../../assets/images/hero-bg.png';
 
 type AuthMode = 'login' | 'register';
@@ -47,7 +49,8 @@ function permissionLabel(status: PermStatus) {
 export default function AuthScreen() {
   const { login, register } = useAuth();
   const { width } = useWindowDimensions();
-  const [mode, setMode] = useState<AuthMode>('login');
+  const route = useRoute<RouteProp<UnauthStackParamList, 'Auth'>>();
+  const [mode, setMode] = useState<AuthMode>(route.params?.mode ?? 'login');
   const [registerStep, setRegisterStep] = useState<RegisterStep>('account');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');

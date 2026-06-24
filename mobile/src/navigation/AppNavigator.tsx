@@ -7,9 +7,10 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { EmergencyProvider } from '../context/EmergencyContext';
-import { RootStackParamList, TabParamList } from './types';
+import { RootStackParamList, TabParamList, UnauthStackParamList } from './types';
 import { ACTION_ACTIVATE_SOS, restoreLockScreenButton, setupNotificationHandler } from '../services/lockScreenService';
 
+import LandingScreen from '../screens/LandingScreen';
 import AuthScreen from '../screens/AuthScreen';
 import HomeScreen from '../screens/HomeScreen';
 import EmergencyScreen from '../screens/EmergencyScreen';
@@ -36,6 +37,7 @@ try { Notifications = require('expo-notifications') as _NotifModule; } catch {} 
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
+const UnauthStack = createNativeStackNavigator<UnauthStackParamList>();
 
 const TAB_ICONS: Record<keyof TabParamList, string> = {
   Home: 'H',
@@ -184,11 +186,25 @@ function ProfileRedirect() {
   return <TabRedirect tab="Profile" />;
 }
 
+function UnauthenticatedNavigator() {
+  return (
+    <NavigationContainer>
+      <UnauthStack.Navigator
+        initialRouteName="Landing"
+        screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
+      >
+        <UnauthStack.Screen name="Landing" component={LandingScreen} />
+        <UnauthStack.Screen name="Auth" component={AuthScreen} />
+      </UnauthStack.Navigator>
+    </NavigationContainer>
+  );
+}
+
 function AuthGate() {
   const { status } = useAuth();
 
   if (status === 'loading') return <LoadingScreen />;
-  if (status === 'unauthenticated') return <AuthScreen />;
+  if (status === 'unauthenticated') return <UnauthenticatedNavigator />;
 
   return <AuthenticatedNavigator />;
 }
