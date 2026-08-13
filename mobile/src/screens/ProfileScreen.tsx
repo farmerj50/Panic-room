@@ -3,6 +3,7 @@ import {
   Alert,
   Image,
   ImageBackground,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,6 +21,7 @@ import { useAuth } from '../context/AuthContext';
 import { useEmergencyContext } from '../context/EmergencyContext';
 import { getPublicKeyBase64 } from '../services/keyService';
 import { setMyPhoneNumber, setMyPublicKey } from '../services/covertMessageService';
+import { API_URL } from '../config/emergencyConfig';
 
 import heroBg from '../../assets/images/hero-bg.png';
 import journalCard from '../../assets/images/journal-card.png';
@@ -568,6 +570,46 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           ))}
         </View>
+
+        <Text style={styles.sectionLabel}>Legal</Text>
+        <LinearGradient
+          colors={['rgba(13, 18, 49, 0.97)', 'rgba(10, 12, 38, 0.97)']}
+          style={styles.section}
+        >
+          <TouchableOpacity
+            activeOpacity={0.84}
+            style={[styles.resourceRow, styles.resourceRowBorder]}
+            onPress={() => Linking.openURL(`${API_URL}/legal/privacy`)}
+            testID="profile-privacy-policy-btn"
+            accessibilityLabel="profile-privacy-policy-btn"
+          >
+            <View style={[styles.itemIcon, { backgroundColor: 'rgba(74,168,255,0.24)' }]}>
+              <Text style={[styles.itemIconText, { color: '#4aa8ff' }]}>P</Text>
+            </View>
+            <View style={styles.itemCopy}>
+              <Text style={styles.itemName}>Privacy Policy</Text>
+              <Text style={styles.itemDesc}>How Bes collects, uses, and protects your data.</Text>
+            </View>
+            <Text style={styles.rowArrow}>{'>'}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.84}
+            style={styles.resourceRow}
+            onPress={() => Linking.openURL(`${API_URL}/legal/terms`)}
+            testID="profile-terms-btn"
+            accessibilityLabel="profile-terms-btn"
+          >
+            <View style={[styles.itemIcon, { backgroundColor: 'rgba(183,119,255,0.24)' }]}>
+              <Text style={[styles.itemIconText, { color: '#d9bcff' }]}>T</Text>
+            </View>
+            <View style={styles.itemCopy}>
+              <Text style={styles.itemName}>Terms of Service</Text>
+              <Text style={styles.itemDesc}>The terms that govern your use of Bes.</Text>
+            </View>
+            <Text style={styles.rowArrow}>{'>'}</Text>
+          </TouchableOpacity>
+        </LinearGradient>
 
         <Text style={styles.sectionLabel}>Danger Zone</Text>
         <LinearGradient

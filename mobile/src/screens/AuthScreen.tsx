@@ -22,6 +22,7 @@ import { useRoute, RouteProp } from '@react-navigation/native';
 
 import { useAuth } from '../context/AuthContext';
 import { saveContactToBackend } from '../services/contactService';
+import { API_URL } from '../config/emergencyConfig';
 import type { UnauthStackParamList } from '../navigation/types';
 import heroBg from '../../assets/images/hero-bg.png';
 
@@ -502,6 +503,20 @@ export default function AuthScreen() {
                   </Text>
                 </TouchableOpacity>
 
+                {mode === 'register' && (
+                  <Text style={styles.legalText}>
+                    By creating an account, you agree to our{' '}
+                    <Text style={styles.legalLink} onPress={() => Linking.openURL(`${API_URL}/legal/terms`)}>
+                      Terms of Service
+                    </Text>{' '}
+                    and{' '}
+                    <Text style={styles.legalLink} onPress={() => Linking.openURL(`${API_URL}/legal/privacy`)}>
+                      Privacy Policy
+                    </Text>
+                    .
+                  </Text>
+                )}
+
                 {mode === 'register' && registerStep !== 'account' && (
                   <TouchableOpacity
                     activeOpacity={0.82}
@@ -764,6 +779,13 @@ const styles = StyleSheet.create({
   },
   submitButtonDisabled: { opacity: 0.62 },
   submitText: { color: '#fff', fontSize: 15, fontWeight: '900' },
+  legalText: {
+    color: '#9e96b6',
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  legalLink: { color: '#d9bcff', fontWeight: '900' },
   backStepButton: {
     alignItems: 'center',
     justifyContent: 'center',

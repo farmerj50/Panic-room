@@ -15,6 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 
+import { useAuth } from '../context/AuthContext';
 import { useEmergencyContext } from '../context/EmergencyContext';
 import { TabParamList } from '../navigation/types';
 
@@ -106,6 +107,7 @@ const AUDIENCE_CHIPS = [
 
 export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
+  const { logout } = useAuth();
   const { loadContacts } = useEmergencyContext();
   const { width, height } = useWindowDimensions();
 
@@ -202,6 +204,15 @@ export default function HomeScreen() {
                     <View style={styles.smallHeart} />
                   </TouchableOpacity>
                 )}
+                <TouchableOpacity
+                  activeOpacity={0.84}
+                  onPress={logout}
+                  style={styles.signOutPill}
+                  testID="home-logout-btn"
+                  accessibilityLabel="home-logout-btn"
+                >
+                  <Text style={styles.signOutText}>Sign Out</Text>
+                </TouchableOpacity>
                 <TouchableOpacity
                   activeOpacity={0.8}
                   onPress={() => goTo('Emergency')}
@@ -489,6 +500,21 @@ const styles = StyleSheet.create({
     height: 12,
     transform: [{ rotate: '45deg' }],
     width: 12,
+  },
+  signOutPill: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.11)',
+    borderColor: 'rgba(255, 255, 255, 0.14)',
+    borderRadius: 18,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 40,
+    paddingHorizontal: 16,
+  },
+  signOutText: {
+    color: '#f6efff',
+    fontSize: 13,
+    fontWeight: '700',
   },
   shieldButton: {
     alignItems: 'center',
