@@ -498,19 +498,36 @@ export default function AuthScreen() {
                   </Text>
                 </TouchableOpacity>
 
-                {mode === 'register' && (
-                  <Text style={styles.legalText}>
-                    By creating an account, you agree to our{' '}
-                    <Text style={styles.legalLink} onPress={() => Linking.openURL(`${API_URL}/legal/terms`)}>
-                      Terms of Service
-                    </Text>{' '}
-                    and{' '}
-                    <Text style={styles.legalLink} onPress={() => Linking.openURL(`${API_URL}/legal/privacy`)}>
-                      Privacy Policy
-                    </Text>
-                    .
+                <Text style={styles.legalText}>
+                  {mode === 'register' ? 'By creating an account, you agree to our ' : ''}
+                  <Text
+                    style={styles.legalLink}
+                    onPress={() => Linking.openURL(`${API_URL}/legal/terms`)}
+                    testID="auth-terms-link"
+                    accessibilityLabel="auth-terms-link"
+                  >
+                    Terms of Service
                   </Text>
-                )}
+                  {', '}
+                  <Text
+                    style={styles.legalLink}
+                    onPress={() => Linking.openURL(`${API_URL}/legal/privacy`)}
+                    testID="auth-privacy-link"
+                    accessibilityLabel="auth-privacy-link"
+                  >
+                    Privacy Policy
+                  </Text>
+                  {', and '}
+                  <Text
+                    style={styles.legalLink}
+                    onPress={() => Linking.openURL(`${API_URL}/legal/data-deletion`)}
+                    testID="auth-data-deletion-link"
+                    accessibilityLabel="auth-data-deletion-link"
+                  >
+                    Data Deletion
+                  </Text>
+                  {'.'}
+                </Text>
 
                 {mode === 'register' && registerStep !== 'account' && (
                   <TouchableOpacity
