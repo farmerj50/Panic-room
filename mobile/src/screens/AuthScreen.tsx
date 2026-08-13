@@ -74,17 +74,12 @@ export default function AuthScreen() {
 
   const camStatus = toStatus(cameraPermission?.granted);
   const micStatus = toStatus(micPermission?.granted);
-  const coreGranted = camStatus === 'granted' && micStatus === 'granted' && locStatus === 'granted';
   const contactStarted = Boolean(trustedName.trim() || trustedPhone.trim());
   const contactComplete = Boolean(trustedName.trim() && trustedPhone.trim());
   const stepNumber = useMemo(
     () => REGISTER_STEPS.findIndex((step) => step.id === registerStep) + 1,
     [registerStep],
   );
-
-  useEffect(() => {
-    if (coreGranted) setPermissionsApproved(true);
-  }, [coreGranted]);
 
   const switchMode = (next: AuthMode) => {
     setMode(next);
@@ -204,7 +199,7 @@ export default function AuthScreen() {
           }
         }
 
-        if (permissionsApproved || coreGranted) {
+        if (permissionsApproved) {
           await AsyncStorage.setItem('setupDone', 'true');
         }
       });
@@ -484,7 +479,7 @@ export default function AuthScreen() {
                     />
                     <TouchableOpacity activeOpacity={0.82} style={styles.secondaryButton} onPress={requestCorePermissions} testID="auth-allow-permissions-btn" accessibilityLabel="auth-allow-permissions-btn">
                       <Text style={styles.secondaryText}>
-                        {coreGranted ? 'Required access allowed' : 'Allow required access'}
+                        {permissionsApproved ? 'Required access allowed' : 'Allow required access'}
                       </Text>
                     </TouchableOpacity>
                   </View>
