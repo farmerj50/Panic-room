@@ -595,7 +595,7 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             activeOpacity={0.84}
-            style={styles.resourceRow}
+            style={[styles.resourceRow, styles.resourceRowBorder]}
             onPress={() => Linking.openURL(`${API_URL}/legal/terms`)}
             testID="profile-terms-btn"
             accessibilityLabel="profile-terms-btn"
@@ -606,6 +606,23 @@ export default function ProfileScreen() {
             <View style={styles.itemCopy}>
               <Text style={styles.itemName}>Terms of Service</Text>
               <Text style={styles.itemDesc}>The terms that govern your use of Bes.</Text>
+            </View>
+            <Text style={styles.rowArrow}>{'>'}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.84}
+            style={styles.resourceRow}
+            onPress={() => Linking.openURL(`${API_URL}/legal/data-deletion`)}
+            testID="profile-data-deletion-btn"
+            accessibilityLabel="profile-data-deletion-btn"
+          >
+            <View style={[styles.itemIcon, { backgroundColor: 'rgba(239,68,91,0.22)' }]}>
+              <Text style={[styles.itemIconText, { color: '#ff6f7f' }]}>D</Text>
+            </View>
+            <View style={styles.itemCopy}>
+              <Text style={styles.itemName}>Delete Your Data</Text>
+              <Text style={styles.itemDesc}>What gets deleted and how to request it.</Text>
             </View>
             <Text style={styles.rowArrow}>{'>'}</Text>
           </TouchableOpacity>
