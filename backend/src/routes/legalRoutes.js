@@ -11,7 +11,7 @@ function escapeHtml(str) {
 function inline(text) {
   let out = escapeHtml(text);
   out = out.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-  out = out.replace(/\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2">$1</a>');
+  out = out.replace(/\[(.+?)\]\(((?:https?:\/\/|\/)[^\s)]+)\)/g, '<a href="$2">$1</a>');
   return out;
 }
 
@@ -103,5 +103,6 @@ const legalRoot = path.join(__dirname, "..", "legal");
 
 router.get("/privacy", renderLegalPage("Privacy Policy", path.join(legalRoot, "privacy-policy.md")));
 router.get("/terms", renderLegalPage("Terms of Service", path.join(legalRoot, "terms-of-service.md")));
+router.get("/data-deletion", renderLegalPage("Delete Your Data", path.join(legalRoot, "data-deletion.md")));
 
 module.exports = router;
