@@ -7,9 +7,9 @@ const {
   getContacts,
   updateContact,
 } = require("../controllers/contactController");
-const { authenticate } = require("../middleware/authMiddleware");
+const { authenticate, requireUserId } = require("../middleware/authMiddleware");
 
-router.use(authenticate);
+router.use(authenticate, requireUserId);
 router.post("/", createContact);
 router.get("/", getContacts);
 router.patch("/:id", updateContact);

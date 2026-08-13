@@ -52,7 +52,7 @@ export async function startBackgroundLocationMonitoring(): Promise<boolean> {
       distanceInterval: 100,
       showsBackgroundLocationIndicator: true,
       foregroundService: {
-        notificationTitle: 'PanicRoom',
+        notificationTitle: 'Bes',
         notificationBody: 'Location monitoring active for your safety',
         notificationColor: '#7C3AED',
       },

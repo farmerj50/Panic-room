@@ -7,4 +7,6 @@ export interface Emergency {
   audioUrl?: string;
   videoUrl?: string;
   contactNotified: boolean;
+  notificationError?: string;
+  notificationAttempts?: number;
 }

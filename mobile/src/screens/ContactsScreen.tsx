@@ -119,7 +119,7 @@ export default function ContactsScreen() {
   };
 
   const textContact = async (contact: Contact) => {
-    const body = encodeURIComponent('Checking in from PanicRoom. Are you safe?');
+    const body = encodeURIComponent('Checking in from Bes. Are you safe?');
     await Linking.openURL(`sms:${contact.phoneNumber}?body=${body}`);
   };
 
@@ -128,7 +128,7 @@ export default function ContactsScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} testID="contacts-screen" accessible accessibilityLabel="contacts-screen">
       <KeyboardAvoidingView
         style={styles.keyboard}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -199,7 +199,7 @@ export default function ContactsScreen() {
             style={styles.contactsCard}
           >
             {sortedContacts.length === 0 ? (
-              <View style={styles.emptyState}>
+              <View style={styles.emptyState} testID="contacts-empty-state" accessible accessibilityLabel="contacts-empty-state">
                 <View style={styles.emptyIcon}>
                   <Text style={styles.emptyIconText}>C</Text>
                 </View>
@@ -212,6 +212,9 @@ export default function ContactsScreen() {
                 return (
                   <View
                     key={contact.id}
+                    testID="contacts-row"
+                    accessible
+                    accessibilityLabel="contacts-row"
                     style={[
                       styles.contactRow,
                       index < sortedContacts.length - 1 && styles.contactRowBorder,
@@ -293,6 +296,8 @@ export default function ContactsScreen() {
             activeOpacity={0.86}
             style={styles.addContactCard}
             onPress={() => setShowAdd((current) => !current)}
+            testID="contacts-add-toggle-btn"
+            accessibilityLabel="contacts-add-toggle-btn"
           >
             <View style={styles.addIconCircle}>
               <Text style={styles.addIconText}>+</Text>
@@ -317,6 +322,8 @@ export default function ContactsScreen() {
                   placeholderTextColor="#7f7899"
                   value={name}
                   onChangeText={setName}
+                  testID="contacts-name-input"
+                  accessibilityLabel="contacts-name-input"
                 />
                 <TextInput
                   style={styles.input}
@@ -325,6 +332,8 @@ export default function ContactsScreen() {
                   value={phone}
                   onChangeText={setPhone}
                   keyboardType="phone-pad"
+                  testID="contacts-phone-input"
+                  accessibilityLabel="contacts-phone-input"
                 />
               </View>
               <TouchableOpacity
@@ -332,6 +341,8 @@ export default function ContactsScreen() {
                 onPress={handleAdd}
                 disabled={saving}
                 activeOpacity={0.84}
+                testID="contacts-save-btn"
+                accessibilityLabel="contacts-save-btn"
               >
                 <Text style={styles.addButtonText}>{saving ? 'Saving...' : '+ Add Contact'}</Text>
               </TouchableOpacity>

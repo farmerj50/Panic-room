@@ -14,6 +14,7 @@ export type RootStackParamList = {
   Evidence: undefined;
   Safety: undefined;
   EmergencySettings: undefined;
+  CovertMessages: undefined;
 };
 
 export type TabParamList = {

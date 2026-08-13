@@ -130,7 +130,7 @@ export default function LandingScreen() {
                 <View style={styles.logoMark}>
                   <View style={styles.logoHeart} />
                 </View>
-                <Text style={styles.brandText}>PanicRoom</Text>
+                <Text style={styles.brandText}>Bes</Text>
               </View>
 
               {isWide && (
@@ -302,7 +302,7 @@ export default function LandingScreen() {
                 <View style={styles.phoneLogo}>
                   <View style={styles.phoneLogoHeart} />
                 </View>
-                <Text style={styles.phoneText}>PanicRoom</Text>
+                <Text style={styles.phoneText}>Bes</Text>
                 <View style={styles.finger} />
               </View>
             </LinearGradient>

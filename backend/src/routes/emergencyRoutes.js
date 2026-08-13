@@ -6,12 +6,14 @@ const {
   createEmergencyEvent,
   getEmergencyEvents,
   notifyEmergencyContacts,
+  updateEmergencyEvent,
 } = require("../controllers/emergencyController");
-const { authenticate } = require("../middleware/authMiddleware");
+const { authenticate, requireUserId } = require("../middleware/authMiddleware");
 
-router.use(authenticate);
+router.use(authenticate, requireUserId);
 router.post("/", createEmergencyEvent);
 router.get("/", getEmergencyEvents);
+router.patch("/:id", updateEmergencyEvent);
 router.post("/call", callEmergencyContacts);
 router.post("/:id/notify", notifyEmergencyContacts);
 

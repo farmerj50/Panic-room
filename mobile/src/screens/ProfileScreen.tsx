@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   Alert,
   Image,
@@ -5,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   useWindowDimensions,
   View,
@@ -16,6 +18,8 @@ import { useNavigation } from '@react-navigation/native';
 
 import { useAuth } from '../context/AuthContext';
 import { useEmergencyContext } from '../context/EmergencyContext';
+import { getPublicKeyBase64 } from '../services/keyService';
+import { setMyPhoneNumber, setMyPublicKey } from '../services/covertMessageService';
 
 import heroBg from '../../assets/images/hero-bg.png';
 import journalCard from '../../assets/images/journal-card.png';
@@ -94,7 +98,7 @@ const SUPPORT_CARDS = [
   },
   {
     icon: 'i',
-    label: 'About PanicRoom',
+    label: 'About Bes',
     desc: 'Learn more about the app.',
     color: '#4ee1d5',
     route: 'Home',
@@ -102,7 +106,7 @@ const SUPPORT_CARDS = [
   {
     icon: '*',
     label: 'Rate the App',
-    desc: 'If PanicRoom helps, please rate us.',
+    desc: 'If Bes helps, please rate us.',
     color: '#f59e0b',
     route: 'Profile',
   },
@@ -110,13 +114,110 @@ const SUPPORT_CARDS = [
 
 export default function ProfileScreen() {
   const navigation = useNavigation<any>();
-  const { logout, user } = useAuth();
+  const { deleteAccount, logout, user } = useAuth();
   const { contacts, isSetupDone, loadContacts } = useEmergencyContext();
   const { width } = useWindowDimensions();
 
   const isWide = width >= 900;
   const pageMaxWidth = isWide ? 1000 : 620;
   const safetyPct = Math.min(100, (isSetupDone ? 40 : 10) + Math.min(contacts.length * 20, 60));
+
+  const [publicKey, setPublicKey] = useState<string | null>(null);
+  const [phoneNumber, setPhoneNumber] = useState(user?.phoneNumber ?? '');
+  const [showPhoneForm, setShowPhoneForm] = useState(false);
+  const [phoneInput, setPhoneInput] = useState('');
+  const [savingPhone, setSavingPhone] = useState(false);
+
+  const [showDeleteForm, setShowDeleteForm] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        const localPublicKey = await getPublicKeyBase64();
+        if (!mounted) return;
+        setPublicKey(localPublicKey);
+
+        // Sync to the backend if it's missing or stale (e.g. first run of
+        // this feature on this device, or a fresh key regeneration).
+        if (user?.publicKey !== localPublicKey) {
+          await setMyPublicKey(localPublicKey);
+        }
+      } catch {
+        // Covert messaging is opt-in — a failure here shouldn't block the
+        // rest of Profile from rendering.
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [user?.publicKey]);
+
+  const handleSavePhone = async () => {
+    const trimmed = phoneInput.trim();
+    if (!trimmed) return;
+
+    setSavingPhone(true);
+    try {
+      await setMyPhoneNumber(trimmed);
+      setPhoneNumber(trimmed);
+      setPhoneInput('');
+      setShowPhoneForm(false);
+    } catch (error) {
+      Alert.alert(
+        'Could not save phone number',
+        error instanceof Error ? error.message : 'Check your connection and try again.',
+      );
+    } finally {
+      setSavingPhone(false);
+    }
+  };
+
+  const handleDeleteAccountPress = () => {
+    Alert.alert(
+      'Delete your account?',
+      'This permanently deletes your account, trusted contacts, emergency history, recordings, and covert messages. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Continue', style: 'destructive', onPress: () => setShowDeleteForm(true) },
+      ],
+    );
+  };
+
+  const handleConfirmDeleteAccount = () => {
+    if (!deletePassword) return;
+
+    Alert.alert(
+      'Are you absolutely sure?',
+      'There is no way to undo this once it starts.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete My Account',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingAccount(true);
+            try {
+              await deleteAccount(deletePassword);
+              // deleteAccount() flips AuthContext to 'unauthenticated' on
+              // success, which drops the app back to the sign-in stack —
+              // no explicit navigation needed here.
+            } catch (error) {
+              Alert.alert(
+                'Could not delete account',
+                error instanceof Error ? error.message : 'Check your connection and try again.',
+              );
+              setDeletingAccount(false);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const clearLocalData = () => {
     Alert.alert('Clear local data?', 'This removes contacts, setup status, and notes from this device.', [
@@ -137,7 +238,7 @@ export default function ProfileScreen() {
             ].map((key) => AsyncStorage.removeItem(key)),
           );
           await loadContacts();
-          Alert.alert('Cleared', 'Local PanicRoom data has been removed from this device.');
+          Alert.alert('Cleared', 'Local Bes data has been removed from this device.');
         },
       },
     ]);
@@ -272,6 +373,8 @@ export default function ProfileScreen() {
             activeOpacity={0.84}
             style={[styles.resourceRow, styles.resourceRowBorder]}
             onPress={() => navigation.navigate('Contacts')}
+            testID="profile-contacts-btn"
+            accessibilityLabel="profile-contacts-btn"
           >
             <View style={[styles.itemIcon, { backgroundColor: 'rgba(183,119,255,0.24)' }]}>
               <Text style={[styles.itemIconText, { color: '#b777ff' }]}>C</Text>
@@ -284,6 +387,23 @@ export default function ProfileScreen() {
               <Text style={[styles.valueText, { color: '#d9bcff' }]}>
                 {contacts.length} Contact{contacts.length === 1 ? '' : 's'}
               </Text>
+            </View>
+            <Text style={styles.rowArrow}>{'>'}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.84}
+            style={[styles.resourceRow, styles.resourceRowBorder]}
+            onPress={() => navigation.navigate('Evidence')}
+            testID="profile-evidence-btn"
+            accessibilityLabel="profile-evidence-btn"
+          >
+            <View style={[styles.itemIcon, { backgroundColor: 'rgba(78,225,213,0.24)' }]}>
+              <Text style={[styles.itemIconText, { color: '#4ee1d5' }]}>V</Text>
+            </View>
+            <View style={styles.itemCopy}>
+              <Text style={styles.itemName}>Evidence</Text>
+              <Text style={styles.itemDesc}>Review recordings and details from past events.</Text>
             </View>
             <Text style={styles.rowArrow}>{'>'}</Text>
           </TouchableOpacity>
@@ -305,6 +425,80 @@ export default function ProfileScreen() {
             </View>
             <Text style={styles.rowArrow}>{'>'}</Text>
           </TouchableOpacity>
+        </LinearGradient>
+
+        <Text style={styles.sectionLabel}>Covert Messaging</Text>
+        <LinearGradient
+          colors={['rgba(13, 18, 49, 0.97)', 'rgba(10, 12, 38, 0.97)']}
+          style={styles.section}
+        >
+          <View style={[styles.resourceRow, styles.resourceRowBorder]}>
+            <View style={[styles.itemIcon, { backgroundColor: 'rgba(78,225,213,0.24)' }]}>
+              <Text style={[styles.itemIconText, { color: '#4ee1d5' }]}>K</Text>
+            </View>
+            <View style={styles.itemCopy}>
+              <Text style={styles.itemName}>Your Encryption Key</Text>
+              <Text style={styles.itemDesc} numberOfLines={1}>
+                {publicKey ? `${publicKey.slice(0, 20)}...` : 'Generating...'}
+              </Text>
+            </View>
+            <View style={[styles.valueBadge, { backgroundColor: '#4ee1d522', borderColor: '#4ee1d555' }]}>
+              <Text style={[styles.valueText, { color: '#4ee1d5' }]}>{publicKey ? 'Ready' : '...'}</Text>
+            </View>
+          </View>
+
+          {showPhoneForm ? (
+            <View style={styles.form} testID="profile-phone-form">
+              <Text style={styles.formTitle}>Register your phone number</Text>
+              <Text style={styles.itemDesc}>
+                Trusted contacts who save this number can send you covert messages.
+              </Text>
+              <View style={styles.formGrid}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Phone number"
+                  placeholderTextColor="#7f7899"
+                  value={phoneInput}
+                  onChangeText={setPhoneInput}
+                  keyboardType="phone-pad"
+                  testID="profile-phone-input"
+                  accessibilityLabel="profile-phone-input"
+                />
+              </View>
+              <TouchableOpacity
+                style={[styles.addButton, savingPhone && styles.disabledButton]}
+                onPress={handleSavePhone}
+                disabled={savingPhone}
+                activeOpacity={0.84}
+                testID="profile-phone-save-btn"
+                accessibilityLabel="profile-phone-save-btn"
+              >
+                <Text style={styles.addButtonText}>{savingPhone ? 'Saving...' : 'Save number'}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              activeOpacity={0.84}
+              style={styles.resourceRow}
+              onPress={() => {
+                setPhoneInput(phoneNumber);
+                setShowPhoneForm(true);
+              }}
+              testID="profile-phone-btn"
+              accessibilityLabel="profile-phone-btn"
+            >
+              <View style={[styles.itemIcon, { backgroundColor: 'rgba(183,119,255,0.22)' }]}>
+                <Text style={[styles.itemIconText, { color: '#d9bcff' }]}>#</Text>
+              </View>
+              <View style={styles.itemCopy}>
+                <Text style={styles.itemName}>Your Phone Number</Text>
+                <Text style={styles.itemDesc}>
+                  {phoneNumber || 'Not registered — contacts can\'t send you covert messages yet.'}
+                </Text>
+              </View>
+              <Text style={styles.rowArrow}>{'>'}</Text>
+            </TouchableOpacity>
+          )}
         </LinearGradient>
 
         <View style={[styles.infoGrid, !isWide && styles.infoGridNarrow]}>
@@ -397,7 +591,7 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </TouchableOpacity>
 
-          <TouchableOpacity activeOpacity={0.84} style={styles.resourceRow} onPress={logout}>
+          <TouchableOpacity activeOpacity={0.84} style={[styles.resourceRow, styles.resourceRowBorder]} onPress={logout}>
             <View style={[styles.itemIcon, { backgroundColor: 'rgba(183,119,255,0.22)' }]}>
               <Text style={[styles.itemIconText, { color: '#d9bcff' }]}>L</Text>
             </View>
@@ -405,10 +599,76 @@ export default function ProfileScreen() {
               <Text style={[styles.itemName, { color: '#fff' }]}>Sign Out</Text>
               <Text style={styles.itemDesc}>End this session on the current device.</Text>
             </View>
-            <TouchableOpacity style={styles.clearBtn} onPress={logout} activeOpacity={0.82}>
+            <TouchableOpacity
+              style={styles.clearBtn}
+              onPress={logout}
+              activeOpacity={0.82}
+              testID="profile-logout-btn"
+              accessibilityLabel="profile-logout-btn"
+            >
               <Text style={styles.clearBtnText}>Sign Out</Text>
             </TouchableOpacity>
           </TouchableOpacity>
+
+          {showDeleteForm ? (
+            <View style={styles.form} testID="profile-delete-form">
+              <Text style={styles.formTitle}>Confirm your password to delete your account</Text>
+              <View style={styles.formGrid}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Password"
+                  placeholderTextColor="#7f7899"
+                  value={deletePassword}
+                  onChangeText={setDeletePassword}
+                  secureTextEntry
+                  testID="profile-delete-password-input"
+                  accessibilityLabel="profile-delete-password-input"
+                />
+              </View>
+              <TouchableOpacity
+                style={[styles.clearBtn, deletingAccount && styles.disabledButton]}
+                onPress={handleConfirmDeleteAccount}
+                disabled={deletingAccount}
+                activeOpacity={0.84}
+                testID="profile-delete-confirm-btn"
+                accessibilityLabel="profile-delete-confirm-btn"
+              >
+                <Text style={styles.clearBtnText}>
+                  {deletingAccount ? 'Deleting...' : 'Permanently Delete Account'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.cancelDeleteBtn}
+                onPress={() => {
+                  setShowDeleteForm(false);
+                  setDeletePassword('');
+                }}
+                disabled={deletingAccount}
+                activeOpacity={0.82}
+              >
+                <Text style={styles.cancelDeleteText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              activeOpacity={0.84}
+              style={styles.resourceRow}
+              onPress={handleDeleteAccountPress}
+              testID="profile-delete-account-btn"
+              accessibilityLabel="profile-delete-account-btn"
+            >
+              <View style={[styles.itemIcon, { backgroundColor: 'rgba(239,68,91,0.22)' }]}>
+                <Text style={[styles.itemIconText, { color: '#ff6f7f' }]}>D</Text>
+              </View>
+              <View style={styles.itemCopy}>
+                <Text style={[styles.itemName, { color: '#fff' }]}>Delete Account</Text>
+                <Text style={styles.itemDesc}>
+                  Permanently delete your account and all associated data.
+                </Text>
+              </View>
+              <Text style={styles.rowArrow}>{'>'}</Text>
+            </TouchableOpacity>
+          )}
         </LinearGradient>
 
         <LinearGradient
@@ -718,4 +978,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
   },
   footerBtnText: { color: '#fff', fontSize: 16, fontWeight: '900' },
+  form: {
+    borderColor: 'rgba(149, 110, 255, 0.26)',
+    borderRadius: 18,
+    borderWidth: 1,
+    margin: 14,
+    padding: 20,
+  },
+  formTitle: { color: '#fff', fontSize: 17, fontWeight: '900', marginBottom: 8 },
+  formGrid: { gap: 12, marginTop: 12, marginBottom: 14 },
+  input: {
+    backgroundColor: 'rgba(5, 7, 21, 0.78)',
+    borderColor: 'rgba(149,110,255,0.22)',
+    borderRadius: 12,
+    borderWidth: 1,
+    color: '#fff',
+    fontSize: 15,
+    minHeight: 50,
+    paddingHorizontal: 14,
+  },
+  addButton: {
+    alignItems: 'center',
+    backgroundColor: '#7c3aed',
+    borderRadius: 12,
+    justifyContent: 'center',
+    minHeight: 50,
+  },
+  disabledButton: { opacity: 0.62 },
+  addButtonText: { color: '#fff', fontSize: 15, fontWeight: '900' },
+  cancelDeleteBtn: { alignItems: 'center', marginTop: 12, paddingVertical: 8 },
+  cancelDeleteText: { color: '#a99cc5', fontSize: 14, fontWeight: '700' },
 });

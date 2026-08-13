@@ -1,5 +1,6 @@
 const prisma = require("../config/db");
-const { decrypt, encrypt } = require("../services/cryptoService");
+const { decrypt, encrypt, hashLookup } = require("../services/cryptoService");
+const { isValidPhoneNumber, normalizePhoneDigits } = require("../utils/phone");
 
 function serializeContact(contact) {
   return {
@@ -21,11 +22,16 @@ exports.createContact = async (req, res, next) => {
       return res.status(400).json({ error: "Name and phone number are required" });
     }
 
+    if (!isValidPhoneNumber(trimmedPhone)) {
+      return res.status(400).json({ error: "Enter a valid phone number." });
+    }
+
     const contact = await prisma.trustedContact.create({
       data: {
         userId: req.user.id,
         name: encrypt(trimmedName),
         phoneNumber: encrypt(trimmedPhone),
+        phoneHash: hashLookup(normalizePhoneDigits(trimmedPhone)),
         isPriority: Boolean(req.body.isPriority),
       },
     });
@@ -62,7 +68,11 @@ exports.updateContact = async (req, res, next) => {
     if (req.body.phoneNumber !== undefined) {
       const phoneNumber = String(req.body.phoneNumber).trim();
       if (!phoneNumber) return res.status(400).json({ error: "Phone number cannot be empty" });
+      if (!isValidPhoneNumber(phoneNumber)) {
+        return res.status(400).json({ error: "Enter a valid phone number." });
+      }
       data.phoneNumber = encrypt(phoneNumber);
+      data.phoneHash = hashLookup(normalizePhoneDigits(phoneNumber));
     }
     if (req.body.isPriority !== undefined) data.isPriority = Boolean(req.body.isPriority);
 

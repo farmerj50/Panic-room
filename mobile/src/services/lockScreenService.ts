@@ -91,7 +91,7 @@ export async function enableLockScreenButton(): Promise<boolean> {
     await Notif.scheduleNotificationAsync({
       identifier: NOTIFICATION_ID,
       content: {
-        title: '🛡️ PanicRoom Active',
+        title: '🛡️ Bes Active',
         body: 'Tap ACTIVATE SOS for immediate emergency help',
         categoryIdentifier: EMERGENCY_CATEGORY_ID,
         data: { source: 'lock_screen_button' },

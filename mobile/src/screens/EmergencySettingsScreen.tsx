@@ -79,7 +79,7 @@ export default function EmergencySettingsScreen() {
         if (!notifGranted) {
           Alert.alert(
             'Notification Permission Required',
-            'PanicRoom needs notification access to show the lock screen SOS button. Open Settings to enable it.',
+            'Bes needs notification access to show the lock screen SOS button. Open Settings to enable it.',
             [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Open Settings', onPress: () => Linking.openSettings() },
@@ -120,7 +120,7 @@ export default function EmergencySettingsScreen() {
           // doStartBgLoc owns setSaving(null) here — don't let finally fire early.
           Alert.alert(
             'Background Location',
-            'Select "Allow all the time" on the next screen so PanicRoom can share your GPS even when the app is closed.',
+            'Select "Allow all the time" on the next screen so Bes can share your GPS even when the app is closed.',
             [{ text: 'Continue', onPress: () => doStartBgLoc() }],
           );
           return; // saving cleared by doStartBgLoc after the alert is dismissed
@@ -144,7 +144,7 @@ export default function EmergencySettingsScreen() {
       if (!ok) {
         Alert.alert(
           '"Always" Location Required',
-          'PanicRoom needs "Allow all the time" location access for background GPS. Open Settings to change it.',
+          'Bes needs "Allow all the time" location access for background GPS. Open Settings to change it.',
           [
             { text: 'Cancel', style: 'cancel' },
             { text: 'Open Settings', onPress: () => Linking.openSettings() },
@@ -198,7 +198,7 @@ export default function EmergencySettingsScreen() {
           <View style={styles.heroCopy}>
             <Text style={styles.heroTitle}>Emergency{'\n'}<Text style={styles.heroAccent}>Settings</Text></Text>
             <Text style={styles.heroSub}>
-              Control how PanicRoom activates and what runs in the background to keep you safe.
+              Control how Bes activates and what runs in the background to keep you safe.
             </Text>
           </View>
         </ImageBackground>
@@ -283,13 +283,13 @@ export default function EmergencySettingsScreen() {
           <Text style={styles.noteText}>
             <Text style={styles.noteBold}>iOS:</Text>{' '}
             The lock screen button uses a notification action. Apple requires the Critical Alerts
-            entitlement for notifications that override silent mode — PanicRoom will apply for this
+            entitlement for notifications that override silent mode — Bes will apply for this
             entitlement. Until approved, the button still works but respects your silent mode setting.{'\n\n'}
             <Text style={styles.noteBold}>Android:</Text>{' '}
             The lock screen button uses a high-priority notification visible on the lock screen.
-            Tapping "ACTIVATE SOS" opens PanicRoom without unlocking the device when the
+            Tapping "ACTIVATE SOS" opens Bes without unlocking the device when the
             action is set to not require authentication.{'\n\n'}
-            You can revoke any permission at any time in Settings › PanicRoom.
+            You can revoke any permission at any time in Settings › Bes.
           </Text>
         </LinearGradient>
 

@@ -10,10 +10,10 @@ const fs = require('fs');
     capabilities: {
       platformName: 'Android',
       'appium:automationName': 'UiAutomator2',
-      'appium:deviceName': 'PanicRoom_Test',
+      'appium:deviceName': 'Bes_Test',
       'appium:udid': 'emulator-5554',
       'appium:app': path.join(__dirname, '..', 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk'),
-      'appium:appPackage': 'com.panicroom.mobile',
+      'appium:appPackage': 'com.ginslayer.besapp',
       'appium:appActivity': '.MainActivity',
       'appium:autoGrantPermissions': true,
       'appium:skipUnlock': true,

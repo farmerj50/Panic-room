@@ -1,85 +1,22 @@
 const prisma = require("../config/db");
 const { decrypt, encrypt, safeDecrypt } = require("../services/cryptoService");
+const {
+  hasSmsProviderConfig,
+  hasVoiceProviderConfig,
+  sendSms,
+  sendVoiceCall,
+} = require("../services/smsServices");
+const { getSignedDownloadUrl } = require("../services/storageService");
 
-const hasSmsProviderConfig = () =>
-  Boolean(
-    process.env.TWILIO_ACCOUNT_SID &&
-      process.env.TWILIO_AUTH_TOKEN &&
-      process.env.TWILIO_FROM_NUMBER
-  );
+function getBaseUrl(req) {
+  return process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`;
+}
 
-const hasVoiceProviderConfig = hasSmsProviderConfig;
-
-const escapeTwiml = (value = "") =>
-  String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-
-const sendSms = async ({ to, body }) => {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_FROM_NUMBER;
-  const auth = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
-  const params = new URLSearchParams({
-    To: to,
-    From: from,
-    Body: body,
-  });
-
-  const response = await fetch(
-    `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${auth}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: params,
-    }
-  );
-
-  if (!response.ok) {
-    const details = await response.text();
-    throw new Error(`SMS provider failed: ${details}`);
-  }
-
-  return response.json();
-};
-
-const sendVoiceCall = async ({ to, message }) => {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_FROM_NUMBER;
-  const auth = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
-  const twiml = `<Response><Say voice="alice">${escapeTwiml(message)}</Say></Response>`;
-  const params = new URLSearchParams({
-    To: to,
-    From: from,
-    Twiml: twiml,
-  });
-
-  const response = await fetch(
-    `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${auth}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: params,
-    }
-  );
-
-  if (!response.ok) {
-    const details = await response.text();
-    throw new Error(`Voice provider failed: ${details}`);
-  }
-
-  return response.json();
-};
+function describeNotificationFailure(error) {
+  if (error?.name === "TimeoutError" || error?.name === "AbortError") return "TIMEOUT";
+  if (error?.name === "TwilioProviderError") return `PROVIDER_ERROR: ${error.message}`;
+  return "SEND_ERROR";
+}
 
 function toNullableNumber(value) {
   if (value === undefined || value === null || value === "") return null;
@@ -94,16 +31,23 @@ function encryptedNumberToFloat(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function serializeEmergencyEvent(event) {
+function keyToSignedUrl(encryptedKey, req) {
+  const key = safeDecrypt(encryptedKey);
+  return key ? getSignedDownloadUrl(key, getBaseUrl(req)) : undefined;
+}
+
+function serializeEmergencyEvent(event, req) {
   return {
     id: event.id,
     createdAt: event.createdAt,
     latitude: encryptedNumberToFloat(event.latitudeEncrypted) ?? event.latitude ?? undefined,
     longitude: encryptedNumberToFloat(event.longitudeEncrypted) ?? event.longitude ?? undefined,
     status: event.status,
-    audioUrl: safeDecrypt(event.audioUrl) ?? undefined,
-    videoUrl: safeDecrypt(event.videoUrl) ?? undefined,
+    audioUrl: keyToSignedUrl(event.audioUrl, req),
+    videoUrl: keyToSignedUrl(event.videoUrl, req),
     contactNotified: event.contactNotified,
+    notificationError: event.notificationError ?? undefined,
+    notificationAttempts: event.notificationAttempts,
   };
 }
 
@@ -127,7 +71,28 @@ exports.createEmergencyEvent = async (req, res, next) => {
       },
     });
 
-    res.status(201).json(serializeEmergencyEvent(event));
+    res.status(201).json(serializeEmergencyEvent(event, req));
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.updateEmergencyEvent = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { audioUrl, videoUrl, status } = req.body;
+
+    const event = await prisma.emergencyEvent.findFirst({ where: { id, userId: req.user.id } });
+    if (!event) return res.status(404).json({ error: "Emergency event not found" });
+
+    const data = {};
+    if (audioUrl !== undefined) data.audioUrl = audioUrl ? encrypt(audioUrl) : null;
+    if (videoUrl !== undefined) data.videoUrl = videoUrl ? encrypt(videoUrl) : null;
+    if (status !== undefined) data.status = status;
+
+    const updated = await prisma.emergencyEvent.update({ where: { id }, data });
+
+    res.json(serializeEmergencyEvent(updated, req));
   } catch (error) {
     next(error);
   }
@@ -153,7 +118,7 @@ exports.callEmergencyContacts = async (req, res, next) => {
 
     const body =
       message ||
-      "PanicRoom emergency activated. Please check your text messages for the user's latest location.";
+      "Bes emergency activated. Please check your text messages for the user's latest location.";
 
     const results = await Promise.allSettled(
       contacts.map((contact) => sendVoiceCall({ to: contact.phoneNumber, message: body }))
@@ -203,30 +168,62 @@ exports.notifyEmergencyContacts = async (req, res, next) => {
       });
     }
 
-    const serializedEvent = serializeEmergencyEvent(event);
+    const serializedEvent = serializeEmergencyEvent(event, req);
     const body =
       message ||
-      `PanicRoom emergency activated. Location: ${
+      `Bes emergency activated. Location: ${
         serializedEvent.latitude != null && serializedEvent.longitude != null
           ? `https://maps.google.com/?q=${serializedEvent.latitude},${serializedEvent.longitude}`
           : "unavailable"
       }`;
 
-    const results = await Promise.allSettled(
-      contacts.map((contact) => sendSms({ to: contact.phoneNumber, body }))
-    );
-    const notifiedCount = results.filter((result) => result.status === "fulfilled").length;
+    let notifiedCount = 0;
+    let failedCount = contacts.length;
 
-    await prisma.emergencyEvent.update({
-      where: { id },
-      data: { contactNotified: notifiedCount > 0 },
-    });
+    try {
+      const results = await Promise.allSettled(
+        contacts.map((contact) => sendSms({ to: contact.phoneNumber, body }))
+      );
+      notifiedCount = results.filter((result) => result.status === "fulfilled").length;
+      failedCount = results.length - notifiedCount;
+
+      const notificationError =
+        notifiedCount === results.length
+          ? null
+          : notifiedCount === 0
+          ? describeNotificationFailure(results.find((r) => r.status === "rejected")?.reason)
+          : `${failedCount}/${results.length} deliveries failed`;
+
+      await prisma.emergencyEvent.update({
+        where: { id },
+        data: {
+          contactNotified: notifiedCount > 0,
+          notificationError,
+          notificationAttempts: { increment: 1 },
+        },
+      });
+    } catch (twilioError) {
+      // Thrown outside the per-contact Promise.allSettled (e.g. a bug in the
+      // dispatch loop itself) — still record that notification failed
+      // instead of leaving contactNotified/notificationError stale.
+      await prisma.emergencyEvent
+        .update({
+          where: { id },
+          data: {
+            contactNotified: false,
+            notificationError: describeNotificationFailure(twilioError),
+            notificationAttempts: { increment: 1 },
+          },
+        })
+        .catch(() => {});
+      throw twilioError;
+    }
 
     res.json({
       sent: notifiedCount > 0,
       notifiedCount,
       providerConfigured: true,
-      failedCount: results.length - notifiedCount,
+      failedCount,
     });
   } catch (error) {
     next(error);
@@ -240,7 +237,7 @@ exports.getEmergencyEvents = async (req, res, next) => {
       orderBy: { createdAt: "desc" },
     });
 
-    res.json(events.map(serializeEmergencyEvent));
+    res.json(events.map((event) => serializeEmergencyEvent(event, req)));
   } catch (error) {
     next(error);
   }

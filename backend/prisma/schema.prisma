@@ -12,18 +12,20 @@ datasource db {
 }
 
 model EmergencyEvent {
-  id                 String   @id @default(uuid())
-  createdAt          DateTime @default(now())
-  userId             String?
-  user               User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  latitude           Float?
-  longitude          Float?
-  latitudeEncrypted  String?
-  longitudeEncrypted String?
-  status             String   @default("ACTIVE")
-  audioUrl           String?
-  videoUrl           String?
-  contactNotified    Boolean  @default(false)
+  id                   String   @id @default(uuid())
+  createdAt            DateTime @default(now())
+  userId               String?
+  user                 User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  latitude             Float?
+  longitude            Float?
+  latitudeEncrypted    String?
+  longitudeEncrypted   String?
+  status               String   @default("ACTIVE")
+  audioUrl             String?
+  videoUrl             String?
+  contactNotified      Boolean  @default(false)
+  notificationError    String?
+  notificationAttempts Int      @default(0)
 
   @@index([userId])
 }
@@ -35,9 +37,14 @@ model TrustedContact {
   user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   name        String
   phoneNumber String
+  // HMAC of the same normalized phone number as phoneNumber, computed
+  // alongside it purely so a contact can be matched against a registered
+  // User.phoneHash for covert-message delivery without decrypting rows.
+  phoneHash   String?
   isPriority  Boolean  @default(false)
 
   @@index([userId])
+  @@index([phoneHash])
 }
 
 model Recording {
@@ -63,6 +70,49 @@ model User {
   emergencies    EmergencyEvent[]
   recordings     Recording[]
   privateData    PrivateData[]
+  refreshTokens  RefreshToken[]
+
+  // Covert-messaging identity (Phase F). All optional — a user only gains
+  // these once they opt in to the feature from ProfileScreen.
+  // publicKey is NOT secret (the matching private key never leaves the
+  // device) — encrypted at rest anyway for metadata-hygiene consistency
+  // with this table's other PII, not because the key itself is sensitive.
+  publicKey              String?
+  phoneHash              String?         @unique
+  phoneEncrypted         String?
+  sentCovertMessages     CovertMessage[] @relation("SentCovertMessages")
+  receivedCovertMessages CovertMessage[] @relation("ReceivedCovertMessages")
+}
+
+model CovertMessage {
+  id              String   @id @default(uuid())
+  createdAt       DateTime @default(now())
+  senderId        String
+  sender          User     @relation("SentCovertMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientUserId String
+  recipient       User     @relation("ReceivedCovertMessages", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  // Opaque steganographic PNG blob location (storageService key) — the
+  // backend never touches ciphertext/plaintext/keys, only this file.
+  fileUrl         String
+  status          String   @default("SENT")
+  protocolVersion Int      @default(1)
+
+  @@index([recipientUserId])
+  @@index([senderId])
+}
+
+model RefreshToken {
+  id                  String    @id @default(uuid())
+  createdAt           DateTime  @default(now())
+  userId              String
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash           String    @unique
+  expiresAt           DateTime
+  revokedAt           DateTime?
+  replacedByTokenHash String?
+  userAgent           String?
+
+  @@index([userId])
 }
 
 model PrivateData {

@@ -68,7 +68,7 @@ export default function SetupScreen() {
 
     Alert.alert(
       `${permission} Access Required`,
-      `PanicRoom needs ${permission.toLowerCase()} access. Open Settings to enable it.`,
+      `Bes needs ${permission.toLowerCase()} access. Open Settings to enable it.`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Open Settings', onPress: () => Linking.openSettings() },
@@ -110,12 +110,12 @@ export default function SetupScreen() {
     if (!granted) {
       Alert.alert(
         'Permissions needed',
-        'Camera, microphone, and location are required for PanicRoom to protect you.',
+        'Camera, microphone, and location are required for Bes to protect you.',
       );
       return;
     }
     await markSetupDone();
-    Alert.alert('Setup Complete', 'PanicRoom is ready to protect you.', [
+    Alert.alert('Setup Complete', 'Bes is ready to protect you.', [
       { text: 'OK', onPress: () => navigation.goBack() },
     ]);
   };
@@ -134,7 +134,7 @@ export default function SetupScreen() {
 
         <Text style={styles.sectionTitle}>Required Permissions</Text>
         <Text style={styles.sectionSub}>
-          These are needed for PanicRoom to protect you during an emergency.
+          These are needed for Bes to protect you during an emergency.
         </Text>
 
         <TouchableOpacity activeOpacity={0.82} style={styles.grantAllBtn} onPress={requestCorePermissions}>
@@ -198,7 +198,7 @@ export default function SetupScreen() {
         </TouchableOpacity>
 
         <Text style={styles.footerNote}>
-          You can change permissions at any time in your phone's Settings › PanicRoom.
+          You can change permissions at any time in your phone's Settings › Bes.
         </Text>
       </ScrollView>
     </SafeAreaView>

@@ -23,6 +23,7 @@ import JournalScreen from '../screens/JournalScreen';
 import MessagesScreen from '../screens/MessagesScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import EmergencySettingsScreen from '../screens/EmergencySettingsScreen';
+import CovertMessageScreen from '../screens/CovertMessageScreen';
 
 // expo-notifications loads at runtime so the app still boots before `npm install`.
 // Once installed, the module resolves normally; until then every call is a no-op.
@@ -69,6 +70,7 @@ const linking = {
       Evidence: 'evidence',
       Safety: 'safety',
       EmergencySettings: 'emergency-settings',
+      CovertMessages: 'covert-messages',
     },
   },
 };
@@ -120,7 +122,14 @@ function MainTabs() {
         ),
       })}
     >
-      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen
+        name="Home"
+        component={HomeScreen}
+        options={{
+          tabBarButtonTestID: 'tab-home-btn',
+          tabBarAccessibilityLabel: 'tab-home-btn',
+        }}
+      />
       <Tab.Screen name="Resources" component={ResourcesScreen} />
       <Tab.Screen name="SafetyPlan" component={SafetyPlanScreen} options={{ title: 'Safety Plan' }} />
       <Tab.Screen
@@ -134,7 +143,14 @@ function MainTabs() {
         }}
       />
       <Tab.Screen name="Messages" component={MessagesScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen
+        name="Profile"
+        component={ProfileScreen}
+        options={{
+          tabBarButtonTestID: 'tab-profile-btn',
+          tabBarAccessibilityLabel: 'tab-profile-btn',
+        }}
+      />
       <Tab.Screen name="Journal" component={JournalScreen} options={{ tabBarButton: () => null }} />
     </Tab.Navigator>
   );
@@ -143,7 +159,7 @@ function MainTabs() {
 function LoadingScreen() {
   return (
     <View style={{ alignItems: 'center', backgroundColor: '#050715', flex: 1, justifyContent: 'center' }}>
-      <Text style={{ color: '#d9bcff', fontSize: 18, fontWeight: '900' }}>PanicRoom</Text>
+      <Text style={{ color: '#d9bcff', fontSize: 18, fontWeight: '900' }}>Bes</Text>
     </View>
   );
 }
@@ -288,6 +304,7 @@ function AuthenticatedNavigator() {
           <Stack.Screen name="Setup" component={SetupScreen} />
           <Stack.Screen name="Contacts" component={ContactsScreen} />
           <Stack.Screen name="Evidence" component={EvidenceScreen} />
+          <Stack.Screen name="CovertMessages" component={CovertMessageScreen} />
           <Stack.Screen name="Safety" component={SafetyPlanScreen} />
           <Stack.Screen name="EmergencySettings" component={EmergencySettingsScreen} />
         </Stack.Navigator>

@@ -24,5 +24,5 @@ Deployment requirements:
 
 Known limits:
 
-- JWTs are stored in `AsyncStorage`, which is acceptable for this app shell but not equivalent to an HTTP-only secure cookie on web.
+- Access/refresh tokens are stored via `expo-secure-store` (Keychain/Keystore) on native and `localStorage` on web (see `mobile/src/services/secureStorage.ts`) — the web fallback is not equivalent to an HTTP-only secure cookie.
 - This implementation adds technical safeguards; it is not a legal certification.

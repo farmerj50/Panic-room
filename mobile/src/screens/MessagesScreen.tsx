@@ -25,6 +25,13 @@ const CONTACT_COLORS = ['#ff6b9a', '#b777ff', '#4aa8ff', '#f59e0b', '#4ee1d5'];
 
 const QUICK_ACTIONS = [
   {
+    title: 'Covert Message',
+    desc: 'Send an end-to-end encrypted message hidden inside an image.',
+    icon: 'K',
+    color: '#4ee1d5',
+    route: 'CovertMessages',
+  },
+  {
     title: 'Message Trusted Contacts',
     desc: 'Reach out to people you trust.',
     icon: 'M',
@@ -129,7 +136,7 @@ export default function MessagesScreen() {
   const sendAlert = async (phoneNumber: string, contactId: string) => {
     setSending(contactId);
     const body = encodeURIComponent(
-      'Checking in from PanicRoom. Are you safe? Reply if you need support.',
+      'Checking in from Bes. Are you safe? Reply if you need support.',
     );
     const url = `sms:${phoneNumber}?body=${body}`;
 
@@ -194,18 +201,21 @@ export default function MessagesScreen() {
               <Text style={styles.heroTitleAccent}>We're here to help.</Text>
             </Text>
             <Text style={styles.heroText}>
-              Message trusted contacts or connect with support services. Your conversations are
-              private and secure.
+              Message trusted contacts or connect with support services.
             </Text>
-            <View style={styles.encryptedBadge}>
+            <TouchableOpacity
+              style={styles.encryptedBadge}
+              activeOpacity={0.84}
+              onPress={() => navigation.navigate('CovertMessages')}
+            >
               <View style={styles.encryptedIcon}>
-                <Text style={styles.encryptedIconText}>L</Text>
+                <Text style={styles.encryptedIconText}>K</Text>
               </View>
               <View>
-                <Text style={styles.encryptedLabel}>End-to-end encrypted</Text>
-                <Text style={styles.encryptedSub}>Your privacy is our priority.</Text>
+                <Text style={styles.encryptedLabel}>Need it truly private?</Text>
+                <Text style={styles.encryptedSub}>Send an end-to-end encrypted covert message.</Text>
               </View>
-            </View>
+            </TouchableOpacity>
           </View>
         </ImageBackground>
 
@@ -536,6 +546,7 @@ const styles = StyleSheet.create({
   encryptedSub: { color: '#d5cde6', fontSize: 13, marginTop: 3 },
   quickGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
     marginBottom: 22,
   },
@@ -548,13 +559,15 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(149, 110, 255, 0.26)',
     borderRadius: 16,
     borderWidth: 1,
-    flex: 1,
+    flexBasis: 220,
     flexDirection: 'row',
+    flexGrow: 1,
     gap: 14,
     minHeight: 145,
+    minWidth: 220,
     padding: 18,
   },
-  quickCardNarrow: { minHeight: 108, width: '100%' },
+  quickCardNarrow: { minHeight: 108, minWidth: '100%', width: '100%' },
   quickIconCircle: {
     alignItems: 'center',
     borderRadius: 28,

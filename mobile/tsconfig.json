@@ -1,6 +1,10 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    // @types/mocha (pulled in transitively by the WebdriverIO/Appium e2e
+    // tooling) declares globals (describe/it) that conflict with
+    // @types/jest's — scope to just jest so mobile/src/**/__tests__ typechecks.
+    "types": ["jest"]
   }
 }

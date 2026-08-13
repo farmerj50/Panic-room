@@ -1,7 +1,14 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
-import { clearAuthToken, getAuthToken, setAuthToken } from '../services/apiClient';
-import { AuthUser, loginRequest, meRequest, registerRequest } from '../services/authService';
+import { clearAuthToken, getAuthToken, setSessionExpiredHandler, setTokens } from '../services/apiClient';
+import {
+  AuthUser,
+  deleteAccountRequest,
+  logoutRequest,
+  loginRequest,
+  meRequest,
+  registerRequest,
+} from '../services/authService';
 
 type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
 type PostAuthTab = 'Home';
@@ -19,6 +26,7 @@ type AuthContextType = {
   ) => Promise<void>;
   consumePostAuthTab: () => void;
   logout: () => Promise<void>;
+  deleteAccount: (password: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -60,6 +68,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    // Fires when apiClient exhausts a refresh attempt on a background 401
+    // (e.g. the refresh token was revoked or expired) so the UI drops back
+    // to the sign-in screen even without an explicit logout action.
+    setSessionExpiredHandler(() => {
+      setUser(null);
+      setPostAuthTab(null);
+      setStatus('unauthenticated');
+    });
+
+    return () => setSessionExpiredHandler(null);
+  }, []);
+
   const value = useMemo<AuthContextType>(
     () => ({
       status,
@@ -67,14 +88,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       postAuthTab,
       async login(email, password) {
         const response = await loginRequest({ email, password });
-        await setAuthToken(response.token);
+        await setTokens(response.accessToken, response.refreshToken);
         setPostAuthTab(null);
         setUser(response.user);
         setStatus('authenticated');
       },
       async register(name, email, password, beforeAuthenticate) {
         const response = await registerRequest({ name, email, password });
-        await setAuthToken(response.token);
+        await setTokens(response.accessToken, response.refreshToken);
         await beforeAuthenticate?.();
         setPostAuthTab('Home');
         setUser(response.user);
@@ -84,6 +105,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPostAuthTab(null);
       },
       async logout() {
+        await logoutRequest();
+        await clearAuthToken();
+        setUser(null);
+        setPostAuthTab(null);
+        setStatus('unauthenticated');
+      },
+      async deleteAccount(password) {
+        // Unlike logout(), this must throw on failure (e.g. wrong password)
+        // — local state should only clear once the account is actually gone.
+        await deleteAccountRequest(password);
         await clearAuthToken();
         setUser(null);
         setPostAuthTab(null);

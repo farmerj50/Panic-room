@@ -30,7 +30,7 @@ export default function EvidenceScreen() {
   }, []);
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} testID="evidence-screen" accessible accessibilityLabel="evidence-screen">
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Text style={styles.backText}>←</Text>
@@ -42,15 +42,15 @@ export default function EvidenceScreen() {
       {loading ? (
         <ActivityIndicator color="#7C3AED" style={{ marginTop: 40 }} />
       ) : events.length === 0 ? (
-        <View style={styles.empty}>
+        <View style={styles.empty} testID="evidence-empty-state" accessible accessibilityLabel="evidence-empty-state">
           <Text style={styles.emptyIcon}>📁</Text>
           <Text style={styles.emptyText}>No events recorded yet</Text>
           <Text style={styles.emptySubText}>Emergency events will appear here</Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.scroll}>
+        <ScrollView contentContainerStyle={styles.scroll} testID="evidence-list">
           {events.map((ev) => (
-            <View key={ev.id} style={styles.card}>
+            <View key={ev.id} style={styles.card} testID="evidence-card" accessible accessibilityLabel="evidence-card">
               <View style={styles.cardHeader}>
                 <View style={[styles.statusDot, ev.status === 'ACTIVE' ? styles.active : styles.resolved]} />
                 <Text style={styles.statusText}>{ev.status}</Text>

@@ -280,7 +280,7 @@ export default function AuthScreen() {
             />
             <View style={[styles.heroLayout, !isWide && styles.heroLayoutNarrow]}>
               <View style={styles.heroCopy}>
-                <Text style={styles.brand}>PanicRoom</Text>
+                <Text style={styles.brand}>Bes</Text>
                 <Text style={styles.heroTitle}>
                   Private access for your safety data.
                 </Text>
@@ -317,6 +317,8 @@ export default function AuthScreen() {
                     activeOpacity={0.82}
                     style={[styles.modeButton, mode === 'login' && styles.modeButtonActive]}
                     onPress={() => switchMode('login')}
+                    testID="auth-mode-login-btn"
+                    accessibilityLabel="auth-mode-login-btn"
                   >
                     <Text style={[styles.modeText, mode === 'login' && styles.modeTextActive]}>
                       Sign In

@@ -16,6 +16,16 @@ export async function getEmergencies(): Promise<Emergency[]> {
   return apiRequest<Emergency[]>('/api/emergency');
 }
 
+export async function updateEmergency(
+  id: string,
+  data: { audioUrl?: string; videoUrl?: string; status?: string },
+): Promise<Emergency> {
+  return apiRequest<Emergency>(`/api/emergency/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
 export async function notifyEmergencyContacts(data: {
   emergencyId: string;
   contacts: Contact[];

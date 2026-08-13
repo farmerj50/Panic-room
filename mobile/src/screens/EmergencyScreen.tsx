@@ -16,9 +16,31 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useEmergencyContext } from '../context/EmergencyContext';
 import { COUNTDOWN_SECONDS, EMERGENCY_NUMBER, ENABLE_EMERGENCY_DIALER } from '../config/emergencyConfig';
-import { callEmergencyContacts, createEmergency, notifyEmergencyContacts } from '../services/emergencyService';
+import {
+  callEmergencyContacts,
+  createEmergency,
+  createRecording,
+  notifyEmergencyContacts,
+  updateEmergency,
+} from '../services/emergencyService';
 import { getCurrentLocation, getLastKnownLocation, watchLocation } from '../services/locationService';
+import { uploadFile } from '../services/uploadService';
+import { clearInProgressEmergency, useAppStateEmergencyGuard } from '../hooks/useAppStateEmergencyGuard';
 import type { Contact } from '../types/contact';
+
+// Best-effort, fire-and-forget — no offline queue in v1. A failure here just
+// means EvidenceScreen shows nothing for that asset; it never blocks the UI.
+async function uploadEmergencyAsset(emergencyId: string, localUri: string, kind: 'audio' | 'video') {
+  try {
+    const { key } = await uploadFile({ localUri, kind });
+    await Promise.allSettled([
+      updateEmergency(emergencyId, kind === 'audio' ? { audioUrl: key } : { videoUrl: key }),
+      createRecording({ fileUrl: key, type: kind }),
+    ]);
+  } catch (error) {
+    console.warn(`Failed to upload emergency ${kind}`, error);
+  }
+}
 
 type EmergencyPhase = 'countdown' | 'activating' | 'recording' | 'error';
 
@@ -175,6 +197,7 @@ export default function EmergencyScreen() {
   const {
     contacts,
     priorityContact,
+    emergencyId,
     setEmergencyId,
     triggerEmergency,
     resolveEmergency,
@@ -210,6 +233,11 @@ export default function EmergencyScreen() {
   const stopping = useRef(false);
   const locationSub = useRef<{ remove: () => void } | null>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Independent of EmergencyContext's emergencyId (which gets nulled out by
+  // resolveEmergency() before stopEmergencyAssets finishes) — this is what
+  // stopEmergencyAssets uses to know which event to attach uploaded assets to.
+  const activeEmergencyIdRef = useRef<string | null>(null);
+  const videoRecordingPromiseRef = useRef<Promise<{ uri: string } | undefined> | null>(null);
   // Ref mirrors location state so callbacks closed over in useCallback always
   // see the latest value without needing location in their dependency arrays.
   const currentLocationRef = useRef<{ latitude: number; longitude: number } | null>(null);
@@ -221,6 +249,8 @@ export default function EmergencyScreen() {
     [contacts],
   );
   const callTargetContact = priorityContact ?? orderedContacts[0] ?? null;
+
+  useAppStateEmergencyGuard({ emergencyId, phase, elapsed });
 
   const stopEmergencyAssets = useCallback(async () => {
     sessionRef.current += 1;
@@ -240,6 +270,9 @@ export default function EmergencyScreen() {
     if (stopping.current) return;
     stopping.current = true;
 
+    let videoUri: string | null = null;
+    let audioUri: string | null = null;
+
     try {
       if (recordingTimerRef.current) {
         clearInterval(recordingTimerRef.current);
@@ -250,13 +283,31 @@ export default function EmergencyScreen() {
       locationSub.current = null;
 
       try { cameraRef.current?.stopRecording(); } catch {}
+      try {
+        const result = await Promise.race([
+          videoRecordingPromiseRef.current ?? Promise.resolve(undefined),
+          wait(2000).then(() => undefined),
+        ]);
+        videoUri = result?.uri ?? null;
+      } catch {}
+      videoRecordingPromiseRef.current = null;
       try { await Promise.race([cameraRef.current?.pausePreview?.() ?? Promise.resolve(), wait(500)]); } catch {}
       try { await Promise.race([audioRecorder.stop().catch(() => {}), wait(750)]); } catch {}
+      audioUri = audioRecorder.uri ?? null;
 
       cameraRef.current = null;
     } finally {
       stopping.current = false;
       scheduleBrowserMediaRelease();
+    }
+
+    clearInProgressEmergency().catch(() => {});
+
+    const emergencyIdForUpload = activeEmergencyIdRef.current;
+    activeEmergencyIdRef.current = null;
+    if (emergencyIdForUpload) {
+      if (audioUri) uploadEmergencyAsset(emergencyIdForUpload, audioUri, 'audio');
+      if (videoUri) uploadEmergencyAsset(emergencyIdForUpload, videoUri, 'video');
     }
   }, [audioRecorder, resolveEmergency]);
 
@@ -365,7 +416,7 @@ export default function EmergencyScreen() {
         contacts: contactsToCall,
         // Use ref so the message always contains the latest GPS fix regardless
         // of whether React has committed the location state update yet.
-        message: `PanicRoom emergency activated. Location: ${mapUrl(currentLocationRef.current)}. Please check on this person immediately.`,
+        message: `Bes emergency activated. Location: ${mapUrl(currentLocationRef.current)}. Please check on this person immediately.`,
       });
 
       if (response.called) {
@@ -572,6 +623,7 @@ export default function EmergencyScreen() {
           longitude: currentLocation?.longitude,
         });
         activeEmergencyId = emergency.id;
+        activeEmergencyIdRef.current = emergency.id;
         if (!isCurrentSession()) return;
         setEmergencyId(emergency.id);
       } catch {
@@ -589,7 +641,9 @@ export default function EmergencyScreen() {
 
       if (camOk) {
         setStatusMessage('Starting video recording.');
-        cameraRef.current?.recordAsync({ maxDuration: 300 }).catch(() => {});
+        const recordingPromise = cameraRef.current?.recordAsync({ maxDuration: 300 });
+        videoRecordingPromiseRef.current = recordingPromise ?? null;
+        recordingPromise?.catch(() => {});
       }
 
       recordingTimerRef.current = setInterval(() => setElapsed((v) => v + 1), 1000);
@@ -600,7 +654,7 @@ export default function EmergencyScreen() {
         const response = await notifyEmergencyContacts({
           emergencyId: activeEmergencyId,
           contacts: orderedContacts,
-          message: `PanicRoom emergency activated. Location: ${mapUrl(currentLocation)}`,
+          message: `Bes emergency activated. Location: ${mapUrl(currentLocation)}`,
         });
         if (!isCurrentSession()) return;
         setNotificationStatus(
