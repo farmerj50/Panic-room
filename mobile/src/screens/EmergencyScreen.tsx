@@ -14,6 +14,7 @@ import { RecordingPresets, useAudioRecorder } from 'expo-audio';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import LiveLocationMap from '../components/LiveLocationMap';
 import { useEmergencyContext } from '../context/EmergencyContext';
 import { COUNTDOWN_SECONDS, EMERGENCY_NUMBER, ENABLE_EMERGENCY_DIALER } from '../config/emergencyConfig';
 import {
@@ -780,6 +781,10 @@ export default function EmergencyScreen() {
               </Text>
             )}
           </View>
+
+          {location && (
+            <LiveLocationMap latitude={location.latitude} longitude={location.longitude} />
+          )}
 
           <View style={styles.controls}>
             <TouchableOpacity activeOpacity={0.82} style={styles.actionBtn} onPress={callEmergencyNumber} testID="emergency-call911-btn" accessibilityLabel="emergency-call911-btn">
