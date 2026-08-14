@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   Image,
   ImageBackground,
@@ -123,6 +123,30 @@ export default function HomeScreen() {
     navigation.navigate(route);
   };
 
+  // Discreet emergency access: long-pressing the logo goes straight to
+  // Emergency (handled by TouchableOpacity's onLongPress below). A quick
+  // triple-tap does the same — taps are counted and the decision is
+  // deferred until the tap window closes, so a single tap still resolves to
+  // its normal "go Home" action instead of double/triple-navigating.
+  const logoTapCount = useRef(0);
+  const logoTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (logoTapTimer.current) clearTimeout(logoTapTimer.current);
+    };
+  }, []);
+
+  const handleLogoPress = () => {
+    logoTapCount.current += 1;
+    if (logoTapTimer.current) clearTimeout(logoTapTimer.current);
+    logoTapTimer.current = setTimeout(() => {
+      const taps = logoTapCount.current;
+      logoTapCount.current = 0;
+      goTo(taps >= 3 ? 'Emergency' : 'Home');
+    }, 400);
+  };
+
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor="#050715" />
@@ -161,8 +185,11 @@ export default function HomeScreen() {
             <View style={[styles.header, !isWide && styles.headerCompact]}>
               <TouchableOpacity
                 activeOpacity={0.85}
-                onPress={() => goTo('Home')}
+                onPress={handleLogoPress}
+                onLongPress={() => goTo('Emergency')}
                 style={styles.brand}
+                testID="home-logo-btn"
+                accessibilityLabel="home-logo-btn"
               >
                 <View style={styles.logoMark}>
                   <View style={styles.logoHeart} />
