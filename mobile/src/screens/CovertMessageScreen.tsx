@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,7 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
-import * as ImagePicker from 'expo-image-picker';
+import { Asset } from 'expo-asset';
 import { Buffer } from 'buffer';
 import { decodeUTF8, encodeUTF8 } from 'tweetnacl-util';
 
@@ -31,6 +32,20 @@ import {
 } from '../services/covertMessageService';
 import { getCurrentLocation } from '../services/locationService';
 
+// Cover images are picked from a small built-in set rather than the device's
+// photo library — no file-system access, and no risk of accidentally
+// choosing a photo that reveals more than intended.
+const COVER_CARDS = [
+  { id: 'heart', label: 'Heart', source: require('../../assets/covert-cards/heart.png') },
+  { id: 'star', label: 'Star', source: require('../../assets/covert-cards/star.png') },
+  { id: 'moon', label: 'Moon', source: require('../../assets/covert-cards/moon.png') },
+  { id: 'sun', label: 'Sun', source: require('../../assets/covert-cards/sun.png') },
+  { id: 'wave', label: 'Wave', source: require('../../assets/covert-cards/wave.png') },
+  { id: 'flower', label: 'Flower', source: require('../../assets/covert-cards/flower.png') },
+  { id: 'sparkle', label: 'Sparkle', source: require('../../assets/covert-cards/sparkle.png') },
+  { id: 'leaf', label: 'Leaf', source: require('../../assets/covert-cards/leaf.png') },
+] as const;
+
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleString();
 }
@@ -43,6 +58,7 @@ export default function CovertMessageScreen() {
 
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [pickedImageUri, setPickedImageUri] = useState<string | null>(null);
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [messageText, setMessageText] = useState('');
   const [includeLocation, setIncludeLocation] = useState(false);
   const [sending, setSending] = useState(false);
@@ -67,16 +83,14 @@ export default function CovertMessageScreen() {
     if (mode === 'inbox') loadInbox();
   }, [mode, loadInbox]);
 
-  const pickImage = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Permission needed', 'Photo library access is required to pick an image.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'] });
-    if (!result.canceled && result.assets[0]) {
-      setPickedImageUri(result.assets[0].uri);
+  const selectCard = async (card: (typeof COVER_CARDS)[number]) => {
+    try {
+      const asset = Asset.fromModule(card.source);
+      await asset.downloadAsync();
+      setPickedImageUri(asset.localUri ?? asset.uri);
+      setSelectedCardId(card.id);
+    } catch {
+      Alert.alert('Could not load image', 'Try a different one.');
     }
   };
 
@@ -128,6 +142,7 @@ export default function CovertMessageScreen() {
 
       Alert.alert('Sent', 'Your covert message was sent.');
       setPickedImageUri(null);
+      setSelectedCardId(null);
       setMessageText('');
       setSelectedContactId(null);
     } catch (error) {
@@ -250,16 +265,22 @@ export default function CovertMessageScreen() {
               colors={['rgba(13, 18, 49, 0.97)', 'rgba(10, 12, 38, 0.97)']}
               style={styles.card}
             >
-              <TouchableOpacity
-                activeOpacity={0.84}
-                style={styles.imagePickerBtn}
-                onPress={pickImage}
-                testID="covert-pick-image-btn"
-              >
-                <Text style={styles.imagePickerText}>
-                  {pickedImageUri ? 'Image selected — tap to change' : 'Choose an image'}
-                </Text>
-              </TouchableOpacity>
+              <Text style={styles.hint}>
+                {selectedCardId ? 'Selected — tap another to change' : 'Pick a cover image'}
+              </Text>
+              <View style={styles.cardGrid} testID="covert-pick-image-btn">
+                {COVER_CARDS.map((card) => (
+                  <TouchableOpacity
+                    key={card.id}
+                    activeOpacity={0.84}
+                    style={[styles.cardThumbWrap, selectedCardId === card.id && styles.cardThumbWrapActive]}
+                    onPress={() => selectCard(card)}
+                    testID={`covert-card-${card.id}`}
+                  >
+                    <Image source={card.source} style={styles.cardThumb} />
+                  </TouchableOpacity>
+                ))}
+              </View>
             </LinearGradient>
 
             <Text style={styles.sectionLabel}>Message</Text>
@@ -408,15 +429,22 @@ const styles = StyleSheet.create({
   contactChipActive: { backgroundColor: '#7C3AED', borderColor: '#7c3aed' },
   contactChipText: { color: '#d9bcff', fontSize: 13, fontWeight: '700' },
   contactChipTextActive: { color: '#fff' },
-  imagePickerBtn: {
-    borderWidth: 1,
-    borderColor: 'rgba(149,110,255,0.32)',
-    borderStyle: 'dashed',
-    borderRadius: 14,
-    paddingVertical: 22,
-    alignItems: 'center',
+  cardGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginTop: 12,
   },
-  imagePickerText: { color: '#d9bcff', fontSize: 14, fontWeight: '700' },
+  cardThumbWrap: {
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    overflow: 'hidden',
+    height: 72,
+    width: 72,
+  },
+  cardThumbWrapActive: { borderColor: '#7c3aed' },
+  cardThumb: { height: '100%', width: '100%' },
   messageInput: {
     backgroundColor: 'rgba(5,7,21,0.78)',
     borderColor: 'rgba(149,110,255,0.22)',
