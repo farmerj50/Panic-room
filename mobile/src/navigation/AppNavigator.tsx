@@ -6,6 +6,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from '../context/AuthContext';
+import { PinLockProvider, usePinLock } from '../context/PinLockContext';
 import { EmergencyProvider } from '../context/EmergencyContext';
 import { RootStackParamList, TabParamList, UnauthStackParamList } from './types';
 import { ACTION_ACTIVATE_SOS, restoreLockScreenButton, setupNotificationHandler } from '../services/lockScreenService';
@@ -24,6 +25,10 @@ import MessagesScreen from '../screens/MessagesScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import EmergencySettingsScreen from '../screens/EmergencySettingsScreen';
 import CovertMessageScreen from '../screens/CovertMessageScreen';
+import PinLockScreen from '../screens/PinLockScreen';
+import PinSetupScreen from '../screens/PinSetupScreen';
+import DecoyScreen from '../screens/DecoyScreen';
+import DecoySettingsScreen from '../screens/DecoySettingsScreen';
 
 // expo-notifications loads at runtime so the app still boots before `npm install`.
 // Once installed, the module resolves normally; until then every call is a no-op.
@@ -71,6 +76,8 @@ const linking = {
       Safety: 'safety',
       EmergencySettings: 'emergency-settings',
       CovertMessages: 'covert-messages',
+      PinSetup: 'pin-setup',
+      DecoySettings: 'decoy-settings',
     },
   },
 };
@@ -222,11 +229,26 @@ function AuthGate() {
   if (status === 'loading') return <LoadingScreen />;
   if (status === 'unauthenticated') return <UnauthenticatedNavigator />;
 
+  return (
+    <PinLockProvider>
+      <PinLockGate />
+    </PinLockProvider>
+  );
+}
+
+function PinLockGate() {
+  const { status, decoyActive } = usePinLock();
+
+  if (decoyActive) return <DecoyScreen />;
+  if (status === 'checking') return <LoadingScreen />;
+  if (status === 'locked') return <PinLockScreen />;
+
   return <AuthenticatedNavigator />;
 }
 
 function AuthenticatedNavigator() {
   const { consumePostAuthTab, postAuthTab } = useAuth();
+  const { consumePendingEmergencyBypass } = usePinLock();
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
   const [navReady, setNavReady] = useState(false);
   const pendingRoute = useRef<keyof RootStackParamList | null>(null);
@@ -273,13 +295,23 @@ function AuthenticatedNavigator() {
 
   const onNavReady = useCallback(() => {
     setNavReady(true);
+
+    // navigationRef.isReady() is true here (onReady just fired), unlike the
+    // `navReady` *state* — that hasn't re-rendered yet, so goEmergency()'s
+    // stale closure would wrongly queue this instead of navigating. Navigate
+    // directly.
+    if (consumePendingEmergencyBypass() && navigationRef.isReady()) {
+      navigationRef.navigate('Emergency');
+      return;
+    }
+
     if (routePostAuthTab()) return;
 
     if (pendingRoute.current && navigationRef.isReady()) {
       navigationRef.navigate(pendingRoute.current);
       pendingRoute.current = null;
     }
-  }, [navigationRef, routePostAuthTab]);
+  }, [consumePendingEmergencyBypass, navigationRef, routePostAuthTab]);
 
   useEffect(() => {
     if (!navReady) return;
@@ -307,6 +339,8 @@ function AuthenticatedNavigator() {
           <Stack.Screen name="CovertMessages" component={CovertMessageScreen} />
           <Stack.Screen name="Safety" component={SafetyPlanScreen} />
           <Stack.Screen name="EmergencySettings" component={EmergencySettingsScreen} />
+          <Stack.Screen name="PinSetup" component={PinSetupScreen} />
+          <Stack.Screen name="DecoySettings" component={DecoySettingsScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </EmergencyProvider>

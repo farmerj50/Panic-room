@@ -24,9 +24,17 @@ function randomUUID() {
   return nodeCrypto.randomUUID();
 }
 
+const CryptoDigestAlgorithm = { SHA256: 'SHA-256' };
+
+async function digestStringAsync(_algorithm, data) {
+  return nodeCrypto.createHash('sha256').update(data, 'utf8').digest('hex');
+}
+
 module.exports = {
   getRandomValues,
   getRandomBytes,
   getRandomBytesAsync,
   randomUUID,
+  digestStringAsync,
+  CryptoDigestAlgorithm,
 };

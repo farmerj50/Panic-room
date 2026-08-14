@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import * as Location from 'expo-location';
@@ -123,68 +124,77 @@ export default function SetupScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>←</Text>
+        <TouchableOpacity activeOpacity={0.82} onPress={() => navigation.goBack()} style={styles.iconButton}>
+          <Text style={styles.iconButtonText}>{'<'}</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Setup</Text>
-        <View style={{ width: 40 }} />
+        <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <Text style={styles.sectionLabel}>Required Permissions</Text>
+        <LinearGradient colors={['rgba(13, 18, 49, 0.97)', 'rgba(10, 12, 38, 0.97)']} style={styles.card}>
+          <Text style={styles.sectionSub}>These are needed for Bes to protect you during an emergency.</Text>
 
-        <Text style={styles.sectionTitle}>Required Permissions</Text>
-        <Text style={styles.sectionSub}>
-          These are needed for Bes to protect you during an emergency.
-        </Text>
+          <TouchableOpacity activeOpacity={0.84} style={styles.grantAllBtn} onPress={requestCorePermissions}>
+            <Text style={styles.grantAllText}>Grant Required Access</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity activeOpacity={0.82} style={styles.grantAllBtn} onPress={requestCorePermissions}>
-          <Text style={styles.grantAllText}>Grant Required Access</Text>
-        </TouchableOpacity>
+          <PermRow
+            icon="C" color="#4aa8ff" title="Camera"
+            description="Records video evidence automatically when emergency is activated"
+            status={camStatus} onRequest={handleRequestCamera}
+          />
+          <PermRow
+            icon="M" color="#b777ff" title="Microphone"
+            description="Records audio automatically when emergency is activated"
+            status={micStatus} onRequest={handleRequestMic}
+          />
+          <PermRow
+            icon="L" color="#ff6b9a" title="Location"
+            description="Sends your GPS coordinates to emergency contacts and 911"
+            status={locStatus} onRequest={handleRequestLoc}
+            last
+          />
+        </LinearGradient>
 
-        <PermRow
-          icon="C" color="#4aa8ff" title="Camera"
-          description="Records video evidence automatically when emergency is activated"
-          status={camStatus} onRequest={handleRequestCamera}
-        />
-        <PermRow
-          icon="M" color="#b777ff" title="Microphone"
-          description="Records audio automatically when emergency is activated"
-          status={micStatus} onRequest={handleRequestMic}
-        />
-        <PermRow
-          icon="L" color="#ff6b9a" title="Location"
-          description="Sends your GPS coordinates to emergency contacts and 911"
-          status={locStatus} onRequest={handleRequestLoc}
-        />
+        <Text style={styles.sectionLabel}>Emergency Contacts</Text>
+        <LinearGradient colors={['rgba(13, 18, 49, 0.97)', 'rgba(10, 12, 38, 0.97)']} style={styles.card}>
+          <Text style={styles.sectionSub}>
+            Add trusted contacts who will receive your GPS location during an emergency.
+          </Text>
+          <NavRow label="Manage Emergency Contacts" onPress={() => (navigation as any).navigate('Contacts')} />
+        </LinearGradient>
 
-        <View style={styles.divider} />
+        <Text style={styles.sectionLabel}>App Lock</Text>
+        <LinearGradient colors={['rgba(13, 18, 49, 0.97)', 'rgba(10, 12, 38, 0.97)']} style={styles.card}>
+          <Text style={styles.sectionSub}>
+            Set a PIN so Bes asks for it when the app opens. Emergency access (the shield icon, logo
+            gestures, and "I Need Help Now") always works, even when Bes is locked.
+          </Text>
+          <NavRow label="App Lock Settings" onPress={() => (navigation as any).navigate('PinSetup')} />
+        </LinearGradient>
 
-        <Text style={styles.sectionTitle}>Emergency Contacts</Text>
-        <Text style={styles.sectionSub}>
-          Add trusted contacts who will receive your GPS location during an emergency.
-        </Text>
+        <Text style={styles.sectionLabel}>Decoy Mode</Text>
+        <LinearGradient colors={['rgba(13, 18, 49, 0.97)', 'rgba(10, 12, 38, 0.97)']} style={styles.card}>
+          <Text style={styles.sectionSub}>
+            Show a calculator instead of Bes when triggered — Bes keeps running underneath and comes
+            right back.
+          </Text>
+          <NavRow label="Decoy Mode Settings" onPress={() => (navigation as any).navigate('DecoySettings')} />
+        </LinearGradient>
+
+        <Text style={styles.sectionLabel}>Lock Screen & Background</Text>
+        <LinearGradient colors={['rgba(13, 18, 49, 0.97)', 'rgba(10, 12, 38, 0.97)']} style={styles.card}>
+          <Text style={styles.sectionSub}>
+            Configure the lock screen SOS button and background GPS — requires notification and
+            "always" location permissions.
+          </Text>
+          <NavRow label="Emergency Settings" onPress={() => (navigation as any).navigate('EmergencySettings')} />
+        </LinearGradient>
+
         <TouchableOpacity
-          style={styles.navBtn}
-          onPress={() => (navigation as any).navigate('Contacts')}
-        >
-          <Text style={styles.navBtnText}>Manage Emergency Contacts →</Text>
-        </TouchableOpacity>
-
-        <View style={styles.divider} />
-
-        <Text style={styles.sectionTitle}>Lock Screen & Background</Text>
-        <Text style={styles.sectionSub}>
-          Configure the lock screen SOS button and background GPS — requires
-          notification and "always" location permissions.
-        </Text>
-        <TouchableOpacity
-          style={styles.navBtn}
-          onPress={() => (navigation as any).navigate('EmergencySettings')}
-        >
-          <Text style={styles.navBtnText}>Emergency Settings →</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
+          activeOpacity={0.86}
           style={[
             styles.finishBtn,
             isSetupDone && styles.finishBtnDone,
@@ -205,8 +215,17 @@ export default function SetupScreen() {
   );
 }
 
+function NavRow({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity activeOpacity={0.84} style={styles.navRow} onPress={onPress}>
+      <Text style={styles.navRowText}>{label}</Text>
+      <Text style={styles.navRowArrow}>{'>'}</Text>
+    </TouchableOpacity>
+  );
+}
+
 function PermRow({
-  icon, color, title, description, status, onRequest,
+  icon, color, title, description, status, onRequest, last,
 }: {
   icon: string;
   color: string;
@@ -214,10 +233,11 @@ function PermRow({
   description: string;
   status: PermStatus;
   onRequest: () => void;
+  last?: boolean;
 }) {
   const granted = status === 'granted';
   return (
-    <View style={styles.permRow}>
+    <View style={[styles.permRow, !last && styles.permRowBorder]}>
       <View style={[styles.permIcon, { backgroundColor: `${color}22` }]}>
         <Text style={[styles.permIconText, { color }]}>{icon}</Text>
       </View>
@@ -244,35 +264,58 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    marginBottom: 6,
   },
-  backBtn: { alignItems: 'center', height: 40, justifyContent: 'center', width: 40 },
-  backText: { color: '#fff', fontSize: 24 },
-  title: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  scroll: { padding: 20, paddingBottom: 48 },
-  sectionTitle: { color: '#fff', fontSize: 16, fontWeight: '800', marginBottom: 4 },
-  sectionSub: { color: '#8b84aa', fontSize: 13, lineHeight: 20, marginBottom: 14 },
+  headerSpacer: { height: 38, width: 38 },
+  iconButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderColor: 'rgba(199,140,255,0.24)',
+    borderRadius: 19,
+    borderWidth: 1,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  iconButtonText: { color: '#fff', fontSize: 18, fontWeight: '900' },
+  title: { color: '#fff', fontSize: 20, fontWeight: '900' },
+  scroll: { padding: 18, paddingBottom: 48, maxWidth: 620, width: '100%', alignSelf: 'center' },
+  sectionLabel: {
+    color: '#b8afca',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+    marginBottom: 12,
+    marginLeft: 4,
+    marginTop: 4,
+    textTransform: 'uppercase',
+  },
+  card: {
+    borderColor: 'rgba(149, 110, 255, 0.24)',
+    borderRadius: 18,
+    borderWidth: 1,
+    marginBottom: 22,
+    padding: 18,
+  },
+  sectionSub: { color: '#a9a1bd', fontSize: 13, lineHeight: 19, marginBottom: 16 },
   grantAllBtn: {
     alignItems: 'center',
-    backgroundColor: '#7C3AED',
-    borderRadius: 14,
-    marginBottom: 14,
-    padding: 14,
+    backgroundColor: '#7c3aed',
+    borderRadius: 12,
+    marginBottom: 16,
+    minHeight: 50,
+    justifyContent: 'center',
   },
   grantAllText: { color: '#fff', fontSize: 14, fontWeight: '900' },
-  divider: { backgroundColor: 'rgba(90,78,148,0.28)', height: 1, marginVertical: 24 },
   permRow: {
     alignItems: 'center',
-    backgroundColor: 'rgba(10,17,49,0.88)',
-    borderColor: 'rgba(90,78,148,0.32)',
-    borderRadius: 14,
-    borderWidth: 1,
     flexDirection: 'row',
     gap: 14,
-    marginBottom: 10,
-    padding: 14,
+    paddingVertical: 12,
   },
+  permRowBorder: { borderBottomColor: 'rgba(255,255,255,0.08)', borderBottomWidth: 1 },
   permIcon: {
     alignItems: 'center',
     borderRadius: 18,
@@ -283,41 +326,41 @@ const styles = StyleSheet.create({
   permIconText: { fontSize: 16, fontWeight: '900' },
   permBody: { flex: 1 },
   permTitle: { color: '#fff', fontSize: 14, fontWeight: '800', marginBottom: 3 },
-  permDesc: { color: '#9b91bb', fontSize: 12, lineHeight: 17 },
+  permDesc: { color: '#a9a1bd', fontSize: 12, lineHeight: 17 },
   permBtn: {
-    borderColor: '#7C3AED',
+    borderColor: '#7c3aed',
     borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
   permBtnGranted: { backgroundColor: 'rgba(53,225,207,0.14)', borderColor: '#35e1cf' },
-  permBtnText: { color: '#a29bfe', fontSize: 13, fontWeight: '700' },
+  permBtnText: { color: '#d9bcff', fontSize: 13, fontWeight: '700' },
   permBtnTextGranted: { color: '#35e1cf' },
-  navBtn: {
+  navRow: {
     alignItems: 'center',
-    backgroundColor: 'rgba(10,17,49,0.88)',
-    borderColor: 'rgba(90,78,148,0.32)',
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: 50,
   },
-  navBtnText: { color: '#a29bfe', fontSize: 14, fontWeight: '700' },
+  navRowText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  navRowArrow: { color: '#b8aacd', fontSize: 20, fontWeight: '300' },
   finishBtn: {
     alignItems: 'center',
-    backgroundColor: '#7C3AED',
+    backgroundColor: '#7c3aed',
     borderRadius: 14,
-    marginTop: 24,
-    padding: 16,
+    justifyContent: 'center',
+    marginTop: 4,
+    minHeight: 54,
   },
-  finishBtnDone: { backgroundColor: '#10B981' },
+  finishBtnDone: { backgroundColor: '#12c48b' },
   finishBtnDisabled: { backgroundColor: 'rgba(124,58,237,0.4)' },
-  finishBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  finishBtnText: { color: '#fff', fontSize: 15, fontWeight: '900' },
   footerNote: {
-    color: '#6b6388',
+    color: '#8b839f',
     fontSize: 11,
     lineHeight: 17,
-    marginTop: 20,
+    marginTop: 18,
     textAlign: 'center',
   },
 });

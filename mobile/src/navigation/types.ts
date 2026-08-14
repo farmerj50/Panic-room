@@ -15,6 +15,8 @@ export type RootStackParamList = {
   Safety: undefined;
   EmergencySettings: undefined;
   CovertMessages: undefined;
+  PinSetup: undefined;
+  DecoySettings: undefined;
 };
 
 export type TabParamList = {

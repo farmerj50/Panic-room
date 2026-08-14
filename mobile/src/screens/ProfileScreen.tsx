@@ -18,9 +18,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 
 import { useAuth } from '../context/AuthContext';
+import { usePinLock } from '../context/PinLockContext';
 import { useEmergencyContext } from '../context/EmergencyContext';
 import { getPublicKeyBase64 } from '../services/keyService';
 import { setMyPhoneNumber, setMyPublicKey } from '../services/covertMessageService';
+import { clearPin as clearPinStorage } from '../services/pinStorage';
+import { DECOY_ENABLED_KEY } from './DecoySettingsScreen';
 import { API_URL } from '../config/emergencyConfig';
 
 import heroBg from '../../assets/images/hero-bg.png';
@@ -34,14 +37,14 @@ const SAFETY_CARDS = [
     label: 'PIN & Passcode',
     desc: 'Change your PIN or unlock settings.',
     color: '#b777ff',
-    route: 'Setup',
+    route: 'PinSetup',
   },
   {
     icon: 'M',
     label: 'Privacy Mode',
     desc: 'Hide the app and protect your data.',
     color: '#ff5f82',
-    route: 'Setup',
+    route: 'DecoySettings',
   },
   {
     icon: 'E',
@@ -117,6 +120,7 @@ const SUPPORT_CARDS = [
 export default function ProfileScreen() {
   const navigation = useNavigation<any>();
   const { deleteAccount, logout, user } = useAuth();
+  const { activateDecoy } = usePinLock();
   const { contacts, isSetupDone, loadContacts } = useEmergencyContext();
   const { width } = useWindowDimensions();
 
@@ -237,8 +241,10 @@ export default function ProfileScreen() {
               'panicroom_emergency_settings',
               'panicroom_last_location',
               'panicroom_lock_screen_enabled',
+              DECOY_ENABLED_KEY,
             ].map((key) => AsyncStorage.removeItem(key)),
           );
+          await clearPinStorage();
           await loadContacts();
           Alert.alert('Cleared', 'Local Bes data has been removed from this device.');
         },
@@ -254,7 +260,14 @@ export default function ProfileScreen() {
       >
         <View style={styles.header}>
           <View style={styles.headerSpacer} />
-          <Text style={styles.title}>Profile</Text>
+          <TouchableOpacity
+            activeOpacity={1}
+            onLongPress={activateDecoy}
+            delayLongPress={800}
+            testID="profile-title-decoy-trigger"
+          >
+            <Text style={styles.title}>Profile</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.iconButton}
             onPress={() => navigation.navigate('Setup')}
