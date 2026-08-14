@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { Buffer } from 'buffer';
@@ -183,149 +184,218 @@ export default function CovertMessageScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>{'<'}</Text>
+        <TouchableOpacity
+          activeOpacity={0.82}
+          onPress={() => navigation.goBack()}
+          style={styles.iconButton}
+        >
+          <Text style={styles.iconButtonText}>{'<'}</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Covert Messages</Text>
-        <View style={{ width: 40 }} />
+        <View style={styles.headerSpacer} />
       </View>
 
-      <View style={styles.modeSwitch}>
-        <TouchableOpacity
-          style={[styles.modeBtn, mode === 'send' && styles.modeBtnActive]}
-          onPress={() => setMode('send')}
-        >
-          <Text style={[styles.modeText, mode === 'send' && styles.modeTextActive]}>Send</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.modeBtn, mode === 'inbox' && styles.modeBtnActive]}
-          onPress={() => setMode('inbox')}
-        >
-          <Text style={[styles.modeText, mode === 'inbox' && styles.modeTextActive]}>Inbox</Text>
-        </TouchableOpacity>
-      </View>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <View style={styles.modeSwitch}>
+          <TouchableOpacity
+            activeOpacity={0.82}
+            style={[styles.modeBtn, mode === 'send' && styles.modeBtnActive]}
+            onPress={() => setMode('send')}
+          >
+            <Text style={[styles.modeText, mode === 'send' && styles.modeTextActive]}>Send</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.82}
+            style={[styles.modeBtn, mode === 'inbox' && styles.modeBtnActive]}
+            onPress={() => setMode('inbox')}
+          >
+            <Text style={[styles.modeText, mode === 'inbox' && styles.modeTextActive]}>Inbox</Text>
+          </TouchableOpacity>
+        </View>
 
-      {mode === 'send' ? (
-        <ScrollView contentContainerStyle={styles.scroll}>
-          <Text style={styles.sectionLabel}>Contact</Text>
-          <View style={styles.contactList}>
-            {contacts.length === 0 ? (
-              <Text style={styles.hint}>Add a trusted contact first.</Text>
+        {mode === 'send' ? (
+          <>
+            <Text style={styles.sectionLabel}>Contact</Text>
+            <LinearGradient
+              colors={['rgba(13, 18, 49, 0.97)', 'rgba(10, 12, 38, 0.97)']}
+              style={styles.card}
+            >
+              {contacts.length === 0 ? (
+                <Text style={styles.hint}>Add a trusted contact first.</Text>
+              ) : (
+                <View style={styles.contactList}>
+                  {contacts.map((contact) => (
+                    <TouchableOpacity
+                      key={contact.id}
+                      activeOpacity={0.84}
+                      style={[styles.contactChip, selectedContactId === contact.id && styles.contactChipActive]}
+                      onPress={() => setSelectedContactId(contact.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.contactChipText,
+                          selectedContactId === contact.id && styles.contactChipTextActive,
+                        ]}
+                      >
+                        {contact.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </LinearGradient>
+
+            <Text style={styles.sectionLabel}>Image</Text>
+            <LinearGradient
+              colors={['rgba(13, 18, 49, 0.97)', 'rgba(10, 12, 38, 0.97)']}
+              style={styles.card}
+            >
+              <TouchableOpacity
+                activeOpacity={0.84}
+                style={styles.imagePickerBtn}
+                onPress={pickImage}
+                testID="covert-pick-image-btn"
+              >
+                <Text style={styles.imagePickerText}>
+                  {pickedImageUri ? 'Image selected — tap to change' : 'Choose an image'}
+                </Text>
+              </TouchableOpacity>
+            </LinearGradient>
+
+            <Text style={styles.sectionLabel}>Message</Text>
+            <LinearGradient
+              colors={['rgba(13, 18, 49, 0.97)', 'rgba(10, 12, 38, 0.97)']}
+              style={styles.card}
+            >
+              <TextInput
+                style={styles.messageInput}
+                placeholder="What do you want to say?"
+                placeholderTextColor="#7f7899"
+                value={messageText}
+                onChangeText={setMessageText}
+                multiline
+                testID="covert-message-input"
+              />
+
+              <TouchableOpacity
+                activeOpacity={0.82}
+                style={styles.locationToggle}
+                onPress={() => setIncludeLocation((v) => !v)}
+              >
+                <View style={[styles.checkbox, includeLocation && styles.checkboxChecked]} />
+                <Text style={styles.hint}>Include my current location</Text>
+              </TouchableOpacity>
+            </LinearGradient>
+
+            <TouchableOpacity
+              activeOpacity={0.86}
+              style={[styles.sendBtn, sending && styles.disabledBtn]}
+              onPress={handleSend}
+              disabled={sending}
+              testID="covert-send-btn"
+            >
+              {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendBtnText}>Send Covertly</Text>}
+            </TouchableOpacity>
+
+            <Text style={styles.disclaimer}>
+              This only works when the recipient opens it inside Bes. Sending it through SMS, WhatsApp, or
+              other apps may destroy the hidden message.
+            </Text>
+          </>
+        ) : (
+          <LinearGradient
+            colors={['rgba(13, 18, 49, 0.97)', 'rgba(10, 12, 38, 0.97)']}
+            style={styles.card}
+          >
+            {loadingInbox ? (
+              <ActivityIndicator color="#b777ff" style={styles.inboxLoader} />
+            ) : inbox.length === 0 ? (
+              <Text style={styles.hint}>No covert messages yet.</Text>
             ) : (
-              contacts.map((contact) => (
+              inbox.map((message, idx) => (
                 <TouchableOpacity
-                  key={contact.id}
-                  style={[styles.contactChip, selectedContactId === contact.id && styles.contactChipActive]}
-                  onPress={() => setSelectedContactId(contact.id)}
+                  key={message.id}
+                  activeOpacity={0.84}
+                  style={[styles.inboxRow, idx < inbox.length - 1 && styles.inboxRowBorder]}
+                  onPress={() => handleOpenMessage(message)}
+                  disabled={decryptingId === message.id}
+                  testID="covert-inbox-row"
                 >
-                  <Text
-                    style={[styles.contactChipText, selectedContactId === contact.id && styles.contactChipTextActive]}
-                  >
-                    {contact.name}
-                  </Text>
+                  <View style={[styles.statusDot, message.status === 'SENT' && styles.statusDotUnread]} />
+                  <View style={styles.inboxCopy}>
+                    <Text style={styles.inboxDate}>{fmtDate(message.createdAt)}</Text>
+                    <Text style={styles.hint}>{message.status === 'SENT' ? 'Tap to decrypt' : 'Read'}</Text>
+                  </View>
+                  {decryptingId === message.id && <ActivityIndicator color="#b777ff" />}
                 </TouchableOpacity>
               ))
             )}
-          </View>
-
-          <Text style={styles.sectionLabel}>Image</Text>
-          <TouchableOpacity style={styles.imagePickerBtn} onPress={pickImage} testID="covert-pick-image-btn">
-            <Text style={styles.imagePickerText}>
-              {pickedImageUri ? 'Image selected — tap to change' : 'Choose an image'}
-            </Text>
-          </TouchableOpacity>
-
-          <Text style={styles.sectionLabel}>Message</Text>
-          <TextInput
-            style={styles.messageInput}
-            placeholder="What do you want to say?"
-            placeholderTextColor="#7f7899"
-            value={messageText}
-            onChangeText={setMessageText}
-            multiline
-            testID="covert-message-input"
-          />
-
-          <TouchableOpacity
-            style={styles.locationToggle}
-            onPress={() => setIncludeLocation((v) => !v)}
-          >
-            <View style={[styles.checkbox, includeLocation && styles.checkboxChecked]} />
-            <Text style={styles.hint}>Include my current location</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.sendBtn, sending && styles.disabledBtn]}
-            onPress={handleSend}
-            disabled={sending}
-            testID="covert-send-btn"
-          >
-            {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendBtnText}>Send Covertly</Text>}
-          </TouchableOpacity>
-
-          <Text style={styles.disclaimer}>
-            This only works when the recipient opens it inside Bes. Sending it through SMS, WhatsApp, or
-            other apps may destroy the hidden message.
-          </Text>
-        </ScrollView>
-      ) : (
-        <ScrollView contentContainerStyle={styles.scroll}>
-          {loadingInbox ? (
-            <ActivityIndicator color="#7C3AED" style={{ marginTop: 40 }} />
-          ) : inbox.length === 0 ? (
-            <Text style={styles.hint}>No covert messages yet.</Text>
-          ) : (
-            inbox.map((message) => (
-              <TouchableOpacity
-                key={message.id}
-                style={styles.inboxRow}
-                onPress={() => handleOpenMessage(message)}
-                disabled={decryptingId === message.id}
-                testID="covert-inbox-row"
-              >
-                <View style={[styles.statusDot, message.status === 'SENT' && styles.statusDotUnread]} />
-                <View style={styles.inboxCopy}>
-                  <Text style={styles.inboxDate}>{fmtDate(message.createdAt)}</Text>
-                  <Text style={styles.hint}>{message.status === 'SENT' ? 'Tap to decrypt' : 'Read'}</Text>
-                </View>
-                {decryptingId === message.id && <ActivityIndicator color="#7C3AED" />}
-              </TouchableOpacity>
-            ))
-          )}
-        </ScrollView>
-      )}
+          </LinearGradient>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#0D1117' },
+  safe: { flex: 1, backgroundColor: '#050715' },
   header: {
+    alignItems: 'center',
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    marginBottom: 6,
   },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  backText: { color: '#fff', fontSize: 24 },
-  title: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  modeSwitch: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 8 },
-  modeBtn: {
-    flex: 1,
+  headerSpacer: { height: 38, width: 38 },
+  iconButton: {
     alignItems: 'center',
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: 'rgba(124,58,237,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderColor: 'rgba(199,140,255,0.24)',
+    borderRadius: 19,
     borderWidth: 1,
-    borderColor: 'rgba(124,58,237,0.3)',
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
   },
-  modeBtnActive: { backgroundColor: '#7C3AED' },
-  modeText: { color: '#b777ff', fontWeight: '700' },
+  iconButtonText: { color: '#fff', fontSize: 18, fontWeight: '900' },
+  title: { color: '#fff', fontSize: 20, fontWeight: '900' },
+  scroll: { padding: 18, paddingBottom: 60, maxWidth: 620, width: '100%', alignSelf: 'center' },
+  modeSwitch: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 14,
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 20,
+    padding: 5,
+  },
+  modeBtn: {
+    alignItems: 'center',
+    borderRadius: 11,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 42,
+  },
+  modeBtnActive: { backgroundColor: '#7c3aed' },
+  modeText: { color: '#b9b0cd', fontSize: 13, fontWeight: '900' },
   modeTextActive: { color: '#fff' },
-  scroll: { padding: 16, paddingBottom: 40 },
-  sectionLabel: { color: '#fff', fontSize: 14, fontWeight: '800', marginTop: 16, marginBottom: 8 },
-  hint: { color: '#888', fontSize: 13 },
+  sectionLabel: {
+    color: '#b8afca',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+    marginBottom: 12,
+    marginLeft: 4,
+    textTransform: 'uppercase',
+  },
+  card: {
+    borderColor: 'rgba(149, 110, 255, 0.24)',
+    borderRadius: 18,
+    borderWidth: 1,
+    marginBottom: 20,
+    padding: 18,
+  },
+  hint: { color: '#a9a1bd', fontSize: 13 },
   contactList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   contactChip: {
     paddingHorizontal: 14,
@@ -335,18 +405,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(124,58,237,0.3)',
   },
-  contactChipActive: { backgroundColor: '#7C3AED' },
+  contactChipActive: { backgroundColor: '#7C3AED', borderColor: '#7c3aed' },
   contactChipText: { color: '#d9bcff', fontSize: 13, fontWeight: '700' },
   contactChipTextActive: { color: '#fff' },
   imagePickerBtn: {
     borderWidth: 1,
-    borderColor: 'rgba(149,110,255,0.3)',
+    borderColor: 'rgba(149,110,255,0.32)',
     borderStyle: 'dashed',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 14,
+    paddingVertical: 22,
     alignItems: 'center',
   },
-  imagePickerText: { color: '#d9bcff', fontSize: 14 },
+  imagePickerText: { color: '#d9bcff', fontSize: 14, fontWeight: '700' },
   messageInput: {
     backgroundColor: 'rgba(5,7,21,0.78)',
     borderColor: 'rgba(149,110,255,0.22)',
@@ -354,11 +424,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     color: '#fff',
     fontSize: 15,
-    minHeight: 90,
-    padding: 12,
+    minHeight: 100,
+    padding: 14,
     textAlignVertical: 'top',
   },
-  locationToggle: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 },
+  locationToggle: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16 },
   checkbox: {
     width: 20,
     height: 20,
@@ -366,29 +436,28 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: 'rgba(149,110,255,0.5)',
   },
-  checkboxChecked: { backgroundColor: '#7C3AED' },
+  checkboxChecked: { backgroundColor: '#7C3AED', borderColor: '#7c3aed' },
   sendBtn: {
-    marginTop: 20,
-    backgroundColor: '#7C3AED',
-    borderRadius: 12,
-    minHeight: 50,
+    backgroundColor: '#ef445b',
+    borderRadius: 14,
+    minHeight: 54,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  disabledBtn: { opacity: 0.6 },
+  disabledBtn: { opacity: 0.62 },
   sendBtnText: { color: '#fff', fontSize: 15, fontWeight: '900' },
-  disclaimer: { color: '#666', fontSize: 12, lineHeight: 18, marginTop: 14, textAlign: 'center' },
+  disclaimer: { color: '#8b839f', fontSize: 12, lineHeight: 18, marginTop: 16, textAlign: 'center' },
+  inboxLoader: { marginVertical: 24 },
   inboxRow: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#1e2235',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
+    flexDirection: 'row',
+    gap: 14,
+    minHeight: 64,
+    paddingVertical: 12,
   },
+  inboxRowBorder: { borderBottomColor: 'rgba(255,255,255,0.08)', borderBottomWidth: 1 },
   statusDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#555' },
-  statusDotUnread: { backgroundColor: '#4ECDC4' },
+  statusDotUnread: { backgroundColor: '#4ee1d5' },
   inboxCopy: { flex: 1 },
-  inboxDate: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  inboxDate: { color: '#fff', fontSize: 14, fontWeight: '700', marginBottom: 2 },
 });
