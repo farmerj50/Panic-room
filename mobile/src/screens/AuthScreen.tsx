@@ -18,7 +18,8 @@ import { useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useAuth } from '../context/AuthContext';
 import { saveContactToBackend } from '../services/contactService';
@@ -27,6 +28,7 @@ import type { UnauthStackParamList } from '../navigation/types';
 import heroBg from '../../assets/images/hero-bg.png';
 
 type AuthMode = 'login' | 'register';
+type AuthRouteName = 'Auth' | 'Login' | 'Register';
 type RegisterStep = 'account' | 'contact' | 'permissions';
 type PermStatus = 'unknown' | 'granted' | 'denied';
 
@@ -47,11 +49,17 @@ function permissionLabel(status: PermStatus) {
   return 'Allow';
 }
 
+function getInitialAuthMode(route: RouteProp<UnauthStackParamList, AuthRouteName>): AuthMode {
+  if (route.params?.mode === 'register' || route.name === 'Register') return 'register';
+  return 'login';
+}
+
 export default function AuthScreen() {
   const { login, register } = useAuth();
   const { width } = useWindowDimensions();
-  const route = useRoute<RouteProp<UnauthStackParamList, 'Auth'>>();
-  const [mode, setMode] = useState<AuthMode>(route.params?.mode ?? 'login');
+  const navigation = useNavigation<NativeStackNavigationProp<UnauthStackParamList>>();
+  const route = useRoute<RouteProp<UnauthStackParamList, AuthRouteName>>();
+  const [mode, setMode] = useState<AuthMode>(() => getInitialAuthMode(route));
   const [registerStep, setRegisterStep] = useState<RegisterStep>('account');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -249,12 +257,6 @@ export default function AuthScreen() {
         : registerStep === 'contact'
           ? 'Continue to Access'
           : 'Continue to Contact';
-  const heroPrimaryText =
-    mode === 'register'
-      ? registerStep === 'permissions'
-        ? 'Create Account'
-        : 'Continue Setup'
-      : 'Create Account';
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -283,28 +285,6 @@ export default function AuthScreen() {
                 <Text style={styles.heroText}>
                   Create an account, add a trusted contact, and prepare emergency access in one setup flow.
                 </Text>
-                <View style={styles.heroActions}>
-                  <TouchableOpacity
-                    activeOpacity={0.86}
-                    onPress={() => {
-                      if (mode === 'register') {
-                        submit();
-                        return;
-                      }
-                      switchMode('register');
-                    }}
-                    style={styles.heroPrimaryButton}
-                  >
-                    <Text style={styles.heroPrimaryText}>{heroPrimaryText}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    activeOpacity={0.82}
-                    onPress={() => switchMode('login')}
-                    style={styles.heroSecondaryButton}
-                  >
-                    <Text style={styles.heroSecondaryText}>Sign In</Text>
-                  </TouchableOpacity>
-                </View>
               </View>
 
               <View style={styles.formCard}>
@@ -315,6 +295,7 @@ export default function AuthScreen() {
                     onPress={() => switchMode('login')}
                     testID="auth-mode-login-btn"
                     accessibilityLabel="auth-mode-login-btn"
+                    accessibilityRole="button"
                   >
                     <Text style={[styles.modeText, mode === 'login' && styles.modeTextActive]}>
                       Sign In
@@ -326,6 +307,7 @@ export default function AuthScreen() {
                     onPress={() => switchMode('register')}
                     testID="auth-mode-register-btn"
                     accessibilityLabel="auth-mode-register-btn"
+                    accessibilityRole="button"
                   >
                     <Text style={[styles.modeText, mode === 'register' && styles.modeTextActive]}>
                       Create Account
@@ -409,6 +391,18 @@ export default function AuthScreen() {
                           {password.length}/12 characters minimum
                         </Text>
                       )}
+                      {mode === 'login' && (
+                        <TouchableOpacity
+                          activeOpacity={0.7}
+                          onPress={() => navigation.navigate('ForgotPassword')}
+                          style={styles.forgotPasswordLink}
+                          testID="auth-forgot-password-link"
+                          accessibilityLabel="auth-forgot-password-link"
+                          accessibilityRole="button"
+                        >
+                          <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   </>
                 )}
@@ -441,7 +435,7 @@ export default function AuthScreen() {
                         value={trustedPhone}
                       />
                     </View>
-                    <TouchableOpacity activeOpacity={0.82} style={styles.secondaryButton} onPress={skipContact} testID="auth-skip-contact-btn" accessibilityLabel="auth-skip-contact-btn">
+                    <TouchableOpacity activeOpacity={0.82} style={styles.secondaryButton} onPress={skipContact} testID="auth-skip-contact-btn" accessibilityLabel="auth-skip-contact-btn" accessibilityRole="button">
                       <Text style={styles.secondaryText}>Skip contact for now</Text>
                     </TouchableOpacity>
                   </View>
@@ -477,7 +471,7 @@ export default function AuthScreen() {
                       status={locStatus}
                       onPress={requestLocation}
                     />
-                    <TouchableOpacity activeOpacity={0.82} style={styles.secondaryButton} onPress={requestCorePermissions} testID="auth-allow-permissions-btn" accessibilityLabel="auth-allow-permissions-btn">
+                    <TouchableOpacity activeOpacity={0.82} style={styles.secondaryButton} onPress={requestCorePermissions} testID="auth-allow-permissions-btn" accessibilityLabel="auth-allow-permissions-btn" accessibilityRole="button">
                       <Text style={styles.secondaryText}>
                         {permissionsApproved ? 'Required access allowed' : 'Allow required access'}
                       </Text>
@@ -492,6 +486,7 @@ export default function AuthScreen() {
                   style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
                   testID="auth-submit-btn"
                   accessibilityLabel="auth-submit-btn"
+                  accessibilityRole="button"
                 >
                   <Text style={styles.submitText}>
                     {submitting ? 'Please wait...' : primaryText}
@@ -534,6 +529,7 @@ export default function AuthScreen() {
                     activeOpacity={0.82}
                     onPress={() => setRegisterStep(registerStep === 'permissions' ? 'contact' : 'account')}
                     style={styles.backStepButton}
+                    accessibilityRole="button"
                   >
                     <Text style={styles.backStepText}>Back</Text>
                   </TouchableOpacity>
@@ -573,6 +569,7 @@ function PermissionRow({
         disabled={granted}
         onPress={onPress}
         style={[styles.permissionButton, granted && styles.permissionButtonGranted]}
+        accessibilityRole="button"
       >
         <Text style={[styles.permissionButtonText, granted && styles.permissionButtonTextGranted]}>
           {permissionLabel(status)}
@@ -625,32 +622,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   heroText: { color: '#e8e1f5', fontSize: 17, lineHeight: 26 },
-  heroActions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginTop: 22,
-  },
-  heroPrimaryButton: {
-    alignItems: 'center',
-    backgroundColor: '#ef445b',
-    borderRadius: 14,
-    justifyContent: 'center',
-    minHeight: 50,
-    paddingHorizontal: 20,
-  },
-  heroSecondaryButton: {
-    alignItems: 'center',
-    borderColor: 'rgba(217, 188, 255, 0.42)',
-    borderRadius: 14,
-    borderWidth: 1,
-    justifyContent: 'center',
-    minHeight: 50,
-    paddingHorizontal: 20,
-  },
-  heroPrimaryText: { color: '#fff', fontSize: 14, fontWeight: '900' },
-  heroSecondaryText: { color: '#d9bcff', fontSize: 14, fontWeight: '900' },
   formCard: {
     backgroundColor: 'rgba(10, 14, 40, 0.94)',
     borderColor: 'rgba(199,140,255,0.26)',
@@ -723,6 +694,8 @@ const styles = StyleSheet.create({
   field: { gap: 8 },
   label: { color: '#d8d1e8', fontSize: 13, fontWeight: '900' },
   helperText: { color: '#9e96b6', fontSize: 12, fontWeight: '800' },
+  forgotPasswordLink: { alignSelf: 'flex-end', marginTop: 6 },
+  forgotPasswordText: { color: '#d9bcff', fontSize: 12, fontWeight: '900' },
   input: {
     backgroundColor: 'rgba(5, 7, 21, 0.84)',
     borderColor: 'rgba(149,110,255,0.25)',

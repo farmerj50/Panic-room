@@ -70,7 +70,11 @@ export default function LiveLocationMap({ latitude, longitude, zoom = 17 }: Prop
           ) : (
             <Image
               key={tile.key}
-              source={{ uri: tile.url }}
+              // OpenStreetMap's tile usage policy requires a descriptive User-Agent
+              // identifying the app — requests without one get blocked with a 403.
+              // Only takes effect on native; web's <img> can't override User-Agent
+              // (browser-controlled), which OSM's policy treats as fine either way.
+              source={{ uri: tile.url, headers: { 'User-Agent': 'Bes-SafetyApp/1.0 (+https://bes-app.com)' } }}
               style={[styles.tile, { left: tile.left, top: tile.top }]}
               onError={() => setFailedTiles((current) => ({ ...current, [tile.key]: true }))}
             />

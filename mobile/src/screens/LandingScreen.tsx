@@ -94,8 +94,8 @@ export default function LandingScreen() {
 
   // Everything on this page is gated content for logged-out visitors —
   // any feature/nav tap routes into account creation rather than a real tab.
-  const goToSignUp = () => navigation.navigate('Auth', { mode: 'register' });
-  const goToSignIn = () => navigation.navigate('Auth', { mode: 'login' });
+  const goToSignUp = () => navigation.navigate('Register');
+  const goToSignIn = () => navigation.navigate('Login');
 
   return (
     <View style={styles.root}>
@@ -148,6 +148,7 @@ export default function LandingScreen() {
                   activeOpacity={0.84}
                   onPress={goToSignIn}
                   style={styles.signInPill}
+                  accessibilityRole="button"
                   testID="landing-sign-in-btn"
                   accessibilityLabel="landing-sign-in-btn"
                 >
@@ -157,6 +158,7 @@ export default function LandingScreen() {
                   activeOpacity={0.84}
                   onPress={goToSignUp}
                   style={styles.createPill}
+                  accessibilityRole="button"
                   testID="landing-create-account-btn"
                   accessibilityLabel="landing-create-account-btn"
                 >
@@ -173,13 +175,13 @@ export default function LandingScreen() {
                 <Text style={styles.heroSubtitle}>
                   Private support, emergency help, and trusted connections when you need them most.
                 </Text>
-                <TouchableOpacity activeOpacity={0.84} onPress={goToSignUp} style={styles.helpButton}>
+                <TouchableOpacity activeOpacity={0.84} onPress={goToSignUp} style={styles.helpButton} accessibilityRole="button">
                   <Text style={styles.helpText}>Get Started</Text>
                   <View style={styles.helpShield}>
                     <View style={styles.helpShieldInner} />
                   </View>
                 </TouchableOpacity>
-                <TouchableOpacity activeOpacity={0.78} onPress={goToSignIn} style={styles.learnButton}>
+                <TouchableOpacity activeOpacity={0.78} onPress={goToSignIn} style={styles.learnButton} accessibilityRole="button">
                   <Text style={styles.learnText}>Sign In</Text>
                   <Text style={styles.learnArrow}>-&gt;</Text>
                 </TouchableOpacity>
@@ -318,7 +320,11 @@ const styles = StyleSheet.create({
   scrollContent: { backgroundColor: '#050715' },
   hero: { overflow: 'hidden', width: '100%' },
   heroImage: { opacity: 0.94 },
-  safeHero: { flex: 1 },
+  // heroPeople (the illustration) sets an explicit zIndex, so this sibling
+  // needs one too, and higher — otherwise RN falls back to comparing an
+  // explicit zIndex against an implicit 0 on this View, and the illustration
+  // (zIndex 1) paints over the header/CTA content regardless of JSX order.
+  safeHero: { flex: 1, zIndex: 2 },
   header: {
     alignItems: 'center',
     flexDirection: 'row',
