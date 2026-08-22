@@ -13,6 +13,7 @@ import { ACTION_ACTIVATE_SOS, restoreLockScreenButton, setupNotificationHandler 
 
 import LandingScreen from '../screens/LandingScreen';
 import AuthScreen from '../screens/AuthScreen';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import HomeScreen from '../screens/HomeScreen';
 import EmergencyScreen from '../screens/EmergencyScreen';
 import SetupScreen from '../screens/SetupScreen';
@@ -78,6 +79,19 @@ const linking = {
       CovertMessages: 'covert-messages',
       PinSetup: 'pin-setup',
       DecoySettings: 'decoy-settings',
+    },
+  },
+};
+
+const unauthLinking = {
+  prefixes: [],
+  config: {
+    screens: {
+      Landing: '',
+      Auth: 'auth',
+      Login: 'login',
+      Register: 'register',
+      ForgotPassword: 'forgot-password',
     },
   },
 };
@@ -211,13 +225,16 @@ function ProfileRedirect() {
 
 function UnauthenticatedNavigator() {
   return (
-    <NavigationContainer>
+    <NavigationContainer linking={unauthLinking as never}>
       <UnauthStack.Navigator
         initialRouteName="Landing"
         screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
       >
         <UnauthStack.Screen name="Landing" component={LandingScreen} />
         <UnauthStack.Screen name="Auth" component={AuthScreen} />
+        <UnauthStack.Screen name="Login" component={AuthScreen} initialParams={{ mode: 'login' }} />
+        <UnauthStack.Screen name="Register" component={AuthScreen} initialParams={{ mode: 'register' }} />
+        <UnauthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
       </UnauthStack.Navigator>
     </NavigationContainer>
   );

@@ -5,9 +5,12 @@ const prisma = require("../config/db");
 const { decrypt, encrypt, hashLookup, safeDecrypt } = require("../services/cryptoService");
 const {
   issueRefreshToken,
+  revokeAllForUser,
   revokeRefreshToken,
   rotateRefreshToken,
 } = require("../services/refreshTokenService");
+const { issueResetCode, verifyAndConsumeResetCode } = require("../services/passwordResetService");
+const { sendSms, hasSmsProviderConfig } = require("../services/smsServices");
 
 const PASSWORD_ROUNDS = 12;
 const ACCESS_TOKEN_EXPIRES_IN = "15m";
@@ -153,6 +156,75 @@ exports.logout = async (req, res, next) => {
     if (rawToken) {
       await revokeRefreshToken(rawToken);
     }
+
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+};
+
+const FORGOT_PASSWORD_RESPONSE = {
+  message: "If an account with SMS recovery set up exists for this email, a reset code has been sent.",
+};
+
+exports.forgotPassword = async (req, res, next) => {
+  try {
+    const email = normalizeEmail(req.body.email);
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: "Enter a valid email address." });
+    }
+
+    const user = await prisma.user.findUnique({ where: { emailHash: hashLookup(email) } });
+
+    // Deliberately identical response whether or not the account exists, has
+    // a phone on file, or SMS is even configured — never leak account
+    // existence to the caller. (The Twilio call, when it does fire, is a
+    // known timing side-channel we've accepted rather than solved — same
+    // risk posture as the covert-messaging phone-matching feature.)
+    if (user?.phoneEncrypted && hasSmsProviderConfig()) {
+      const code = await issueResetCode(user.id);
+      const phone = decrypt(user.phoneEncrypted);
+      sendSms({
+        to: phone,
+        body: `Your Bes password reset code is ${code}. It expires in 10 minutes. If you didn't request this, ignore this message.`,
+      }).catch((err) => {
+        console.error("[auth] failed to send password reset SMS:", err?.message ?? err);
+      });
+    }
+
+    res.status(200).json(FORGOT_PASSWORD_RESPONSE);
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.resetPassword = async (req, res, next) => {
+  try {
+    const email = normalizeEmail(req.body.email);
+    const code = String(req.body.code || "").trim();
+    const newPassword = String(req.body.newPassword || "");
+
+    if (!isValidEmail(email) || !code) {
+      return res.status(400).json({ error: "Invalid request." });
+    }
+    if (newPassword.length < 12) {
+      return res.status(400).json({ error: "Password must be at least 12 characters." });
+    }
+
+    const user = await prisma.user.findUnique({ where: { emailHash: hashLookup(email) } });
+    const verified = user ? await verifyAndConsumeResetCode(user.id, code) : { ok: false };
+
+    if (!verified.ok) {
+      return res.status(400).json({ error: "Invalid or expired code." });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, PASSWORD_ROUNDS);
+    await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+
+    // A password reset is a strong signal of possible account compromise —
+    // kill every existing session, same as rotateRefreshToken's reuse
+    // detection does when it sees a stolen/replayed token.
+    await revokeAllForUser(user.id);
 
     res.status(204).end();
   } catch (error) {

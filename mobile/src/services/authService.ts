@@ -36,6 +36,22 @@ export function meRequest() {
   return apiRequest<{ user: AuthUser }>('/api/auth/me');
 }
 
+export function forgotPasswordRequest(email: string) {
+  return apiRequest<{ message: string }>('/api/auth/forgot-password', {
+    method: 'POST',
+    auth: false,
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function resetPasswordRequest(data: { email: string; code: string; newPassword: string }) {
+  return apiRequest<null>('/api/auth/reset-password', {
+    method: 'POST',
+    auth: false,
+    body: JSON.stringify(data),
+  });
+}
+
 // Throws ApiError on failure (e.g. wrong password) — caller must not treat
 // this as best-effort like logoutRequest, since a failure here means the
 // account was NOT deleted and local state must not be cleared.

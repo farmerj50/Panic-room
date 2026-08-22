@@ -32,4 +32,7 @@ export type TabParamList = {
 export type UnauthStackParamList = {
   Landing: undefined;
   Auth: { mode?: 'login' | 'register' } | undefined;
+  Login: { mode?: 'login' } | undefined;
+  Register: { mode?: 'register' } | undefined;
+  ForgotPassword: undefined;
 };

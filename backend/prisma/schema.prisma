@@ -59,18 +59,19 @@ model Recording {
 }
 
 model User {
-  id             String           @id @default(uuid())
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-  emailHash      String           @unique
-  emailEncrypted String
-  nameEncrypted  String?
-  passwordHash   String
-  contacts       TrustedContact[]
-  emergencies    EmergencyEvent[]
-  recordings     Recording[]
-  privateData    PrivateData[]
-  refreshTokens  RefreshToken[]
+  id                  String               @id @default(uuid())
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  emailHash           String               @unique
+  emailEncrypted      String
+  nameEncrypted       String?
+  passwordHash        String
+  contacts            TrustedContact[]
+  emergencies         EmergencyEvent[]
+  recordings          Recording[]
+  privateData         PrivateData[]
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
 
   // Covert-messaging identity (Phase F). All optional — a user only gains
   // these once they opt in to the feature from ProfileScreen.
@@ -111,6 +112,19 @@ model RefreshToken {
   revokedAt           DateTime?
   replacedByTokenHash String?
   userAgent           String?
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id         String    @id @default(uuid())
+  createdAt  DateTime  @default(now())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash   String // hashLookup(code) — same HMAC helper RefreshToken.tokenHash uses
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int       @default(0) // wrong-code guesses; caps brute force independent of per-IP rate limiting
 
   @@index([userId])
 }
