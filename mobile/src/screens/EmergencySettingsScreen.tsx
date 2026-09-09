@@ -27,6 +27,7 @@ import {
   startBackgroundLocationMonitoring,
   stopBackgroundLocationMonitoring,
 } from '../services/locationService';
+import { confirmBackgroundLocationDisclosure } from '../utils/locationDisclosure';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const heroBg = require('../../assets/images/hero-bg.png');
@@ -116,14 +117,16 @@ export default function EmergencySettingsScreen() {
       if (value) {
         const { status } = await Location.getBackgroundPermissionsAsync();
         if (status !== 'granted') {
-          // Android: show rationale before the system prompt appears.
-          // doStartBgLoc owns setSaving(null) here — don't let finally fire early.
-          Alert.alert(
-            'Background Location',
-            'Select "Allow all the time" on the next screen so Bes can share your GPS even when the app is closed.',
-            [{ text: 'Continue', onPress: () => doStartBgLoc() }],
-          );
-          return; // saving cleared by doStartBgLoc after the alert is dismissed
+          // Google Play's Prominent Disclosure requirement: this in-app
+          // explanation must be shown before the system prompt appears — the
+          // OS dialog alone doesn't satisfy it. doStartBgLoc owns
+          // setSaving(null) here — don't let finally fire early.
+          if (await confirmBackgroundLocationDisclosure()) {
+            await doStartBgLoc();
+          } else {
+            setSaving(null);
+          }
+          return;
         }
         await doStartBgLoc();
       } else {

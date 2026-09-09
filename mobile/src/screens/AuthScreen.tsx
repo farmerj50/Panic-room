@@ -24,6 +24,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../context/AuthContext';
 import { saveContactToBackend } from '../services/contactService';
 import { API_URL } from '../config/emergencyConfig';
+import { confirmForegroundLocationDisclosure } from '../utils/locationDisclosure';
 import type { UnauthStackParamList } from '../navigation/types';
 import heroBg from '../../assets/images/hero-bg.png';
 
@@ -111,6 +112,7 @@ export default function AuthScreen() {
   };
 
   const requestLocation = async () => {
+    if (!(await confirmForegroundLocationDisclosure())) return;
     const result = await Location.requestForegroundPermissionsAsync();
     setLocStatus(toStatus(result.granted));
     if (!result.granted) openSettings('Location');
@@ -131,7 +133,7 @@ export default function AuthScreen() {
       micGranted = Boolean(result?.granted);
     }
 
-    if (!locationGranted) {
+    if (!locationGranted && (await confirmForegroundLocationDisclosure())) {
       const result = await Location.requestForegroundPermissionsAsync();
       locationGranted = Boolean(result.granted);
       setLocStatus(toStatus(result.granted));

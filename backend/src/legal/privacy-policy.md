@@ -50,6 +50,13 @@ an emergency.
 ### Emergency events
 - **Location (GPS coordinates)** captured when you activate an emergency,
   stored encrypted.
+- **Background location (optional)** — if you enable Background Location
+  Monitoring in Emergency Settings, Bes continuously accesses your GPS
+  location even when the app is closed or not in use, so an accurate
+  location can be shared with your trusted contacts the moment an emergency
+  is triggered. This is used only to provide that safety feature, is never
+  used for advertising, and can be turned off at any time in Emergency
+  Settings.
 - **Audio and video recordings** captured during an emergency, uploaded to
   our storage and retrievable only via short-lived, single-purpose links
   generated for your account.

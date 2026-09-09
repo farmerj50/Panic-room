@@ -16,6 +16,7 @@ import { useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 
 import { useEmergencyContext } from '../context/EmergencyContext';
+import { confirmForegroundLocationDisclosure } from '../utils/locationDisclosure';
 
 type PermStatus = 'unknown' | 'granted' | 'denied';
 
@@ -53,6 +54,7 @@ export default function SetupScreen() {
   };
 
   const handleRequestLoc = async () => {
+    if (!(await confirmForegroundLocationDisclosure())) return;
     const { granted } = await Location.requestForegroundPermissionsAsync();
     setLocStatus(toStatus(granted));
     if (!granted) openSettings('Location');
@@ -92,7 +94,7 @@ export default function SetupScreen() {
       micGranted = Boolean(result?.granted);
     }
 
-    if (!locationGranted) {
+    if (!locationGranted && (await confirmForegroundLocationDisclosure())) {
       const result = await Location.requestForegroundPermissionsAsync();
       locationGranted = Boolean(result?.granted);
       setLocStatus(toStatus(result?.granted));
@@ -112,6 +114,10 @@ export default function SetupScreen() {
       Alert.alert(
         'Permissions needed',
         'Camera, microphone, and location are required for Bes to protect you.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ],
       );
       return;
     }

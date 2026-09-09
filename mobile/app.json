@@ -21,7 +21,7 @@
     },
     "android": {
       "package": "com.ginslayer.besapp",
-      "versionCode": 12,
+      "versionCode": 15,
       "adaptiveIcon": {
         "backgroundColor": "#22084A",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -39,7 +39,6 @@
         "android.permission.FOREGROUND_SERVICE_LOCATION",
         "android.permission.WAKE_LOCK",
         "android.permission.USE_FULL_SCREEN_INTENT",
-        "android.permission.CALL_PHONE",
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
         "android.permission.POST_NOTIFICATIONS"
