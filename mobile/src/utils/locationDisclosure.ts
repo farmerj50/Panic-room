@@ -37,6 +37,6 @@ export function confirmForegroundLocationDisclosure(): Promise<boolean> {
 export function confirmBackgroundLocationDisclosure(): Promise<boolean> {
   return confirm(
     'Background Location',
-    'Bes collects your location data to support emergency safety features, including sharing your location during an emergency and enabling location-based safety monitoring, even when the app is closed or not in use. Your location is used only to provide these safety features and is not used for advertising.\n\nOn the next screen, select "Allow all the time."',
+    'Bes collects location data to enable Background Location Monitoring, emergency location sharing, and safety features even when the app is closed or not in use. Location data is used to provide these safety features and is not used for advertising.\n\nOn the next screen, select "Allow all the time."',
   );
 }

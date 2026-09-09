@@ -27,7 +27,10 @@ import {
   startBackgroundLocationMonitoring,
   stopBackgroundLocationMonitoring,
 } from '../services/locationService';
-import { confirmBackgroundLocationDisclosure } from '../utils/locationDisclosure';
+import {
+  confirmBackgroundLocationDisclosure,
+  confirmForegroundLocationDisclosure,
+} from '../utils/locationDisclosure';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const heroBg = require('../../assets/images/hero-bg.png');
@@ -115,6 +118,30 @@ export default function EmergencySettingsScreen() {
     setSaving('bgLoc');
     try {
       if (value) {
+        // Android requires foreground location to already be granted before
+        // background ("Allow all the time") can even be requested — asking
+        // for background first silently fails with no system dialog at all.
+        const fg = await Location.getForegroundPermissionsAsync();
+        if (fg.status !== 'granted') {
+          if (!(await confirmForegroundLocationDisclosure())) {
+            setSaving(null);
+            return;
+          }
+          const fgResult = await Location.requestForegroundPermissionsAsync();
+          if (fgResult.status !== 'granted') {
+            Alert.alert(
+              'Location Required',
+              'Bes needs location access before background monitoring can be enabled. Open Settings to change it.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => Linking.openSettings() },
+              ],
+            );
+            setSaving(null);
+            return;
+          }
+        }
+
         const { status } = await Location.getBackgroundPermissionsAsync();
         if (status !== 'granted') {
           // Google Play's Prominent Disclosure requirement: this in-app
@@ -226,9 +253,10 @@ export default function EmergencySettingsScreen() {
           <SettingRow
             title="Background Location Monitoring"
             description={
-              'Continuously tracks your GPS in the background, even when the app is closed. ' +
-              'Ensures emergency contacts receive your accurate location the moment an emergency is triggered. ' +
-              'Requires "Always" location permission.'
+              'Bes collects location data to enable Background Location Monitoring, emergency location ' +
+              'sharing, and safety features even when the app is closed or not in use. Location data is ' +
+              'used to provide these safety features and is not used for advertising. Requires "Always" ' +
+              'location permission.'
             }
             value={bgLocActive}
             onToggle={toggleBgLocation}
