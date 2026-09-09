@@ -3,7 +3,7 @@ import { Text, View } from 'react-native';
 import { NavigationContainer, useNavigation, useNavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { PinLockProvider, usePinLock } from '../context/PinLockContext';
@@ -122,6 +122,7 @@ function TabIcon({ route, color, focused }: { route: keyof TabParamList; color: 
 }
 
 function MainTabs() {
+  const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
       initialRouteName="Home"
@@ -134,8 +135,8 @@ function MainTabs() {
         tabBarStyle: {
           backgroundColor: 'rgba(5, 8, 25, 0.96)',
           borderTopColor: 'rgba(122, 87, 214, 0.3)',
-          height: 78,
-          paddingBottom: 10,
+          height: 78 + insets.bottom,
+          paddingBottom: 10 + insets.bottom,
           paddingTop: 8,
         },
         tabBarIcon: ({ color, focused }) => (

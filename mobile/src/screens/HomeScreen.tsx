@@ -148,7 +148,7 @@ export default function HomeScreen() {
   };
 
   return (
-    <View style={styles.root}>
+    <SafeAreaView edges={['bottom']} style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor="#050715" />
 
       <ScrollView
@@ -415,7 +415,7 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
 
-    </View>
+    </SafeAreaView>
   );
 }
 

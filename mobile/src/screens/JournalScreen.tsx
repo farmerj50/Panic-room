@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   ImageBackground,
@@ -92,6 +92,8 @@ export default function JournalScreen() {
   const isWide = width >= 900;
   const [notes, setNotes] = useState<JournalNotes>(emptyNotes);
   const [saving, setSaving] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const sectionY = useRef<Partial<Record<keyof JournalNotes, number>>>({});
 
   useEffect(() => {
     getPrivateData<JournalNotes>(JOURNAL_KEY)
@@ -129,8 +131,15 @@ export default function JournalScreen() {
   };
 
   const focusCard = (key: keyof JournalNotes) => {
-    if (key === 'moodCheckIn') return;
-    if (key === 'evidenceNotes') navigation.navigate('Evidence');
+    if (key === 'evidenceNotes') {
+      navigation.navigate('Evidence');
+      return;
+    }
+
+    const y = sectionY.current[key];
+    if (y !== undefined) {
+      scrollRef.current?.scrollTo({ y: Math.max(y - 12, 0), animated: true });
+    }
   };
 
   const goBack = () => {
@@ -144,7 +153,7 @@ export default function JournalScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={[styles.page, { maxWidth: isWide ? 980 : 620 }]}>
           <View style={styles.header}>
             <TouchableOpacity onPress={goBack} style={styles.backButton} activeOpacity={0.82}>
@@ -199,7 +208,11 @@ export default function JournalScreen() {
             ))}
           </View>
 
-          <LinearGradient colors={['rgba(12, 18, 49, 0.96)', 'rgba(14, 15, 48, 0.96)']} style={styles.section}>
+          <LinearGradient
+            colors={['rgba(12, 18, 49, 0.96)', 'rgba(14, 15, 48, 0.96)']}
+            style={styles.section}
+            onLayout={(e) => { sectionY.current.privateNotes = e.nativeEvent.layout.y; }}
+          >
             <View style={styles.sectionHeader}>
               <View style={[styles.sectionIcon, { backgroundColor: 'rgba(155,92,255,0.22)' }]}>
                 <Text style={[styles.sectionIconText, { color: '#b777ff' }]}>N</Text>
@@ -234,7 +247,11 @@ export default function JournalScreen() {
             </View>
           </LinearGradient>
 
-          <LinearGradient colors={['rgba(14, 18, 52, 0.96)', 'rgba(18, 16, 52, 0.96)']} style={styles.section}>
+          <LinearGradient
+            colors={['rgba(14, 18, 52, 0.96)', 'rgba(18, 16, 52, 0.96)']}
+            style={styles.section}
+            onLayout={(e) => { sectionY.current.moodCheckIn = e.nativeEvent.layout.y; }}
+          >
             <View style={styles.sectionHeader}>
               <View style={[styles.sectionIcon, { backgroundColor: 'rgba(255,79,163,0.22)' }]}>
                 <Text style={[styles.sectionIconText, { color: '#ff4fa3' }]}>M</Text>
@@ -277,7 +294,11 @@ export default function JournalScreen() {
             />
           </LinearGradient>
 
-          <LinearGradient colors={['rgba(20, 17, 50, 0.98)', 'rgba(12, 18, 48, 0.96)']} style={styles.section}>
+          <LinearGradient
+            colors={['rgba(20, 17, 50, 0.98)', 'rgba(12, 18, 48, 0.96)']}
+            style={styles.section}
+            onLayout={(e) => { sectionY.current.incidentNotes = e.nativeEvent.layout.y; }}
+          >
             <View style={styles.sectionHeader}>
               <View style={[styles.sectionIcon, { backgroundColor: 'rgba(251,122,51,0.24)' }]}>
                 <Text style={[styles.sectionIconText, { color: '#fb8b42' }]}>!</Text>
