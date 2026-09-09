@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Linking,
   Platform,
   StatusBar,
@@ -222,6 +223,7 @@ export default function EmergencyScreen() {
   const [count, setCount] = useState(COUNTDOWN_SECONDS);
   const [elapsed, setElapsed] = useState(0);
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [locationUnavailable, setLocationUnavailable] = useState(false);
   const [statusMessage, setStatusMessage] = useState('Emergency activation starting.');
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
   const [countdownEnabled, setCountdownEnabled] = useState(false);
@@ -325,6 +327,7 @@ export default function EmergencyScreen() {
     setCount(COUNTDOWN_SECONDS);
     setElapsed(0);
     setLocation(null);
+    setLocationUnavailable(false);
     setNotificationStatus(null);
     setEmergencyId(null);
     await stopEmergencyAssets();
@@ -344,6 +347,7 @@ export default function EmergencyScreen() {
       setCount(COUNTDOWN_SECONDS);
       setElapsed(0);
       setLocation(null);
+      setLocationUnavailable(false);
       setEmergencyId(null);
       setNotificationStatus(null);
       setStatusMessage('Emergency activation starting.');
@@ -410,6 +414,17 @@ export default function EmergencyScreen() {
       `Emergency mode active. Dial ${EMERGENCY_NUMBER} immediately.`,
     );
   }, [openExternalCallAction]);
+
+  const confirmCallEmergencyNumber = useCallback(() => {
+    Alert.alert(
+      `Call ${EMERGENCY_NUMBER}?`,
+      `This will open your phone dialer with ${EMERGENCY_NUMBER} filled in.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: `Call ${EMERGENCY_NUMBER}`, style: 'destructive', onPress: () => { void callEmergencyNumber(); } },
+      ],
+    );
+  }, [callEmergencyNumber]);
 
   const callContactsFromServer = useCallback(async (contactsToCall: Contact[], label: string) => {
     try {
@@ -605,6 +620,10 @@ export default function EmergencyScreen() {
       if (!isCurrentSession()) return;
       currentLocationRef.current = currentLocation;
       setLocation(currentLocation);
+      if (!currentLocation) {
+        setLocationUnavailable(true);
+        setStatusMessage('Location unavailable. Continuing without GPS.');
+      }
       const sub = (await watchLocation((loc) => {
         currentLocationRef.current = loc;
         setLocation(loc);
@@ -775,19 +794,47 @@ export default function EmergencyScreen() {
           <View style={styles.statusPanel}>
             <Text style={styles.statusText} testID="emergency-status-text" accessibilityLabel="emergency-status-text">{statusMessage}</Text>
             {notificationStatus && <Text style={styles.notificationText}>{notificationStatus}</Text>}
-            {location && (
+            {location ? (
               <Text style={styles.locationText} testID="emergency-gps-text" accessibilityLabel="emergency-gps-text">
                 GPS {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
               </Text>
-            )}
+            ) : locationUnavailable ? (
+              <Text style={styles.locationUnavailableText} testID="emergency-gps-unavailable-text" accessibilityLabel="emergency-gps-unavailable-text">
+                GPS unavailable
+              </Text>
+            ) : null}
           </View>
 
-          {location && (
+          {location ? (
             <LiveLocationMap latitude={location.latitude} longitude={location.longitude} />
-          )}
+          ) : locationUnavailable ? (
+            <View style={styles.mapFallback} testID="emergency-map-fallback" accessible accessibilityLabel="emergency-map-fallback">
+              <Text style={styles.mapFallbackText}>
+                Location unavailable — your emergency contacts were still alerted.
+              </Text>
+              <TouchableOpacity
+                activeOpacity={0.82}
+                style={styles.mapFallbackBtn}
+                onPress={() => {
+                  Alert.alert(
+                    'Location Access Required',
+                    'Bes needs location access to share your position. Open Settings to enable it.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Open Settings', onPress: () => Linking.openSettings() },
+                    ],
+                  );
+                }}
+                testID="emergency-map-fallback-settings-btn"
+                accessibilityLabel="emergency-map-fallback-settings-btn"
+              >
+                <Text style={styles.mapFallbackBtnText}>Open Settings</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           <View style={styles.controls}>
-            <TouchableOpacity activeOpacity={0.82} style={styles.actionBtn} onPress={callEmergencyNumber} testID="emergency-call911-btn" accessibilityLabel="emergency-call911-btn">
+            <TouchableOpacity activeOpacity={0.82} style={styles.actionBtn} onPress={confirmCallEmergencyNumber} testID="emergency-call911-btn" accessibilityLabel="emergency-call911-btn">
               <Text style={styles.actionIcon}>!</Text>
               <Text style={styles.actionLabel}>Call {EMERGENCY_NUMBER}</Text>
             </TouchableOpacity>
@@ -851,6 +898,22 @@ const styles = StyleSheet.create({
   statusText: { color: '#fff', fontSize: 14, fontWeight: '800', textAlign: 'center' },
   notificationText: { color: '#f7ca75', fontSize: 12, lineHeight: 18, marginTop: 6, textAlign: 'center' },
   locationText: { color: '#4ee1d5', fontSize: 12, fontWeight: '800', marginTop: 6, textAlign: 'center' },
+  locationUnavailableText: { color: '#f7ca75', fontSize: 12, fontWeight: '800', marginTop: 6, textAlign: 'center' },
+  mapFallback: {
+    alignItems: 'center',
+    backgroundColor: '#000',
+    borderColor: 'rgba(255,255,255,0.16)',
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 12,
+    justifyContent: 'center',
+    maxWidth: 400,
+    padding: 18,
+    width: '100%',
+  },
+  mapFallbackText: { color: '#a8a0bf', fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  mapFallbackBtn: { backgroundColor: 'rgba(239,68,91,0.18)', borderColor: '#ef445b', borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 20, paddingVertical: 10 },
+  mapFallbackBtnText: { color: '#fff', fontSize: 13, fontWeight: '800' },
   controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center', maxWidth: 620, width: '100%', zIndex: 5 },
   actionBtn: { alignItems: 'center', backgroundColor: 'rgba(239,68,91,0.18)', borderColor: '#ef445b', borderRadius: 14, borderWidth: 1.5, gap: 4, justifyContent: 'center', minHeight: 58, minWidth: 132, paddingHorizontal: 16, paddingVertical: 10 },
   stopBtn: { backgroundColor: 'rgba(100,100,100,0.28)', borderColor: '#777' },
