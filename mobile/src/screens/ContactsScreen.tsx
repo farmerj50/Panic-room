@@ -379,20 +379,22 @@ export default function ContactsScreen() {
 
           <LinearGradient
             colors={['rgba(13, 18, 49, 0.97)', 'rgba(10, 12, 38, 0.97)']}
-            style={styles.priorityInfo}
+            style={[styles.priorityInfo, !isWide && styles.priorityInfoNarrow]}
           >
-            <View style={styles.priorityInfoIcon}>
-              <Text style={styles.priorityInfoIconText}>*</Text>
-            </View>
-            <View style={styles.priorityInfoCopy}>
-              <Text style={styles.priorityInfoTitle}>Set a Priority</Text>
-              <Text style={styles.priorityInfoText}>
-                Your priority contact will be called or notified first during an emergency.
-              </Text>
+            <View style={[styles.priorityInfoRow, !isWide && styles.priorityInfoRowNarrow]}>
+              <View style={styles.priorityInfoIcon}>
+                <Text style={styles.priorityInfoIconText}>*</Text>
+              </View>
+              <View style={styles.priorityInfoCopy}>
+                <Text style={styles.priorityInfoTitle}>Set a Priority</Text>
+                <Text style={styles.priorityInfoText}>
+                  Your priority contact will be called or notified first during an emergency.
+                </Text>
+              </View>
             </View>
             <TouchableOpacity
               activeOpacity={0.82}
-              style={styles.learnButton}
+              style={[styles.learnButton, !isWide && styles.learnButtonNarrow]}
               onPress={() => navigation.navigate('SafetyPlan')}
             >
               <Text style={styles.learnText}>Learn more</Text>
@@ -667,6 +669,24 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     padding: 24,
   },
+  // At phone widths, the fixed-width icon plus the "Learn more" pill button
+  // left the flexible text column only a sliver of the row's width,
+  // wrapping the paragraph one or two characters per line. Stacking the
+  // button below the icon+text row (instead of squeezing all three into
+  // one row) gives the text its own full-width line to wrap normally.
+  priorityInfoNarrow: {
+    alignItems: 'stretch',
+    flexDirection: 'column',
+  },
+  priorityInfoRow: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: 20,
+  },
+  priorityInfoRowNarrow: {
+    marginBottom: 20,
+  },
   priorityInfoIcon: {
     alignItems: 'center',
     backgroundColor: 'rgba(247,183,49,0.2)',
@@ -689,6 +709,10 @@ const styles = StyleSheet.create({
     gap: 12,
     minHeight: 56,
     paddingHorizontal: 28,
+  },
+  learnButtonNarrow: {
+    alignSelf: 'stretch',
+    justifyContent: 'center',
   },
   learnText: { color: '#b777ff', fontSize: 18, fontWeight: '900' },
   learnInfo: {
