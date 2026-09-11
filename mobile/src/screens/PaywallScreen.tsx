@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -25,6 +25,7 @@ export default function PaywallScreen() {
   const { isPremium, loading, offering, purchasePackage, restorePurchases } = useSubscription();
   const [busy, setBusy] = useState(false);
   const pageMaxWidth = 640;
+  const isWeb = Platform.OS === 'web';
 
   const headline = HEADLINES[route.params?.reason ?? ''] ?? 'Unlock Bes Premium';
   const pkg = offering?.availablePackages?.[0] ?? null;
@@ -105,6 +106,13 @@ export default function PaywallScreen() {
           <View style={styles.activeBanner}>
             <Text style={styles.activeBannerText}>You already have Bes Premium — thank you!</Text>
           </View>
+        ) : isWeb ? (
+          <View style={styles.webNotice}>
+            <Text style={styles.webNoticeText}>
+              Bes Premium is purchased through the Bes Android app, not the website. Open Bes on
+              your Android device to subscribe.
+            </Text>
+          </View>
         ) : (
           <TouchableOpacity
             activeOpacity={0.86}
@@ -119,17 +127,19 @@ export default function PaywallScreen() {
           </TouchableOpacity>
         )}
 
-        <TouchableOpacity
-          activeOpacity={0.7}
-          style={styles.restoreBtn}
-          onPress={handleRestore}
-          disabled={busy}
-          testID="paywall-restore-btn"
-          accessibilityLabel="paywall-restore-btn"
-          accessibilityRole="button"
-        >
-          <Text style={styles.restoreText}>Restore Purchases</Text>
-        </TouchableOpacity>
+        {!isWeb && (
+          <TouchableOpacity
+            activeOpacity={0.7}
+            style={styles.restoreBtn}
+            onPress={handleRestore}
+            disabled={busy}
+            testID="paywall-restore-btn"
+            accessibilityLabel="paywall-restore-btn"
+            accessibilityRole="button"
+          >
+            <Text style={styles.restoreText}>Restore Purchases</Text>
+          </TouchableOpacity>
+        )}
 
         <Text style={styles.footnote}>
           Everything that matters in an emergency — SOS activation, GPS sharing, calling and notifying your
@@ -206,5 +216,14 @@ const styles = StyleSheet.create({
     padding: 18,
   },
   activeBannerText: { color: '#4ee1d5', fontSize: 15, fontWeight: '800', textAlign: 'center' },
+  webNotice: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(183,119,255,0.1)',
+    borderColor: 'rgba(183,119,255,0.3)',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 18,
+  },
+  webNoticeText: { color: '#d7b4ff', fontSize: 14, lineHeight: 20, textAlign: 'center' },
   footnote: { color: '#918aaa', fontSize: 12, lineHeight: 18, textAlign: 'center' },
 });
