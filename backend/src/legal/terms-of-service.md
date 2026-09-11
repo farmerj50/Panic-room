@@ -54,7 +54,7 @@ this requirement.
   credentials and for all activity under your account.
 - You must provide accurate information when creating your account and
   when adding trusted contacts.
-- Notify us immediately at **johnfarmer43@gmail.com** if you believe your
+- Notify us immediately at **support@bes-app.com** if you believe your
   account has been compromised.
 
 ## 4. The Service
@@ -165,4 +165,4 @@ whether an arbitration clause is desired.]
 
 ## 14. Contact
 
-Questions about these Terms can be sent to: **johnfarmer43@gmail.com**
+Questions about these Terms can be sent to: **support@bes-app.com**

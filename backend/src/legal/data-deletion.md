@@ -33,7 +33,7 @@ deactivation or soft delete.
 
 If you can't sign in (lost access to your device, forgot your password, or
 uninstalled the app) and want your account and data deleted, email
-**johnfarmer43@gmail.com** from the email address associated with your
+**support@bes-app.com** from the email address associated with your
 account and request deletion. We'll verify the request and delete the
 account manually within a reasonable time.
 
@@ -41,7 +41,7 @@ account manually within a reasonable time.
 
 If you want only certain data removed (for example, a single recording or
 Covert Message) without deleting your whole account, email
-**johnfarmer43@gmail.com** describing what you'd like removed. Note that
+**support@bes-app.com** describing what you'd like removed. Note that
 some data — like emergency event records — may be something you'd prefer to
 keep for your own reference, so we'll confirm with you before removing
 anything you didn't explicitly ask for.

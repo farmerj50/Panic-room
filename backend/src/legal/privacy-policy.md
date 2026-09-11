@@ -140,7 +140,7 @@ enforce, e.g. "recordings older than X days are automatically deleted."]
   messages) at any time from Profile → Delete Account, after confirming
   your password. This immediately and permanently removes your data; it
   cannot be undone or recovered by us. You can also reach us at
-  **johnfarmer43@gmail.com** with deletion questions.
+  **support@bes-app.com** with deletion questions.
 - **Regeneration of your encryption key** — you can generate a new Covert
   Messaging key pair from your profile at any time; this does not delete
   messages already sent or received.
@@ -174,4 +174,4 @@ appropriate, through an in-app notice.
 ## 10. Contact Us
 
 Questions about this Privacy Policy or your data can be sent to:
-**johnfarmer43@gmail.com**
+**support@bes-app.com**
