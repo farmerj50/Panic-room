@@ -10,6 +10,7 @@ const privateDataRoutes = require("./routes/privateDataRoutes");
 const recordingRoutes = require("./routes/recordingRoutes");
 const userRoutes = require("./routes/userRoutes");
 const covertMessageRoutes = require("./routes/covertMessageRoutes");
+const billingRoutes = require("./routes/billingRoutes");
 const legalRoutes = require("./routes/legalRoutes");
 const errorMiddleware = require("./middleware/errorMiddleware");
 
@@ -51,6 +52,7 @@ app.use("/api/private-data", privateDataRoutes);
 app.use("/api/recordings", recordingRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/covert-messages", covertMessageRoutes);
+app.use("/api/billing", billingRoutes);
 app.use("/legal", legalRoutes);
 
 app.use(errorMiddleware);

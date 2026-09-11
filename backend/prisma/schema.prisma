@@ -83,6 +83,20 @@ model User {
   phoneEncrypted         String?
   sentCovertMessages     CovertMessage[] @relation("SentCovertMessages")
   receivedCovertMessages CovertMessage[] @relation("ReceivedCovertMessages")
+
+  // Bes Premium subscription state. RevenueCat (wrapping Google Play
+  // Billing) is the actual billing system of record — these fields are a
+  // cached, server-side mirror of RevenueCat's entitlement state, kept
+  // fresh via the /api/billing/webhook handler, and exist only so our own
+  // API can cheaply gate requests without calling RevenueCat synchronously
+  // on every request. If this table and RevenueCat ever disagree (a missed
+  // webhook, a support-initiated refund processed only in Play/RevenueCat,
+  // etc.), RevenueCat is correct and this table is stale — the fix is
+  // always "resync from RevenueCat," never "trust the DB over RevenueCat."
+  subscriptionStatus    String    @default("free") // "free" | "active" | "billing_issue" | "cancelled" | "expired" — debugging/support only, never read by gating code
+  subscriptionExpiresAt DateTime? // THE gate everywhere: entitled iff this is set and in the future
+  subscriptionProductId String?
+  lastRevenueCatEventAt DateTime? // guards against out-of-order webhook delivery
 }
 
 model CovertMessage {
