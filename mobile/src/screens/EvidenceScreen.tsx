@@ -11,10 +11,26 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { getEmergencies } from '../services/emergencyService';
-import { Emergency } from '../types/Emergency';
+import { Emergency, EmergencyVideoSegment } from '../types/Emergency';
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleString();
+}
+
+// Elapsed-since-activation, not wall-clock — clamped to zero since a
+// client clock reading earlier than the server-recorded emergency
+// createdAt shouldn't render as a negative timestamp.
+function fmtElapsed(iso: string, emergencyCreatedAt: string) {
+  const seconds = Math.max(0, (new Date(iso).getTime() - new Date(emergencyCreatedAt).getTime()) / 1000);
+  const whole = Math.floor(seconds);
+  return `${String(Math.floor(whole / 60)).padStart(2, '0')}:${String(whole % 60).padStart(2, '0')}`;
+}
+
+function formatSegmentLabel(seg: EmergencyVideoSegment, emergencyCreatedAt: string) {
+  const facingLabel = seg.facing === 'back' ? 'Back' : 'Front';
+  const start = fmtElapsed(seg.startedAt, emergencyCreatedAt);
+  const range = seg.endedAt ? `${start}–${fmtElapsed(seg.endedAt, emergencyCreatedAt)}` : start;
+  return `Clip ${seg.sequence} — ${facingLabel} camera — ${range}`;
 }
 
 export default function EvidenceScreen() {
@@ -70,19 +86,29 @@ export default function EvidenceScreen() {
               )}
 
               <View style={styles.media}>
-                {ev.videoUrl ? (
-                  <TouchableOpacity onPress={() => Linking.openURL(ev.videoUrl!)}>
-                    <Text style={styles.mediaLink}>🎥 View Video</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <Text style={styles.mediaNone}>No video</Text>
-                )}
                 {ev.audioUrl ? (
                   <TouchableOpacity onPress={() => Linking.openURL(ev.audioUrl!)}>
                     <Text style={styles.mediaLink}>🎙️ Play Audio</Text>
                   </TouchableOpacity>
                 ) : (
                   <Text style={styles.mediaNone}>No audio</Text>
+                )}
+
+                {ev.videoSegments && ev.videoSegments.length > 0 ? (
+                  // Already ordered by sequence from the backend.
+                  ev.videoSegments.map((seg) => (
+                    <TouchableOpacity key={seg.id} onPress={() => Linking.openURL(seg.fileUrl)}>
+                      <Text style={styles.mediaLink}>🎥 {formatSegmentLabel(seg, ev.createdAt)}</Text>
+                    </TouchableOpacity>
+                  ))
+                ) : ev.videoUrl ? (
+                  // Legacy single-video emergencies recorded before camera
+                  // flip / video segments shipped.
+                  <TouchableOpacity onPress={() => Linking.openURL(ev.videoUrl!)}>
+                    <Text style={styles.mediaLink}>🎥 View Video</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={styles.mediaNone}>No video</Text>
                 )}
               </View>
             </View>
@@ -123,7 +149,7 @@ const styles = StyleSheet.create({
   statusText: { color: '#fff', fontWeight: '700', fontSize: 13, flex: 1 },
   dateText: { color: '#666', fontSize: 12 },
   location: { color: '#4ECDC4', fontSize: 13, marginBottom: 10 },
-  media: { flexDirection: 'row', gap: 16 },
+  media: { gap: 8 },
   mediaLink: { color: '#a29bfe', fontSize: 13, fontWeight: '600' },
   mediaNone: { color: '#555', fontSize: 13 },
 });

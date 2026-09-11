@@ -51,6 +51,14 @@ class EmergencyPage {
     return $('~emergency-exit-btn');
   }
 
+  get flipCameraBtn() {
+    return $('~emergency-flip-camera-btn');
+  }
+
+  get switchingOverlay() {
+    return $('~emergency-camera-switching');
+  }
+
   // A system "Location Accuracy" dialog (a Google Play Services nudge,
   // separate from the standard runtime permission grant) can pop up the
   // moment location is requested, covering the whole screen — dismiss it

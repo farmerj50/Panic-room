@@ -1,4 +1,4 @@
-import { Emergency } from '../types/Emergency';
+import { Emergency, EmergencyVideoSegment } from '../types/Emergency';
 import { Contact } from '../types/contact';
 import { apiRequest } from './apiClient';
 
@@ -78,6 +78,22 @@ export async function createRecording(data: {
   type: 'audio' | 'video';
 }): Promise<void> {
   await apiRequest<unknown>('/api/recordings', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function addVideoSegment(
+  emergencyId: string,
+  data: {
+    fileUrl: string;
+    facing: 'front' | 'back';
+    sequence: number;
+    startedAt: string;
+    endedAt?: string;
+  },
+): Promise<EmergencyVideoSegment> {
+  return apiRequest<EmergencyVideoSegment>(`/api/emergency/${emergencyId}/video-segments`, {
     method: 'POST',
     body: JSON.stringify(data),
   });

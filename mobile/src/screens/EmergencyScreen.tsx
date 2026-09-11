@@ -19,6 +19,7 @@ import LiveLocationMap from '../components/LiveLocationMap';
 import { useEmergencyContext } from '../context/EmergencyContext';
 import { COUNTDOWN_SECONDS, EMERGENCY_NUMBER, ENABLE_EMERGENCY_DIALER } from '../config/emergencyConfig';
 import {
+  addVideoSegment,
   callEmergencyContacts,
   createEmergency,
   createRecording,
@@ -32,6 +33,8 @@ import type { Contact } from '../types/contact';
 
 // Best-effort, fire-and-forget — no offline queue in v1. A failure here just
 // means EvidenceScreen shows nothing for that asset; it never blocks the UI.
+// Used for audio only — video goes through uploadVideoSegmentEntry below,
+// since camera-flip splits video into ordered segments per emergency.
 async function uploadEmergencyAsset(emergencyId: string, localUri: string, kind: 'audio' | 'video') {
   try {
     const { key } = await uploadFile({ localUri, kind });
@@ -44,9 +47,54 @@ async function uploadEmergencyAsset(emergencyId: string, localUri: string, kind:
   }
 }
 
+type CameraFacing = 'front' | 'back';
+
+type VideoSegmentInfo = {
+  facing: CameraFacing;
+  sequence: number;
+  startedAt: string;
+  finalized: boolean;
+};
+
+type PendingSegmentUpload = {
+  segment: VideoSegmentInfo;
+  localUri: string;
+  endedAt: string;
+  storageKey?: string;
+  status: 'pending' | 'done' | 'failed';
+  promise?: Promise<void>;
+};
+
+// Uploads the local video file (once — the storage key is retained on the
+// entry so a retry after a metadata-POST failure never re-uploads the
+// file, only re-POSTs the metadata), then attaches it to the emergency as
+// an ordered segment. The backend endpoint is itself idempotent on
+// (emergencyId, sequence), so a retry after a lost response is safe too.
+async function uploadVideoSegmentEntry(emergencyId: string, entry: PendingSegmentUpload) {
+  try {
+    if (!entry.storageKey) {
+      const { key } = await uploadFile({ localUri: entry.localUri, kind: 'video' });
+      entry.storageKey = key;
+    }
+    await addVideoSegment(emergencyId, {
+      fileUrl: entry.storageKey,
+      facing: entry.segment.facing,
+      sequence: entry.segment.sequence,
+      startedAt: entry.segment.startedAt,
+      endedAt: entry.endedAt,
+    });
+    entry.status = 'done';
+  } catch (error) {
+    entry.status = 'failed';
+    console.warn('Failed to upload video segment', error);
+  }
+}
+
 type EmergencyPhase = 'countdown' | 'activating' | 'recording' | 'error';
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const DEFAULT_CAMERA_FACING: CameraFacing = Platform.OS === 'web' ? 'front' : 'back';
 
 type BrowserMediaCaptureState = {
   captureActive: boolean;
@@ -228,6 +276,8 @@ export default function EmergencyScreen() {
   const [cameraMounted, setCameraMounted] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraSessionKey, setCameraSessionKey] = useState(0);
+  const [facing, setFacing] = useState<CameraFacing>(DEFAULT_CAMERA_FACING);
+  const [cameraSwitching, setCameraSwitching] = useState(false);
 
   const activationStarted = useRef(false);
   const sessionRef = useRef(0);
@@ -243,6 +293,27 @@ export default function EmergencyScreen() {
   // see the latest value without needing location in their dependency arrays.
   const currentLocationRef = useRef<{ latitude: number; longitude: number } | null>(null);
 
+  // ── Camera-flip / video-segment bookkeeping ─────────────────────────────
+  const currentSegmentRef = useRef<VideoSegmentInfo | null>(null);
+  const sequenceCounterRef = useRef(1);
+  const pendingSegmentUploadsRef = useRef<PendingSegmentUpload[]>([]);
+  // Exit must always win over an in-flight flip. captureGenerationRef is
+  // bumped every time capture is torn down; a flip captures the generation
+  // it started with and bails at every checkpoint if it's changed.
+  const captureGenerationRef = useRef(0);
+  const emergencyStoppingRef = useRef(false);
+  // Re-entrancy guard for flipCamera(). Must be a ref, not the
+  // `cameraSwitching` state var: state updates aren't synchronous, so two
+  // taps arriving before the first render commits could both read a stale
+  // `cameraSwitching === false` and run concurrently, racing two
+  // recordAsync() calls against each other and silently losing a segment.
+  const flippingRef = useRef(false);
+  // Resolves once the current CameraView instance reports ready — reset
+  // right before every (re)mount (initial start and every flip), awaited
+  // (with a bounded timeout) before ever calling recordAsync.
+  const cameraReadyResolverRef = useRef<(() => void) | null>(null);
+  const cameraReadyPromiseRef = useRef<Promise<void>>(Promise.resolve());
+
   const previewWidth = Math.min(width - 32, 420);
   const previewHeight = Math.round(previewWidth * 0.56);
   const orderedContacts = useMemo(
@@ -253,9 +324,81 @@ export default function EmergencyScreen() {
 
   useAppStateEmergencyGuard({ emergencyId, phase, elapsed });
 
+  // Call right before every CameraView (re)mount (initial start, and every
+  // flip) so anything awaiting readiness is waiting on a fresh promise, not
+  // one already resolved by the previous CameraView instance.
+  const resetCameraReadyGate = useCallback(() => {
+    cameraReadyPromiseRef.current = new Promise<void>((resolve) => {
+      cameraReadyResolverRef.current = resolve;
+    });
+  }, []);
+
+  const handleCameraReady = useCallback(() => {
+    cameraReadyResolverRef.current?.();
+    cameraReadyResolverRef.current = null;
+  }, []);
+
+  // Bounded wait — expo-camera's own docs say to wait for onCameraReady
+  // before calling recordAsync, but a missing/late ready event must never
+  // hang the emergency flow. Returns false on timeout; callers must not
+  // call recordAsync in that case.
+  const waitForCameraReady = useCallback(async (timeoutMs = 8000) => {
+    let timedOut = false;
+    await Promise.race([
+      cameraReadyPromiseRef.current,
+      wait(timeoutMs).then(() => {
+        timedOut = true;
+      }),
+    ]);
+    return !timedOut;
+  }, []);
+
+  // Shared by flipCamera() and stopEmergencyAssets() — both need to "stop
+  // whatever's currently recording and queue its upload." The synchronous
+  // check-and-set of `finalized` (before any await) is what makes this
+  // safe to call from both without double-stopping: JS's single-threaded
+  // execution means whichever caller reaches this first "wins," and the
+  // other becomes a no-op for that segment.
+  const finalizeCurrentSegment = useCallback(async () => {
+    const segment = currentSegmentRef.current;
+    if (!segment || segment.finalized) return;
+    segment.finalized = true;
+
+    try { cameraRef.current?.stopRecording(); } catch {}
+    let uri: string | null = null;
+    try {
+      const result = await Promise.race([
+        videoRecordingPromiseRef.current ?? Promise.resolve(undefined),
+        wait(2000).then(() => undefined),
+      ]);
+      uri = result?.uri ?? null;
+    } catch {}
+    videoRecordingPromiseRef.current = null;
+
+    if (!uri) return;
+    const emergencyId = activeEmergencyIdRef.current;
+    const entry: PendingSegmentUpload = {
+      segment,
+      localUri: uri,
+      endedAt: new Date().toISOString(),
+      status: 'pending',
+    };
+    pendingSegmentUploadsRef.current.push(entry);
+    if (emergencyId) {
+      entry.promise = uploadVideoSegmentEntry(emergencyId, entry).catch(() => {});
+    } else {
+      entry.status = 'failed';
+    }
+  }, []);
+
   const stopEmergencyAssets = useCallback(async () => {
     sessionRef.current += 1;
     activationStarted.current = false;
+    // Exit always wins over an in-flight flip — see captureGenerationRef's
+    // comment above. Set before anything else so any flip checkpoint that
+    // runs after this point bails out immediately.
+    emergencyStoppingRef.current = true;
+    captureGenerationRef.current += 1;
     setCountdownEnabled(false);
     setBrowserMediaCaptureActive(false);
     setCameraActive(false);
@@ -271,7 +414,6 @@ export default function EmergencyScreen() {
     if (stopping.current) return;
     stopping.current = true;
 
-    let videoUri: string | null = null;
     let audioUri: string | null = null;
 
     try {
@@ -283,15 +425,11 @@ export default function EmergencyScreen() {
       locationSub.current?.remove();
       locationSub.current = null;
 
-      try { cameraRef.current?.stopRecording(); } catch {}
-      try {
-        const result = await Promise.race([
-          videoRecordingPromiseRef.current ?? Promise.resolve(undefined),
-          wait(2000).then(() => undefined),
-        ]);
-        videoUri = result?.uri ?? null;
-      } catch {}
-      videoRecordingPromiseRef.current = null;
+      // Finalizes whatever the current video segment is (idempotent — a
+      // no-op if a concurrent flip already finalized it) and queues its
+      // upload before continuing.
+      await finalizeCurrentSegment();
+
       try { await Promise.race([cameraRef.current?.pausePreview?.() ?? Promise.resolve(), wait(500)]); } catch {}
       try { await Promise.race([audioRecorder.stop().catch(() => {}), wait(750)]); } catch {}
       audioUri = audioRecorder.uri ?? null;
@@ -306,11 +444,26 @@ export default function EmergencyScreen() {
 
     const emergencyIdForUpload = activeEmergencyIdRef.current;
     activeEmergencyIdRef.current = null;
-    if (emergencyIdForUpload) {
-      if (audioUri) uploadEmergencyAsset(emergencyIdForUpload, audioUri, 'audio');
-      if (videoUri) uploadEmergencyAsset(emergencyIdForUpload, videoUri, 'video');
+    if (emergencyIdForUpload && audioUri) {
+      uploadEmergencyAsset(emergencyIdForUpload, audioUri, 'audio');
     }
-  }, [audioRecorder, resolveEmergency]);
+
+    // Sweep video-segment uploads: give in-flight ones a bounded chance to
+    // finish, then retry anything that already failed exactly once. This
+    // is in-session only — no durable queue across an app restart.
+    const pending = pendingSegmentUploadsRef.current;
+    if (emergencyIdForUpload && pending.length > 0) {
+      await Promise.race([
+        Promise.allSettled(pending.map((entry) => entry.promise ?? Promise.resolve())),
+        wait(5000),
+      ]);
+      const stillFailed = pending.filter((entry) => entry.status === 'failed');
+      await Promise.allSettled(
+        stillFailed.map((entry) => uploadVideoSegmentEntry(emergencyIdForUpload, entry)),
+      );
+    }
+    pendingSegmentUploadsRef.current = [];
+  }, [audioRecorder, finalizeCurrentSegment, resolveEmergency]);
 
   const returnHome = useCallback(async () => {
     // Stop media streams synchronously BEFORE React unmounts the CameraView
@@ -529,6 +682,56 @@ export default function EmergencyScreen() {
     await callAllContacts();
   }, [callAllContacts, callPriorityContact, emergencyCallMode]);
 
+  // Flip is available any time the camera is live, including mid-recording
+  // — expo-camera stops a recording the instant `facing` changes, so this
+  // finalizes+uploads the current segment, then starts a fresh recording
+  // on the flipped camera. The next recording never waits on the previous
+  // segment's upload (step 6 below is fire-and-forget, already queued
+  // inside finalizeCurrentSegment). Every checkpoint re-checks the
+  // cancellation guard so an exit that happens mid-flip always wins.
+  const flipCamera = useCallback(async () => {
+    if (!cameraMounted || flippingRef.current || emergencyStoppingRef.current) return;
+    flippingRef.current = true;
+    const generation = captureGenerationRef.current;
+    setCameraSwitching(true);
+
+    try {
+      // 1-2: finalize whatever's currently recording, queue its upload.
+      await finalizeCurrentSegment();
+      if (emergencyStoppingRef.current || generation !== captureGenerationRef.current) return;
+
+      // 3: flip facing, force a remount, reset the ready gate for it.
+      const newFacing: CameraFacing = facing === 'back' ? 'front' : 'back';
+      setFacing(newFacing);
+      setCameraSessionKey((v) => v + 1);
+      resetCameraReadyGate();
+
+      // 4: wait for the new CameraView instance to be ready (bounded).
+      const ready = await waitForCameraReady();
+      if (emergencyStoppingRef.current || generation !== captureGenerationRef.current) return;
+      if (!ready) {
+        setStatusMessage('Camera restart failed — continuing without video for this segment.');
+        return;
+      }
+
+      // 5: start the next segment's recording.
+      const sequence = sequenceCounterRef.current + 1;
+      sequenceCounterRef.current = sequence;
+      currentSegmentRef.current = {
+        facing: newFacing,
+        sequence,
+        startedAt: new Date().toISOString(),
+        finalized: false,
+      };
+      const recordingPromise = cameraRef.current?.recordAsync({ maxDuration: 300 });
+      videoRecordingPromiseRef.current = recordingPromise ?? null;
+      recordingPromise?.catch(() => {});
+    } finally {
+      flippingRef.current = false;
+      setCameraSwitching(false);
+    }
+  }, [cameraMounted, facing, finalizeCurrentSegment, resetCameraReadyGate, waitForCameraReady]);
+
   const activateEmergency = useCallback(async () => {
     if (activationStarted.current) return;
     const sessionId = sessionRef.current + 1;
@@ -537,6 +740,17 @@ export default function EmergencyScreen() {
     stopping.current = false;
     setCountdownEnabled(false);
     setPhase('activating');
+
+    // Fresh capture state for this activation — a session can go through
+    // multiple activate/exit cycles without this screen unmounting, so
+    // these must reset per-emergency, not just once at mount.
+    emergencyStoppingRef.current = false;
+    captureGenerationRef.current += 1;
+    sequenceCounterRef.current = 1;
+    currentSegmentRef.current = null;
+    pendingSegmentUploadsRef.current = [];
+    flippingRef.current = false;
+    setFacing(DEFAULT_CAMERA_FACING);
 
     triggerEmergency();
 
@@ -564,6 +778,7 @@ export default function EmergencyScreen() {
           // Mounting before this causes the browser to fire its own
           // getUserMedia request which logs a second "Permission denied" error.
           setCameraSessionKey((v) => v + 1);
+          resetCameraReadyGate();
           setCameraMounted(true);
           setCameraActive(true);
         }
@@ -628,9 +843,21 @@ export default function EmergencyScreen() {
 
       if (camOk) {
         setStatusMessage('Starting video recording.');
-        const recordingPromise = cameraRef.current?.recordAsync({ maxDuration: 300 });
-        videoRecordingPromiseRef.current = recordingPromise ?? null;
-        recordingPromise?.catch(() => {});
+        const ready = await waitForCameraReady();
+        if (!isCurrentSession()) return;
+        if (ready) {
+          currentSegmentRef.current = {
+            facing: DEFAULT_CAMERA_FACING,
+            sequence: sequenceCounterRef.current,
+            startedAt: new Date().toISOString(),
+            finalized: false,
+          };
+          const recordingPromise = cameraRef.current?.recordAsync({ maxDuration: 300 });
+          videoRecordingPromiseRef.current = recordingPromise ?? null;
+          recordingPromise?.catch(() => {});
+        } else {
+          setStatusMessage('Camera did not become ready in time — continuing without video.');
+        }
       }
 
       recordingTimerRef.current = setInterval(() => setElapsed((v) => v + 1), 1000);
@@ -678,10 +905,12 @@ export default function EmergencyScreen() {
     contacts,
     emergencyCallMode,
     ensurePermissions,
+    resetCameraReadyGate,
     resolveEmergency,
     runConfiguredCallAction,
     setEmergencyId,
     triggerEmergency,
+    waitForCameraReady,
   ]);
 
   useEffect(() => {
@@ -735,18 +964,41 @@ export default function EmergencyScreen() {
           {cameraAutoRecord && (
             <View style={[styles.cameraPanel, { width: previewWidth, height: previewHeight }]} testID="emergency-camera-panel" accessible accessibilityLabel="emergency-camera-panel">
               {isCapturingPhase(phase) && cameraMounted ? (
-                <CameraView
-                  key={cameraSessionKey}
-                  ref={cameraRef}
-                  active={cameraActive}
-                  style={styles.cameraPreview}
-                  facing={Platform.OS === 'web' ? 'front' : 'back'}
-                  mode="video"
-                  mute={false}
-                  testID="emergency-camera-view"
-                  accessibilityLabel="emergency-camera-view"
-                  onMountError={(e) => setStatusMessage(e.message || 'Camera preview could not start.')}
-                />
+                <>
+                  <CameraView
+                    key={cameraSessionKey}
+                    ref={cameraRef}
+                    active={cameraActive}
+                    style={styles.cameraPreview}
+                    facing={facing}
+                    mode="video"
+                    mute={false}
+                    testID="emergency-camera-view"
+                    accessibilityLabel="emergency-camera-view"
+                    onCameraReady={handleCameraReady}
+                    onMountError={(e) => setStatusMessage(e.message || 'Camera preview could not start.')}
+                  />
+                  <TouchableOpacity
+                    activeOpacity={0.82}
+                    style={styles.flipCameraBtn}
+                    onPress={flipCamera}
+                    disabled={cameraSwitching}
+                    testID="emergency-flip-camera-btn"
+                    accessibilityLabel="emergency-flip-camera-btn"
+                  >
+                    <Text style={styles.flipCameraIcon}>⟲</Text>
+                  </TouchableOpacity>
+                  {cameraSwitching && (
+                    <View
+                      style={styles.switchingOverlay}
+                      testID="emergency-camera-switching"
+                      accessible
+                      accessibilityLabel="emergency-camera-switching"
+                    >
+                      <Text style={styles.switchingText}>Switching camera…</Text>
+                    </View>
+                  )}
+                </>
               ) : (
                 <View style={styles.cameraFallback} testID="emergency-camera-fallback" accessible accessibilityLabel="emergency-camera-fallback">
                   <Text style={styles.cameraFallbackText}>
@@ -862,6 +1114,31 @@ const styles = StyleSheet.create({
   cameraPreview: { height: '100%', width: '100%' },
   cameraFallback: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 18 },
   cameraFallbackText: { color: '#a8a0bf', fontSize: 13, fontWeight: '700' },
+  flipCameraBtn: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.56)',
+    borderColor: 'rgba(255,255,255,0.32)',
+    borderRadius: 22,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: 10,
+    top: 10,
+    width: 44,
+  },
+  flipCameraIcon: { color: '#fff', fontSize: 22, fontWeight: '900' },
+  switchingOverlay: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.56)',
+    bottom: 0,
+    justifyContent: 'center',
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  switchingText: { color: '#fff', fontSize: 15, fontWeight: '900' },
   statusPanel: { backgroundColor: 'rgba(0,0,0,0.56)', borderColor: 'rgba(255,255,255,0.14)', borderRadius: 16, borderWidth: 1, maxWidth: 520, padding: 12, width: '100%' },
   statusText: { color: '#fff', fontSize: 14, fontWeight: '800', textAlign: 'center' },
   notificationText: { color: '#f7ca75', fontSize: 12, lineHeight: 18, marginTop: 6, textAlign: 'center' },
