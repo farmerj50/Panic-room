@@ -20,11 +20,13 @@ import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { usePinLock } from '../context/PinLockContext';
 import { useEmergencyContext } from '../context/EmergencyContext';
+import { useSubscription } from '../context/SubscriptionContext';
 import { getPublicKeyBase64 } from '../services/keyService';
 import { setMyPhoneNumber, setMyPublicKey } from '../services/covertMessageService';
 import { clearPin as clearPinStorage } from '../services/pinStorage';
 import { DECOY_ENABLED_KEY } from './DecoySettingsScreen';
 import { API_URL } from '../config/emergencyConfig';
+import { ANDROID_PACKAGE_NAME, PREMIUM_PRODUCT_ID } from '../config/purchasesConfig';
 
 import heroBg from '../../assets/images/hero-bg.png';
 import journalCard from '../../assets/images/journal-card.png';
@@ -122,6 +124,7 @@ export default function ProfileScreen() {
   const { deleteAccount, logout, user } = useAuth();
   const { activateDecoy } = usePinLock();
   const { contacts, isSetupDone, loadContacts } = useEmergencyContext();
+  const { isPremium } = useSubscription();
   const { width } = useWindowDimensions();
 
   const isWide = width >= 900;
@@ -222,6 +225,12 @@ export default function ProfileScreen() {
           },
         },
       ],
+    );
+  };
+
+  const handleManageSubscription = () => {
+    Linking.openURL(
+      `https://play.google.com/store/account/subscriptions?sku=${PREMIUM_PRODUCT_ID}&package=${ANDROID_PACKAGE_NAME}`,
     );
   };
 
@@ -357,6 +366,58 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
         </ImageBackground>
+
+        <Text style={styles.sectionLabel}>Bes Premium</Text>
+        <LinearGradient
+          colors={['rgba(13, 18, 49, 0.97)', 'rgba(10, 12, 38, 0.97)']}
+          style={styles.section}
+        >
+          <TouchableOpacity
+            activeOpacity={0.84}
+            style={[styles.resourceRow, isPremium && styles.resourceRowBorder]}
+            onPress={() => navigation.navigate('Paywall')}
+            testID="profile-premium-btn"
+            accessibilityLabel="profile-premium-btn"
+          >
+            <View style={[styles.itemIcon, { backgroundColor: 'rgba(183,119,255,0.24)' }]}>
+              <Text style={[styles.itemIconText, { color: '#b777ff' }]}>+</Text>
+            </View>
+            <View style={styles.itemCopy}>
+              <Text style={styles.itemName}>{isPremium ? 'Bes Premium' : 'Upgrade to Bes Premium'}</Text>
+              <Text style={styles.itemDesc}>
+                {isPremium
+                  ? 'Background location, covert messaging, and unlimited contacts.'
+                  : 'Unlock background location, covert messaging, and unlimited contacts.'}
+              </Text>
+            </View>
+            {isPremium ? (
+              <View style={[styles.valueBadge, { backgroundColor: '#4ee1d522', borderColor: '#4ee1d555' }]}>
+                <Text style={[styles.valueText, { color: '#4ee1d5' }]}>Active</Text>
+              </View>
+            ) : (
+              <Text style={styles.rowArrow}>{'>'}</Text>
+            )}
+          </TouchableOpacity>
+
+          {isPremium && (
+            <TouchableOpacity
+              activeOpacity={0.84}
+              style={styles.resourceRow}
+              onPress={handleManageSubscription}
+              testID="profile-manage-subscription-btn"
+              accessibilityLabel="profile-manage-subscription-btn"
+            >
+              <View style={[styles.itemIcon, { backgroundColor: 'rgba(74,168,255,0.24)' }]}>
+                <Text style={[styles.itemIconText, { color: '#4aa8ff' }]}>G</Text>
+              </View>
+              <View style={styles.itemCopy}>
+                <Text style={styles.itemName}>Manage Subscription</Text>
+                <Text style={styles.itemDesc}>Change plan or cancel through Google Play.</Text>
+              </View>
+              <Text style={styles.rowArrow}>{'>'}</Text>
+            </TouchableOpacity>
+          )}
+        </LinearGradient>
 
         <Text style={styles.sectionLabel}>Safety & Security</Text>
         <View style={[styles.safetyGrid, !isWide && styles.safetyGridNarrow]}>
