@@ -13,14 +13,18 @@ describe('PanicRoom evidence screen', () => {
 
     await tabBar.profileBtn.waitForDisplayed({ timeout: 45000 });
     await tabBar.profileBtn.click();
-    await profilePage.evidenceBtn.waitForDisplayed({ timeout: 10000 });
-    await profilePage.evidenceBtn.click();
+    await profilePage.scrollToElementAndClick('~profile-evidence-btn');
 
     await evidencePage.screen.waitForDisplayed({ timeout: 10000 });
     expect(await evidencePage.emptyState.isExisting()).toBe(true);
 
     // ── Trigger a real (abbreviated) emergency so an event exists ────────
-    await tabBar.homeBtn.click();
+    // Evidence is a plain stack push with no bottom tab bar of its own
+    // (confirmed via a failure screenshot: back arrow + title, no nav row)
+    // — tabBar.homeBtn was never reachable from here. Pop back to Profile
+    // (which does have the tab bar) instead, matching the screen's own
+    // back button (navigation.goBack()).
+    await driver.back();
     await tabBar.emergencyBtn.waitForDisplayed({ timeout: 10000 });
     await tabBar.emergencyBtn.click();
 
@@ -36,8 +40,7 @@ describe('PanicRoom evidence screen', () => {
 
     // ── Evidence should now show at least one event ──────────────────────
     await tabBar.profileBtn.click();
-    await profilePage.evidenceBtn.waitForDisplayed({ timeout: 10000 });
-    await profilePage.evidenceBtn.click();
+    await profilePage.scrollToElementAndClick('~profile-evidence-btn');
     await evidencePage.screen.waitForDisplayed({ timeout: 10000 });
 
     await driver.waitUntil(

@@ -17,8 +17,7 @@ describe('PanicRoom login flow', () => {
 
     // ── Sign out ───────────────────────────────────────────────────────────
     await tabBar.profileBtn.click();
-    await profilePage.logoutBtn.waitForDisplayed({ timeout: 10000 });
-    await profilePage.logoutBtn.click();
+    await profilePage.scrollToElementAndClick('~profile-logout-btn');
 
     // Signing out drops back to the landing/auth stack.
     await landingPage.signInBtn.waitForDisplayed({ timeout: 15000 });
@@ -32,8 +31,7 @@ describe('PanicRoom login flow', () => {
 
     // Leave the app signed out so the next test starts from a known state.
     await tabBar.profileBtn.click();
-    await profilePage.logoutBtn.waitForDisplayed({ timeout: 10000 });
-    await profilePage.logoutBtn.click();
+    await profilePage.scrollToElementAndClick('~profile-logout-btn');
     await landingPage.signInBtn.waitForDisplayed({ timeout: 15000 });
   });
 

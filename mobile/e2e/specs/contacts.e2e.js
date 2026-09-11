@@ -13,8 +13,7 @@ describe('PanicRoom trusted contacts', () => {
     await tabBar.profileBtn.waitForDisplayed({ timeout: 45000 });
     await tabBar.profileBtn.click();
 
-    await profilePage.contactsBtn.waitForDisplayed({ timeout: 10000 });
-    await profilePage.contactsBtn.click();
+    await profilePage.scrollToElementAndClick('~profile-contacts-btn');
 
     await contactsPage.screen.waitForDisplayed({ timeout: 10000 });
 
@@ -24,14 +23,16 @@ describe('PanicRoom trusted contacts', () => {
     const contactName = `E2E Contact ${Date.now()}`;
     await contactsPage.addContact(contactName, '+15551234567');
 
-    // Saving is a real network round-trip to the backend.
-    const savedRow = contactsPage.rowByName(contactName);
-    await savedRow.waitForDisplayed({ timeout: 15000 });
+    // Saving is a real network round-trip to the backend. The new row sits
+    // above the add-contact form we just scrolled down to reach, and
+    // saving collapses that form — scroll back toward the top to find it.
+    await contactsPage.scrollToTop();
+    const savedRow = await contactsPage.scrollToElement(`//*[@text="${contactName}"]`);
+    expect(await savedRow.isDisplayed()).toBe(true);
   });
 
   it('rejects an invalid phone number with a visible error', async () => {
     // Continues from the previous test's session — already on Contacts.
-    await contactsPage.addToggleBtn.waitForDisplayed({ timeout: 10000 });
     await contactsPage.addContact('Bad Number Contact', '123');
 
     // The backend's phone-format validation should surface as an inline
