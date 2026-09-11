@@ -14,12 +14,15 @@ export type EmergencySettings = {
   cameraAutoRecord: boolean;
   /** Auto-start audio recording when emergency activates (default on). */
   audioAutoRecord: boolean;
-  /** After dialing 911, automatically open the priority contact's dialer too. */
-  autoCallContact: boolean;
-  /** Which call action should run when emergency mode activates. */
-  emergencyCallMode: 'emergency' | 'priority' | 'contacts' | 'ask' | 'none';
-  /** Optional priority-contact follow-up after opening the emergency-number dialer. */
-  contactFollowUpAction: 'none' | 'call' | 'callAll' | 'facetime';
+  /**
+   * Which call action should run automatically when emergency mode
+   * activates. Deliberately has no option that auto-dials 911 — the
+   * countdown's cancel window is not treated as sufficient confirmation
+   * for placing a real emergency call. Calling 911 always requires an
+   * explicit tap on the "Call 911" button, which itself has a confirm
+   * dialog (see confirmCallEmergencyNumber in EmergencyScreen.tsx).
+   */
+  emergencyCallMode: 'priority' | 'contacts' | 'ask' | 'none';
 };
 
 const DEFAULT_SETTINGS: EmergencySettings = {
@@ -27,9 +30,7 @@ const DEFAULT_SETTINGS: EmergencySettings = {
   backgroundLocationEnabled: false,
   cameraAutoRecord: true,
   audioAutoRecord: true,
-  autoCallContact: false,
-  emergencyCallMode: 'emergency',
-  contactFollowUpAction: 'none',
+  emergencyCallMode: 'ask',
 };
 
 const SETTINGS_KEY = 'panicroom_emergency_settings';
@@ -75,8 +76,10 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
           setEmergencySettings({
             ...DEFAULT_SETTINGS,
             ...parsed,
-            contactFollowUpAction:
-              parsed.contactFollowUpAction ?? (parsed.autoCallContact ? 'call' : 'none'),
+            // Migrate accounts that still have the removed auto-dial-911
+            // mode persisted from before this device's settings sync.
+            emergencyCallMode:
+              parsed.emergencyCallMode === 'emergency' ? 'ask' : parsed.emergencyCallMode ?? 'ask',
           });
         }
       })

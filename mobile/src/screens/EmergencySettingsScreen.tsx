@@ -37,21 +37,15 @@ import {
 const heroBg = require('../../assets/images/hero-bg.png');
 
 type CallMode = EmergencySettings['emergencyCallMode'];
-type FollowUpAction = EmergencySettings['contactFollowUpAction'];
 
+// Deliberately no "auto-dial 911" option — calling 911 always requires an
+// explicit tap on the Call 911 button (with its own confirm dialog), never
+// something that fires on its own when the countdown runs out.
 const CALL_MODE_OPTIONS: Array<{ value: CallMode; title: string; description: string }> = [
-  { value: 'emergency', title: 'Call 911', description: 'Open the emergency-number dialer automatically.' },
-  { value: 'priority', title: 'Call Primary', description: 'Open your priority contact instead of 911.' },
+  { value: 'priority', title: 'Call Primary', description: 'Open your priority contact’s dialer automatically.' },
   { value: 'contacts', title: 'Call Contacts', description: 'Start voice calls to all trusted contacts.' },
   { value: 'ask', title: 'Ask Me', description: 'Show call choices during emergency mode.' },
   { value: 'none', title: 'Alerts Only', description: 'Notify contacts and record without opening a dialer.' },
-];
-
-const FOLLOW_UP_OPTIONS: Array<{ value: FollowUpAction; title: string; description: string }> = [
-  { value: 'none', title: 'None', description: 'Do not open a second call action.' },
-  { value: 'call', title: 'Call Primary', description: 'After 911, open the primary contact dialer.' },
-  { value: 'callAll', title: 'Call Contacts', description: 'After 911, start voice calls to all trusted contacts.' },
-  { value: 'facetime', title: 'FaceTime Primary', description: 'After 911, open FaceTime for the primary contact.' },
 ];
 
 export default function EmergencySettingsScreen() {
@@ -208,13 +202,6 @@ export default function EmergencySettingsScreen() {
     await updateEmergencySettings({ emergencyCallMode: value });
   };
 
-  const setFollowUpAction = async (value: FollowUpAction) => {
-    await updateEmergencySettings({
-      contactFollowUpAction: value,
-      autoCallContact: value === 'call' || value === 'callAll',
-    });
-  };
-
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
@@ -275,21 +262,10 @@ export default function EmergencySettingsScreen() {
         <SectionCard title="Call Action" icon="!" iconColor="#ef445b">
           <OptionGroup
             title="Emergency Call Mode"
-            description="Choose what happens after recording, GPS, and trusted-contact alerts start."
+            description="Choose what happens after recording, GPS, and trusted-contact alerts start. Calling 911 itself always needs a manual tap on the Call 911 button, with its own confirmation — nothing dials 911 on its own."
             options={CALL_MODE_OPTIONS}
             value={emergencySettings.emergencyCallMode}
             onSelect={setCallMode}
-          />
-          <View style={styles.rowDivider} />
-          <OptionGroup
-            title="After 911"
-            description="Optional second action after opening the 911 dialer. Phone and FaceTime apps may require user confirmation."
-            options={FOLLOW_UP_OPTIONS}
-            value={
-              emergencySettings.contactFollowUpAction ??
-              (emergencySettings.autoCallContact ? 'call' : 'none')
-            }
-            onSelect={setFollowUpAction}
           />
         </SectionCard>
 

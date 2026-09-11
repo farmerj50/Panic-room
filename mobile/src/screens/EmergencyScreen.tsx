@@ -209,8 +209,6 @@ export default function EmergencyScreen() {
   const {
     cameraAutoRecord,
     audioAutoRecord,
-    autoCallContact,
-    contactFollowUpAction,
     emergencyCallMode,
   } = emergencySettings;
 
@@ -507,9 +505,11 @@ export default function EmergencyScreen() {
     );
   }, [callTargetContact, openExternalCallAction]);
 
-  const runConfiguredCallAction = useCallback(async (isCurrentSession?: () => boolean) => {
-    const followUpAction = contactFollowUpAction ?? (autoCallContact ? 'call' : 'none');
-
+  // Deliberately has no path that dials 911 on its own — the countdown's
+  // cancel window isn't treated as confirmation for an actual emergency
+  // call. Calling 911 always requires an explicit tap on the "Call 911"
+  // button, which itself confirms via confirmCallEmergencyNumber.
+  const runConfiguredCallAction = useCallback(async () => {
     if (emergencyCallMode === 'none') {
       setStatusMessage('Emergency mode active. Alerts sent.');
       return;
@@ -526,41 +526,8 @@ export default function EmergencyScreen() {
       return;
     }
 
-    if (emergencyCallMode === 'contacts') {
-      await callAllContacts();
-      return;
-    }
-
-    setStatusMessage('Opening emergency dialer.');
-    await callEmergencyNumber();
-
-    if (followUpAction === 'none') return;
-
-    await wait(1000);
-    if (isCurrentSession && !isCurrentSession()) return;
-
-    if (followUpAction === 'call') {
-      setStatusMessage('Opening priority contact dialer.');
-      await callPriorityContact();
-      return;
-    }
-
-    if (followUpAction === 'callAll') {
-      await callAllContacts();
-      return;
-    }
-
-    setStatusMessage('Opening FaceTime for priority contact.');
-    await facetimePriorityContact();
-  }, [
-    autoCallContact,
-    callAllContacts,
-    callEmergencyNumber,
-    callPriorityContact,
-    contactFollowUpAction,
-    emergencyCallMode,
-    facetimePriorityContact,
-  ]);
+    await callAllContacts();
+  }, [callAllContacts, callPriorityContact, emergencyCallMode]);
 
   const activateEmergency = useCallback(async () => {
     if (activationStarted.current) return;
@@ -686,7 +653,7 @@ export default function EmergencyScreen() {
         setNotificationStatus('No trusted contacts saved. Add them in Contacts.');
       }
 
-      await runConfiguredCallAction(isCurrentSession);
+      await runConfiguredCallAction();
       if (!isCurrentSession()) return;
 
       if (emergencyCallMode !== 'ask' && emergencyCallMode !== 'none' && Platform.OS !== 'web') {
@@ -739,11 +706,12 @@ export default function EmergencyScreen() {
                 audioAutoRecord && 'Audio',
                 'GPS',
                 'trusted contact alerts',
-                `emergency dialer (${EMERGENCY_NUMBER})`,
+                emergencyCallMode === 'priority' && 'a call to your priority contact',
+                emergencyCallMode === 'contacts' && 'calls to your trusted contacts',
               ]
                 .filter(Boolean)
                 .join(', ')}{' '}
-              will start automatically.
+              will start automatically. Calling {EMERGENCY_NUMBER} always needs a manual tap.
             </Text>
             <TouchableOpacity activeOpacity={0.82} style={styles.cancelBtn} onPress={returnHome} testID="emergency-cancel-btn" accessibilityLabel="emergency-cancel-btn">
               <Text style={styles.cancelText}>Cancel</Text>
