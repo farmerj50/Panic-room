@@ -8,6 +8,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { PinLockProvider, usePinLock } from '../context/PinLockContext';
 import { EmergencyProvider } from '../context/EmergencyContext';
+import { SubscriptionProvider } from '../context/SubscriptionContext';
 import { RootStackParamList, TabParamList, UnauthStackParamList } from './types';
 import { ACTION_ACTIVATE_SOS, restoreLockScreenButton, setupNotificationHandler } from '../services/lockScreenService';
 
@@ -30,6 +31,7 @@ import PinLockScreen from '../screens/PinLockScreen';
 import PinSetupScreen from '../screens/PinSetupScreen';
 import DecoyScreen from '../screens/DecoyScreen';
 import DecoySettingsScreen from '../screens/DecoySettingsScreen';
+import PaywallScreen from '../screens/PaywallScreen';
 
 // expo-notifications loads at runtime so the app still boots before `npm install`.
 // Once installed, the module resolves normally; until then every call is a no-op.
@@ -337,31 +339,34 @@ function AuthenticatedNavigator() {
   }, [navReady, routePostAuthTab]);
 
   return (
-    <EmergencyProvider>
-      <NavigationContainer ref={navigationRef} linking={linking as never} onReady={onNavReady}>
-        <Stack.Navigator
-          initialRouteName="Main"
-          screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
-        >
-          <Stack.Screen name="Main" component={MainTabs} />
-          <Stack.Screen name="Home" component={HomeRedirect} />
-          <Stack.Screen name="Resources" component={ResourcesRedirect} />
-          <Stack.Screen name="SafetyPlan" component={SafetyPlanRedirect} />
-          <Stack.Screen name="Emergency" component={EmergencyRedirect} />
-          <Stack.Screen name="Journal" component={JournalRedirect} />
-          <Stack.Screen name="Messages" component={MessagesRedirect} />
-          <Stack.Screen name="Profile" component={ProfileRedirect} />
-          <Stack.Screen name="Setup" component={SetupScreen} />
-          <Stack.Screen name="Contacts" component={ContactsScreen} />
-          <Stack.Screen name="Evidence" component={EvidenceScreen} />
-          <Stack.Screen name="CovertMessages" component={CovertMessageScreen} />
-          <Stack.Screen name="Safety" component={SafetyPlanScreen} />
-          <Stack.Screen name="EmergencySettings" component={EmergencySettingsScreen} />
-          <Stack.Screen name="PinSetup" component={PinSetupScreen} />
-          <Stack.Screen name="DecoySettings" component={DecoySettingsScreen} />
-        </Stack.Navigator>
-      </NavigationContainer>
-    </EmergencyProvider>
+    <SubscriptionProvider>
+      <EmergencyProvider>
+        <NavigationContainer ref={navigationRef} linking={linking as never} onReady={onNavReady}>
+          <Stack.Navigator
+            initialRouteName="Main"
+            screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
+          >
+            <Stack.Screen name="Main" component={MainTabs} />
+            <Stack.Screen name="Home" component={HomeRedirect} />
+            <Stack.Screen name="Resources" component={ResourcesRedirect} />
+            <Stack.Screen name="SafetyPlan" component={SafetyPlanRedirect} />
+            <Stack.Screen name="Emergency" component={EmergencyRedirect} />
+            <Stack.Screen name="Journal" component={JournalRedirect} />
+            <Stack.Screen name="Messages" component={MessagesRedirect} />
+            <Stack.Screen name="Profile" component={ProfileRedirect} />
+            <Stack.Screen name="Setup" component={SetupScreen} />
+            <Stack.Screen name="Contacts" component={ContactsScreen} />
+            <Stack.Screen name="Evidence" component={EvidenceScreen} />
+            <Stack.Screen name="CovertMessages" component={CovertMessageScreen} />
+            <Stack.Screen name="Safety" component={SafetyPlanScreen} />
+            <Stack.Screen name="EmergencySettings" component={EmergencySettingsScreen} />
+            <Stack.Screen name="PinSetup" component={PinSetupScreen} />
+            <Stack.Screen name="DecoySettings" component={DecoySettingsScreen} />
+            <Stack.Screen name="Paywall" component={PaywallScreen} />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </EmergencyProvider>
+    </SubscriptionProvider>
   );
 }
 

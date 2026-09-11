@@ -16,6 +16,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
 
 import { type EmergencySettings, useEmergencyContext } from '../context/EmergencyContext';
+import { useSubscription } from '../context/SubscriptionContext';
 import {
   disableLockScreenButton,
   enableLockScreenButton,
@@ -54,8 +55,9 @@ const FOLLOW_UP_OPTIONS: Array<{ value: FollowUpAction; title: string; descripti
 ];
 
 export default function EmergencySettingsScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const { emergencySettings, updateEmergencySettings } = useEmergencyContext();
+  const { isPremium } = useSubscription();
 
   const [lockScreenActive, setLockScreenActive] = useState(false);
   const [bgLocActive, setBgLocActive] = useState(false);
@@ -115,6 +117,10 @@ export default function EmergencySettingsScreen() {
   // ── Background location ───────────────────────────────────────────────────
 
   const toggleBgLocation = async (value: boolean) => {
+    if (value && !isPremium) {
+      navigation.navigate('Paywall', { reason: 'background-location' });
+      return;
+    }
     setSaving('bgLoc');
     try {
       if (value) {

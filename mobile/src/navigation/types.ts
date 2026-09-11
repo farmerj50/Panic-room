@@ -17,6 +17,7 @@ export type RootStackParamList = {
   CovertMessages: undefined;
   PinSetup: undefined;
   DecoySettings: undefined;
+  Paywall: { reason?: 'background-location' | 'covert-messaging' | 'contacts-cap' } | undefined;
 };
 
 export type TabParamList = {

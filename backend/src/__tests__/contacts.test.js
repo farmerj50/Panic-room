@@ -119,4 +119,35 @@ describe("contacts", () => {
     const res = await request(app).get("/api/contacts");
     expect(res.status).toBe(401);
   });
+
+  test("free plan is capped at 3 trusted contacts; Bes Premium is unlimited", async () => {
+    const { accessToken, userId } = await registerUser();
+    createdUserIds.push(userId);
+
+    for (let i = 0; i < 3; i += 1) {
+      const res = await request(app)
+        .post("/api/contacts")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ name: `Free Contact ${i}`, phoneNumber: `+1555000000${i}` });
+      expect(res.status).toBe(201);
+    }
+
+    const overCap = await request(app)
+      .post("/api/contacts")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ name: "One Too Many", phoneNumber: "+15550000009" });
+    expect(overCap.status).toBe(403);
+    expect(overCap.body.code).toBe("CONTACT_LIMIT_REACHED");
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { subscriptionStatus: "active", subscriptionExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+    });
+
+    const asPremium = await request(app)
+      .post("/api/contacts")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ name: "Fourth Contact", phoneNumber: "+15550000004" });
+    expect(asPremium.status).toBe(201);
+  });
 });

@@ -18,6 +18,7 @@ import { Buffer } from 'buffer';
 import { decodeUTF8, encodeUTF8 } from 'tweetnacl-util';
 
 import { useEmergencyContext } from '../context/EmergencyContext';
+import { useSubscription } from '../context/SubscriptionContext';
 import { getOrCreateKeyPair } from '../services/keyService';
 import { decryptMessage, encryptMessage } from '../services/covertCryptoService';
 import { decodeCovertPayload, encodeCovertPayload, generateMessageId } from '../types/CovertPayload';
@@ -31,6 +32,7 @@ import {
   uploadCovertImage,
 } from '../services/covertMessageService';
 import { getCurrentLocation } from '../services/locationService';
+import { ApiError } from '../services/apiClient';
 
 // Cover images are picked from a small built-in set rather than the device's
 // photo library — no file-system access, and no risk of accidentally
@@ -53,6 +55,7 @@ function fmtDate(iso: string) {
 export default function CovertMessageScreen() {
   const navigation = useNavigation<any>();
   const { contacts } = useEmergencyContext();
+  const { isPremium } = useSubscription();
 
   const [mode, setMode] = useState<'send' | 'inbox'>('send');
 
@@ -95,6 +98,10 @@ export default function CovertMessageScreen() {
   };
 
   const handleSend = async () => {
+    if (!isPremium) {
+      navigation.navigate('Paywall', { reason: 'covert-messaging' });
+      return;
+    }
     if (!selectedContactId) {
       Alert.alert('Choose a contact', 'Select who this covert message is for.');
       return;
@@ -146,10 +153,18 @@ export default function CovertMessageScreen() {
       setMessageText('');
       setSelectedContactId(null);
     } catch (error) {
-      Alert.alert(
-        'Could not send',
-        error instanceof Error ? error.message : 'Something went wrong. Try again.',
-      );
+      if (error instanceof ApiError && error.code === 'PREMIUM_REQUIRED') {
+        Alert.alert(
+          'Still activating',
+          'Bes Premium is still activating on our end. Please try again in a moment.',
+          [{ text: 'OK', onPress: () => navigation.navigate('Paywall', { reason: 'covert-messaging' }) }],
+        );
+      } else {
+        Alert.alert(
+          'Could not send',
+          error instanceof Error ? error.message : 'Something went wrong. Try again.',
+        );
+      }
     } finally {
       setSending(false);
     }

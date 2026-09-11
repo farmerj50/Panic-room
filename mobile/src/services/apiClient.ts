@@ -12,11 +12,13 @@ export { getAccessToken as getAuthToken, clearTokens as clearAuthToken, setToken
 
 export class ApiError extends Error {
   status: number;
+  code?: string;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -114,7 +116,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   const payload = text ? JSON.parse(text) : null;
 
   if (!response.ok) {
-    throw new ApiError(payload?.error || payload?.message || 'Request failed', response.status);
+    throw new ApiError(payload?.error || payload?.message || 'Request failed', response.status, payload?.code);
   }
 
   return payload as T;

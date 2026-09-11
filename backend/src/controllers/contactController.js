@@ -1,6 +1,7 @@
 const prisma = require("../config/db");
 const { decrypt, encrypt, hashLookup } = require("../services/cryptoService");
 const { isValidPhoneNumber, normalizePhoneDigits } = require("../utils/phone");
+const { isUserPremium, FREE_CONTACT_LIMIT } = require("../services/subscriptionService");
 
 function serializeContact(contact) {
   return {
@@ -24,6 +25,17 @@ exports.createContact = async (req, res, next) => {
 
     if (!isValidPhoneNumber(trimmedPhone)) {
       return res.status(400).json({ error: "Enter a valid phone number." });
+    }
+
+    const [existingCount, user] = await Promise.all([
+      prisma.trustedContact.count({ where: { userId: req.user.id } }),
+      prisma.user.findUnique({ where: { id: req.user.id }, select: { subscriptionExpiresAt: true } }),
+    ]);
+    if (existingCount >= FREE_CONTACT_LIMIT && !isUserPremium(user)) {
+      return res.status(403).json({
+        error: `Free plan is limited to ${FREE_CONTACT_LIMIT} trusted contacts. Upgrade to Bes Premium for more.`,
+        code: "CONTACT_LIMIT_REACHED",
+      });
     }
 
     const contact = await prisma.trustedContact.create({

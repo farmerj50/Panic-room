@@ -18,7 +18,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 
 import { useEmergencyContext } from '../context/EmergencyContext';
+import { useSubscription } from '../context/SubscriptionContext';
 import { deleteContactFromBackend, saveContactToBackend, updateContactInBackend } from '../services/contactService';
+import { ApiError } from '../services/apiClient';
 import { Contact } from '../types/contact';
 
 import resourcesCard from '../../assets/images/resources-card.png';
@@ -40,6 +42,7 @@ function getInitial(name: string) {
 export default function ContactsScreen() {
   const navigation = useNavigation<any>();
   const { contacts, setContacts } = useEmergencyContext();
+  const { contactLimit } = useSubscription();
   const { width } = useWindowDimensions();
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -49,6 +52,7 @@ export default function ContactsScreen() {
 
   const isWide = width >= 900;
   const pageMaxWidth = isWide ? 1180 : 620;
+  const atContactCap = contactLimit != null && contacts.length >= contactLimit;
 
   const goBack = () => {
     if (navigation.canGoBack()) {
@@ -75,8 +79,13 @@ export default function ContactsScreen() {
       setName('');
       setPhone('');
       setShowAdd(false);
-    } catch {
-      Alert.alert('Error', 'Could not save contact. Check your connection.');
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'CONTACT_LIMIT_REACHED') {
+        setShowAdd(false);
+        navigation.navigate('Paywall', { reason: 'contacts-cap' });
+      } else {
+        Alert.alert('Error', 'Could not save contact. Check your connection.');
+      }
     } finally {
       setSaving(false);
     }
@@ -123,6 +132,14 @@ export default function ContactsScreen() {
     await Linking.openURL(`sms:${contact.phoneNumber}?body=${body}`);
   };
 
+  const handleAddTrigger = () => {
+    if (atContactCap) {
+      navigation.navigate('Paywall', { reason: 'contacts-cap' });
+      return;
+    }
+    setShowAdd((current) => !current);
+  };
+
   const sortedContacts = [...contacts].sort(
     (a, b) => Number(b.isPriority) - Number(a.isPriority),
   );
@@ -143,7 +160,7 @@ export default function ContactsScreen() {
             </TouchableOpacity>
             <Text style={styles.title}>Emergency Contacts</Text>
             <TouchableOpacity
-              onPress={() => setShowAdd((current) => !current)}
+              onPress={handleAddTrigger}
               style={styles.addTopButton}
               activeOpacity={0.82}
             >
@@ -183,7 +200,12 @@ export default function ContactsScreen() {
           </LinearGradient>
 
           <View style={styles.contactsHeader}>
-            <Text style={styles.sectionTitle}>Your Contacts</Text>
+            <View>
+              <Text style={styles.sectionTitle}>Your Contacts</Text>
+              <Text style={styles.contactLimitText}>
+                {contacts.length}/{contactLimit ?? '∞'} trusted contacts
+              </Text>
+            </View>
             <TouchableOpacity
               activeOpacity={0.82}
               style={styles.editButton}
@@ -295,7 +317,7 @@ export default function ContactsScreen() {
           <TouchableOpacity
             activeOpacity={0.86}
             style={styles.addContactCard}
-            onPress={() => setShowAdd((current) => !current)}
+            onPress={handleAddTrigger}
             testID="contacts-add-toggle-btn"
             accessibilityLabel="contacts-add-toggle-btn"
           >
@@ -303,10 +325,16 @@ export default function ContactsScreen() {
               <Text style={styles.addIconText}>+</Text>
             </View>
             <View style={styles.addCopy}>
-              <Text style={styles.addTitle}>Add New Contact</Text>
-              <Text style={styles.addText}>Add someone you trust to help in an emergency.</Text>
+              <Text style={styles.addTitle}>
+                {atContactCap ? 'Upgrade for More Contacts' : 'Add New Contact'}
+              </Text>
+              <Text style={styles.addText}>
+                {atContactCap
+                  ? `You've reached your ${contactLimit} trusted contact limit. Upgrade to Bes Premium for unlimited contacts.`
+                  : 'Add someone you trust to help in an emergency.'}
+              </Text>
             </View>
-            <Text style={styles.rowArrow}>{showAdd ? 'v' : '>'}</Text>
+            <Text style={styles.rowArrow}>{atContactCap ? '>' : showAdd ? 'v' : '>'}</Text>
           </TouchableOpacity>
 
           {showAdd && (
@@ -461,6 +489,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
   },
   sectionTitle: { color: '#fff', fontSize: 22, fontWeight: '900' },
+  contactLimitText: { color: '#918aaa', fontSize: 13, fontWeight: '600', marginTop: 4 },
   editButton: {
     alignItems: 'center',
     backgroundColor: 'rgba(137,76,255,0.12)',

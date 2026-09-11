@@ -16,6 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 
 import { useEmergencyContext } from '../context/EmergencyContext';
+import { useSubscription } from '../context/SubscriptionContext';
 
 import journalCard from '../../assets/images/journal-card.png';
 import resourcesCard from '../../assets/images/resources-card.png';
@@ -113,11 +114,17 @@ const SUPPORT_CONVERSATIONS = [
 export default function MessagesScreen() {
   const navigation = useNavigation<any>();
   const { contacts } = useEmergencyContext();
+  const { isPremium } = useSubscription();
   const { width } = useWindowDimensions();
   const [sending, setSending] = useState<string | null>(null);
 
   const isWide = width >= 900;
   const pageMaxWidth = isWide ? 1000 : 620;
+
+  const goToCovertMessages = () => {
+    if (isPremium) navigation.navigate('CovertMessages');
+    else navigation.navigate('Paywall', { reason: 'covert-messaging' });
+  };
 
   const orderedContacts = useMemo(
     () => [...contacts].sort((a, b) => Number(b.isPriority) - Number(a.isPriority)),
@@ -206,7 +213,7 @@ export default function MessagesScreen() {
             <TouchableOpacity
               style={styles.encryptedBadge}
               activeOpacity={0.84}
-              onPress={() => navigation.navigate('CovertMessages')}
+              onPress={goToCovertMessages}
             >
               <View style={styles.encryptedIcon}>
                 <Text style={styles.encryptedIconText}>K</Text>
@@ -225,7 +232,7 @@ export default function MessagesScreen() {
               key={action.title}
               activeOpacity={0.84}
               style={[styles.quickCard, !isWide && styles.quickCardNarrow]}
-              onPress={() => navigation.navigate(action.route)}
+              onPress={() => (action.route === 'CovertMessages' ? goToCovertMessages() : navigation.navigate(action.route))}
             >
               <View style={[styles.quickIconCircle, { backgroundColor: `${action.color}24` }]}>
                 <Text style={[styles.quickIconText, { color: action.color }]}>{action.icon}</Text>

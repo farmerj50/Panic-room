@@ -23,6 +23,16 @@ async function registerUser() {
   return { accessToken: res.body.accessToken, userId: res.body.user.id };
 }
 
+// Sending (not receiving) a covert message requires Bes Premium — bypass
+// RevenueCat entirely for tests by writing the entitlement directly, the
+// same way the backend's webhook handler would.
+async function makePremium(userId) {
+  await prisma.user.update({
+    where: { id: userId },
+    data: { subscriptionStatus: "active", subscriptionExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+  });
+}
+
 async function deleteUser(userId) {
   await prisma.covertMessage.deleteMany({ where: { OR: [{ senderId: userId }, { recipientUserId: userId }] } });
   await prisma.trustedContact.deleteMany({ where: { userId } });
@@ -144,6 +154,7 @@ describe("covert messages", () => {
     const sender = await registerUser();
     const recipient = await registerUser();
     createdUserIds.push(sender.userId, recipient.userId);
+    await makePremium(sender.userId);
 
     const recipientPhone = uniquePhone();
     await request(app)
@@ -198,6 +209,7 @@ describe("covert messages", () => {
   test("rejects creating a message for a contact that hasn't registered a matching phone number", async () => {
     const sender = await registerUser();
     createdUserIds.push(sender.userId);
+    await makePremium(sender.userId);
 
     const contact = await request(app)
       .post("/api/contacts")
@@ -216,5 +228,44 @@ describe("covert messages", () => {
 
     expect(create.status).toBe(404);
     expect(create.body.error).toEqual(expect.stringContaining("hasn't set up Bes"));
+  });
+
+  test("sending requires Bes Premium, but reading an inbox already-delivered message does not", async () => {
+    const sender = await registerUser();
+    const recipient = await registerUser();
+    createdUserIds.push(sender.userId, recipient.userId);
+    // Deliberately do NOT make sender premium here.
+
+    const recipientPhone = uniquePhone();
+    await request(app)
+      .patch("/api/users/me")
+      .set("Authorization", `Bearer ${recipient.accessToken}`)
+      .send({ phoneNumber: recipientPhone });
+
+    const contact = await request(app)
+      .post("/api/contacts")
+      .set("Authorization", `Bearer ${sender.accessToken}`)
+      .send({ name: "Recipient", phoneNumber: recipientPhone });
+
+    const upload = await request(app)
+      .post("/api/covert-messages/upload")
+      .set("Authorization", `Bearer ${sender.accessToken}`)
+      .attach("file", Buffer.from("fake png bytes"), "message.png");
+    expect(upload.status).toBe(403);
+    expect(upload.body.code).toBe("PREMIUM_REQUIRED");
+
+    const create = await request(app)
+      .post("/api/covert-messages")
+      .set("Authorization", `Bearer ${sender.accessToken}`)
+      .send({ recipientContactId: contact.body.id, fileKey: "irrelevant" });
+    expect(create.status).toBe(403);
+    expect(create.body.code).toBe("PREMIUM_REQUIRED");
+
+    // Recipient (also non-premium) must still be able to read their inbox —
+    // receiving a message from a premium sender is never gated.
+    const recipientInbox = await request(app)
+      .get("/api/covert-messages/inbox")
+      .set("Authorization", `Bearer ${recipient.accessToken}`);
+    expect(recipientInbox.status).toBe(200);
   });
 });
