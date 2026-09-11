@@ -24,6 +24,7 @@ export default function PaywallScreen() {
   const route = useRoute<RouteProp<RootStackParamList, 'Paywall'>>();
   const { isPremium, loading, offering, purchasePackage, restorePurchases } = useSubscription();
   const [busy, setBusy] = useState(false);
+  const pageMaxWidth = 640;
 
   const headline = HEADLINES[route.params?.reason ?? ''] ?? 'Unlock Bes Premium';
   const pkg = offering?.availablePackages?.[0] ?? null;
@@ -68,7 +69,10 @@ export default function PaywallScreen() {
 
   return (
     <SafeAreaView style={styles.safe} testID="paywall-screen" accessible accessibilityLabel="paywall-screen">
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scroll, { maxWidth: pageMaxWidth }]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton} activeOpacity={0.82}>
             <Text style={styles.headerButtonText}>{'<'}</Text>
@@ -138,7 +142,7 @@ export default function PaywallScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#050715' },
-  scroll: { flexGrow: 1, gap: 16, padding: 20 },
+  scroll: { alignSelf: 'center', flexGrow: 1, gap: 16, padding: 20, width: '100%' },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   headerButton: {
     alignItems: 'center',
