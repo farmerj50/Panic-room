@@ -9,6 +9,7 @@ import {
   meRequest,
   registerRequest,
 } from '../services/authService';
+import { loginPurchases, logoutPurchases } from '../services/purchasesService';
 
 type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
 type PostAuthTab = 'Home';
@@ -52,6 +53,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         setUser(response.user);
         setStatus('authenticated');
+        // Best-effort: a RevenueCat hiccup must never block session restore.
+        loginPurchases(response.user.id).catch(() => {});
       } catch {
         await clearAuthToken();
         if (mounted) {
@@ -92,6 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPostAuthTab(null);
         setUser(response.user);
         setStatus('authenticated');
+        loginPurchases(response.user.id).catch(() => {});
       },
       async register(name, email, password, beforeAuthenticate) {
         const response = await registerRequest({ name, email, password });
@@ -100,6 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPostAuthTab('Home');
         setUser(response.user);
         setStatus('authenticated');
+        loginPurchases(response.user.id).catch(() => {});
       },
       consumePostAuthTab() {
         setPostAuthTab(null);
@@ -110,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         setPostAuthTab(null);
         setStatus('unauthenticated');
+        logoutPurchases().catch(() => {});
       },
       async deleteAccount(password) {
         // Unlike logout(), this must throw on failure (e.g. wrong password)
@@ -119,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         setPostAuthTab(null);
         setStatus('unauthenticated');
+        logoutPurchases().catch(() => {});
       },
     }),
     [postAuthTab, status, user],
