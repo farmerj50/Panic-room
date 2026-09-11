@@ -237,4 +237,147 @@ describe("emergency", () => {
       .send({ audioUrl: "hijacked/key.m4a" });
     expect(attackerPatch.status).toBe(404);
   });
+
+  describe("video segments (camera flip)", () => {
+    async function createEmergency(accessToken) {
+      const created = await request(app)
+        .post("/api/emergency")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ latitude: 40, longitude: -73 });
+      return created.body.id;
+    }
+
+    function segmentPayload(overrides = {}) {
+      return {
+        fileUrl: "user1/clip-1.mp4",
+        facing: "back",
+        sequence: 1,
+        startedAt: new Date().toISOString(),
+        ...overrides,
+      };
+    }
+
+    test("creates a segment and returns it ordered on GET /api/emergency", async () => {
+      const { accessToken, userId } = await registerUserWithContact();
+      createdUserIds.push(userId);
+      const emergencyId = await createEmergency(accessToken);
+
+      const first = await request(app)
+        .post(`/api/emergency/${emergencyId}/video-segments`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send(segmentPayload({ sequence: 1, facing: "back", fileUrl: "user1/clip-1.mp4" }));
+      expect(first.status).toBe(201);
+      expect(first.body.facing).toBe("back");
+      expect(first.body.sequence).toBe(1);
+      expect(first.body.fileUrl).toEqual(expect.stringContaining("/api/recordings/file/"));
+
+      const second = await request(app)
+        .post(`/api/emergency/${emergencyId}/video-segments`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send(segmentPayload({ sequence: 2, facing: "front", fileUrl: "user1/clip-2.mp4" }));
+      expect(second.status).toBe(201);
+
+      const events = await request(app)
+        .get("/api/emergency")
+        .set("Authorization", `Bearer ${accessToken}`);
+      const event = events.body.find((e) => e.id === emergencyId);
+      expect(event.videoSegments).toHaveLength(2);
+      expect(event.videoSegments.map((s) => s.sequence)).toEqual([1, 2]);
+      expect(event.videoSegments.map((s) => s.facing)).toEqual(["back", "front"]);
+    });
+
+    test("rejects an invalid facing, sequence, and endedAt before startedAt", async () => {
+      const { accessToken, userId } = await registerUserWithContact();
+      createdUserIds.push(userId);
+      const emergencyId = await createEmergency(accessToken);
+
+      const badFacing = await request(app)
+        .post(`/api/emergency/${emergencyId}/video-segments`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send(segmentPayload({ facing: "sideways" }));
+      expect(badFacing.status).toBe(400);
+
+      const badSequence = await request(app)
+        .post(`/api/emergency/${emergencyId}/video-segments`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send(segmentPayload({ sequence: 0 }));
+      expect(badSequence.status).toBe(400);
+
+      const badOrder = await request(app)
+        .post(`/api/emergency/${emergencyId}/video-segments`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send(
+          segmentPayload({
+            startedAt: new Date(2026, 0, 1, 0, 0, 10).toISOString(),
+            endedAt: new Date(2026, 0, 1, 0, 0, 0).toISOString(),
+          }),
+        );
+      expect(badOrder.status).toBe(400);
+    });
+
+    test("rejects a segment for an emergency owned by another user", async () => {
+      const owner = await registerUserWithContact();
+      const attacker = await registerUserWithContact();
+      createdUserIds.push(owner.userId, attacker.userId);
+      const emergencyId = await createEmergency(owner.accessToken);
+
+      const res = await request(app)
+        .post(`/api/emergency/${emergencyId}/video-segments`)
+        .set("Authorization", `Bearer ${attacker.accessToken}`)
+        .send(segmentPayload());
+      expect(res.status).toBe(404);
+    });
+
+    test("retrying the identical payload for an existing sequence returns the existing row, not an error", async () => {
+      const { accessToken, userId } = await registerUserWithContact();
+      createdUserIds.push(userId);
+      const emergencyId = await createEmergency(accessToken);
+      const payload = segmentPayload();
+
+      const first = await request(app)
+        .post(`/api/emergency/${emergencyId}/video-segments`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send(payload);
+      expect(first.status).toBe(201);
+
+      // Simulates the mobile retry queue re-POSTing after a lost response.
+      const retry = await request(app)
+        .post(`/api/emergency/${emergencyId}/video-segments`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send(payload);
+      expect(retry.status).toBe(200);
+      expect(retry.body.id).toBe(first.body.id);
+
+      const events = await request(app)
+        .get("/api/emergency")
+        .set("Authorization", `Bearer ${accessToken}`);
+      const event = events.body.find((e) => e.id === emergencyId);
+      expect(event.videoSegments).toHaveLength(1);
+    });
+
+    test("a different payload for an already-used sequence is a 409 conflict, not a silent overwrite", async () => {
+      const { accessToken, userId } = await registerUserWithContact();
+      createdUserIds.push(userId);
+      const emergencyId = await createEmergency(accessToken);
+
+      const first = await request(app)
+        .post(`/api/emergency/${emergencyId}/video-segments`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send(segmentPayload({ facing: "back", fileUrl: "user1/clip-1.mp4" }));
+      expect(first.status).toBe(201);
+
+      const conflict = await request(app)
+        .post(`/api/emergency/${emergencyId}/video-segments`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send(segmentPayload({ facing: "front", fileUrl: "user1/clip-1-different.mp4" }));
+      expect(conflict.status).toBe(409);
+
+      const events = await request(app)
+        .get("/api/emergency")
+        .set("Authorization", `Bearer ${accessToken}`);
+      const event = events.body.find((e) => e.id === emergencyId);
+      expect(event.videoSegments).toHaveLength(1);
+      expect(event.videoSegments[0].facing).toBe("back");
+    });
+  });
 });

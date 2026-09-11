@@ -22,12 +22,34 @@ model EmergencyEvent {
   longitudeEncrypted   String?
   status               String   @default("ACTIVE")
   audioUrl             String?
+  // Legacy single-video field. No longer written to by the video-segment
+  // flow (camera-flip support splits video into ordered segments below) —
+  // kept only so emergencies recorded before that shipped still display
+  // their video in Evidence.
   videoUrl             String?
+  videoSegments        EmergencyVideoSegment[]
   contactNotified      Boolean  @default(false)
   notificationError    String?
   notificationAttempts Int      @default(0)
 
   @@index([userId])
+}
+
+model EmergencyVideoSegment {
+  id          String         @id @default(uuid())
+  emergencyId String
+  emergency   EmergencyEvent @relation(fields: [emergencyId], references: [id], onDelete: Cascade)
+  fileUrl     String // encrypted storage key, same convention as EmergencyEvent.videoUrl
+  facing      String // 'front' | 'back'
+  sequence    Int
+  // Client-reported capture metadata for display only — device clocks can
+  // be wrong. Ordering is always by `sequence`, never by these.
+  startedAt   DateTime
+  endedAt     DateTime?
+  createdAt   DateTime       @default(now())
+
+  @@unique([emergencyId, sequence])
+  @@index([emergencyId])
 }
 
 model TrustedContact {

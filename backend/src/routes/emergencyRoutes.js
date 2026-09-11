@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const {
+  addVideoSegment,
   callEmergencyContacts,
   createEmergencyEvent,
   getEmergencyEvents,
@@ -16,5 +17,6 @@ router.get("/", getEmergencyEvents);
 router.patch("/:id", updateEmergencyEvent);
 router.post("/call", callEmergencyContacts);
 router.post("/:id/notify", notifyEmergencyContacts);
+router.post("/:id/video-segments", addVideoSegment);
 
 module.exports = router;
