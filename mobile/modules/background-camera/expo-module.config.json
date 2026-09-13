@@ -1,7 +1,0 @@
-{
-  "platforms": ["android"],
-  "android": {
-    "modules": ["expo.modules.backgroundcamera.BackgroundCameraModule"]
-  },
-  "plugin": "./plugin/withBackgroundCamera"
-}

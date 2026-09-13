@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
-import { NavigationContainer, useNavigation } from '@react-navigation/native';
+import { NavigationContainer, useNavigation, useNavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,7 +10,6 @@ import { PinLockProvider, usePinLock } from '../context/PinLockContext';
 import { EmergencyProvider } from '../context/EmergencyContext';
 import { SubscriptionProvider } from '../context/SubscriptionContext';
 import { RootStackParamList, TabParamList, UnauthStackParamList } from './types';
-import { navigationRef } from './navigationRef';
 import { ACTION_ACTIVATE_SOS, restoreLockScreenButton, setupNotificationHandler } from '../services/lockScreenService';
 
 import LandingScreen from '../screens/LandingScreen';
@@ -270,6 +269,7 @@ function PinLockGate() {
 function AuthenticatedNavigator() {
   const { consumePostAuthTab, postAuthTab } = useAuth();
   const { consumePendingEmergencyBypass } = usePinLock();
+  const navigationRef = useNavigationContainerRef<RootStackParamList>();
   const [navReady, setNavReady] = useState(false);
   const pendingRoute = useRef<keyof RootStackParamList | null>(null);
 

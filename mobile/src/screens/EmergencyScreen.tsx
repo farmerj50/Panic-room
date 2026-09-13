@@ -16,7 +16,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import LiveLocationMap from '../components/LiveLocationMap';
-import { useEmergencyContext, isAndroidBackgroundCameraAvailable, BackgroundCameraPreviewView } from '../context/EmergencyContext';
+import { useEmergencyContext } from '../context/EmergencyContext';
 import { COUNTDOWN_SECONDS, EMERGENCY_NUMBER, ENABLE_EMERGENCY_DIALER } from '../config/emergencyConfig';
 import {
   addVideoSegment,
@@ -95,12 +95,6 @@ type EmergencyPhase = 'countdown' | 'activating' | 'recording' | 'error';
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const DEFAULT_CAMERA_FACING: CameraFacing = Platform.OS === 'web' ? 'front' : 'back';
-
-// Android drives video capture through the background-surviving native
-// module (see modules/background-camera) instead of expo-camera's
-// Activity-bound CameraView — everything else (web, iOS) keeps the
-// existing CameraView-based path unchanged.
-const USE_ANDROID_BACKGROUND_CAMERA = Platform.OS === 'android' && isAndroidBackgroundCameraAvailable;
 
 type BrowserMediaCaptureState = {
   captureActive: boolean;
@@ -258,12 +252,6 @@ export default function EmergencyScreen() {
     triggerEmergency,
     resolveEmergency,
     emergencySettings,
-    consumePendingResume,
-    startAndroidCapture,
-    flipAndroidCapture,
-    stopAndroidCapture,
-    flushPendingVideoUploads,
-    onExternalCaptureStop,
   } = useEmergencyContext();
 
   const {
@@ -427,11 +415,6 @@ export default function EmergencyScreen() {
   const stopEmergencyAssets = useCallback(async () => {
     sessionRef.current += 1;
     activationStarted.current = false;
-    // Discard a resume that was requested but never actually consumed by
-    // activateEmergency (e.g. the countdown was cancelled) — otherwise it
-    // would silently corrupt the *next*, unrelated emergency activation by
-    // reusing a stale id/sequence.
-    consumePendingResume();
     // Exit always wins over an in-flight flip — see captureGenerationRef's
     // comment above. Set before anything else so any flip checkpoint that
     // runs after this point bails out immediately.
@@ -463,16 +446,10 @@ export default function EmergencyScreen() {
       locationSub.current?.remove();
       locationSub.current = null;
 
-      // Finalizes whatever the current video segment is. On Android the
-      // native service owns finalize/journal/unbind (idempotent — a no-op
-      // if nothing's recording); elsewhere this is the CameraView-based
-      // finalizeCurrentSegment (idempotent for the same reason — a
-      // concurrent flip may have already finalized it).
-      if (USE_ANDROID_BACKGROUND_CAMERA) {
-        try { await stopAndroidCapture(); } catch {}
-      } else {
-        await finalizeCurrentSegment();
-      }
+      // Finalizes whatever the current video segment is (idempotent — a
+      // no-op if a concurrent flip already finalized it) and queues its
+      // upload before continuing.
+      await finalizeCurrentSegment();
 
       try { await Promise.race([cameraRef.current?.pausePreview?.() ?? Promise.resolve(), wait(500)]); } catch {}
       try { await Promise.race([audioRecorder.stop().catch(() => {}), wait(750)]); } catch {}
@@ -491,36 +468,23 @@ export default function EmergencyScreen() {
     if (emergencyIdForUpload && audioUri) {
       uploadEmergencyAsset(emergencyIdForUpload, audioUri, 'audio');
     }
-    // The backend record otherwise stays ACTIVE forever — nothing else in
-    // the app ever marks an emergency resolved. This also makes the
-    // relaunch-recovery check ("is it still ACTIVE?") in EmergencyContext
-    // meaningful instead of matching every past emergency.
-    if (emergencyIdForUpload) {
-      updateEmergency(emergencyIdForUpload, { status: 'RESOLVED' }).catch(() => {});
-    }
 
-    if (USE_ANDROID_BACKGROUND_CAMERA) {
-      // Segment uploads are owned by EmergencyContext (see its rationale)
-      // — just give in-flight/retry uploads a bounded chance to finish.
-      await flushPendingVideoUploads();
-    } else {
-      // Sweep video-segment uploads: give in-flight ones a bounded chance to
-      // finish, then retry anything that already failed exactly once. This
-      // is in-session only — no durable queue across an app restart.
-      const pending = pendingSegmentUploadsRef.current;
-      if (emergencyIdForUpload && pending.length > 0) {
-        await Promise.race([
-          Promise.allSettled(pending.map((entry) => entry.promise ?? Promise.resolve())),
-          wait(5000),
-        ]);
-        const stillFailed = pending.filter((entry) => entry.status === 'failed');
-        await Promise.allSettled(
-          stillFailed.map((entry) => uploadVideoSegmentEntry(emergencyIdForUpload, entry)),
-        );
-      }
-      pendingSegmentUploadsRef.current = [];
+    // Sweep video-segment uploads: give in-flight ones a bounded chance to
+    // finish, then retry anything that already failed exactly once. This
+    // is in-session only — no durable queue across an app restart.
+    const pending = pendingSegmentUploadsRef.current;
+    if (emergencyIdForUpload && pending.length > 0) {
+      await Promise.race([
+        Promise.allSettled(pending.map((entry) => entry.promise ?? Promise.resolve())),
+        wait(5000),
+      ]);
+      const stillFailed = pending.filter((entry) => entry.status === 'failed');
+      await Promise.allSettled(
+        stillFailed.map((entry) => uploadVideoSegmentEntry(emergencyIdForUpload, entry)),
+      );
     }
-  }, [audioRecorder, consumePendingResume, finalizeCurrentSegment, flushPendingVideoUploads, resolveEmergency, stopAndroidCapture]);
+    pendingSegmentUploadsRef.current = [];
+  }, [audioRecorder, finalizeCurrentSegment, resolveEmergency]);
 
   const returnHome = useCallback(async () => {
     // Stop media streams synchronously BEFORE React unmounts the CameraView
@@ -541,16 +505,6 @@ export default function EmergencyScreen() {
     await stopEmergencyAssets();
     navigation.navigate('Home');
   }, [navigation, setEmergencyId, stopEmergencyAssets]);
-
-  // The notification's "Stop Recording" action (Android) only ever stops
-  // the camera natively — it can't resolve the backend emergency or stop
-  // GPS on its own. When JS is alive to hear about it, treat it exactly
-  // like the in-app Stop/Exit button.
-  useEffect(() => {
-    return onExternalCaptureStop(() => {
-      returnHome();
-    });
-  }, [onExternalCaptureStop, returnHome]);
 
   useFocusEffect(
     useCallback(() => {
@@ -763,28 +717,12 @@ export default function EmergencyScreen() {
     setCameraSwitching(true);
 
     try {
-      const newFacing: CameraFacing = facing === 'back' ? 'front' : 'back';
-
-      if (USE_ANDROID_BACKGROUND_CAMERA) {
-        // The native service owns segment finalize/rebind/restart and its
-        // own stopRequested guard (the flip-vs-exit race) — see
-        // BackgroundCameraService.kt. JS here only drives the button's
-        // re-entrancy guard and "Switching camera…" UI state.
-        try {
-          await flipAndroidCapture(newFacing);
-          if (emergencyStoppingRef.current || generation !== captureGenerationRef.current) return;
-          setFacing(newFacing);
-        } catch {
-          setStatusMessage('Camera flip failed — continuing with current camera.');
-        }
-        return;
-      }
-
       // 1-2: finalize whatever's currently recording, queue its upload.
       await finalizeCurrentSegment();
       if (emergencyStoppingRef.current || generation !== captureGenerationRef.current) return;
 
       // 3: flip facing.
+      const newFacing: CameraFacing = facing === 'back' ? 'front' : 'back';
       setFacing(newFacing);
 
       // 4: remount and wait for ready (bounded, retried once on timeout —
@@ -816,7 +754,7 @@ export default function EmergencyScreen() {
       flippingRef.current = false;
       setCameraSwitching(false);
     }
-  }, [cameraMounted, facing, finalizeCurrentSegment, flipAndroidCapture, remountCameraAndWaitReady]);
+  }, [cameraMounted, facing, finalizeCurrentSegment, remountCameraAndWaitReady]);
 
   const activateEmergency = useCallback(async () => {
     if (activationStarted.current) return;
@@ -840,15 +778,8 @@ export default function EmergencyScreen() {
 
     triggerEmergency();
 
-    // Resuming an emergency the relaunch-recovery flow surfaced (see
-    // EmergencyContext.tsx) must reuse its id and continue its sequence
-    // numbering — never create a second backend emergency or restart at
-    // segment 1, which would collide with segments that already exist.
-    const resume = consumePendingResume();
-
     let currentLocation: { latitude: number; longitude: number } | null = null;
-    let activeEmergencyId: string | null = resume?.emergencyId ?? null;
-    if (activeEmergencyId) activeEmergencyIdRef.current = activeEmergencyId;
+    let activeEmergencyId: string | null = null;
     const isCurrentSession = () => sessionRef.current === sessionId && !stopping.current;
 
     try {
@@ -911,22 +842,18 @@ export default function EmergencyScreen() {
       }
       locationSub.current = sub;
 
-      if (resume) {
-        setEmergencyId(resume.emergencyId);
-      } else {
-        setStatusMessage('Creating emergency event.');
-        try {
-          const emergency = await createEmergency({
-            latitude: currentLocation?.latitude,
-            longitude: currentLocation?.longitude,
-          });
-          activeEmergencyId = emergency.id;
-          activeEmergencyIdRef.current = emergency.id;
-          if (!isCurrentSession()) return;
-          setEmergencyId(emergency.id);
-        } catch {
-          setNotificationStatus('Backend event failed — recording and dialer still active.');
-        }
+      setStatusMessage('Creating emergency event.');
+      try {
+        const emergency = await createEmergency({
+          latitude: currentLocation?.latitude,
+          longitude: currentLocation?.longitude,
+        });
+        activeEmergencyId = emergency.id;
+        activeEmergencyIdRef.current = emergency.id;
+        if (!isCurrentSession()) return;
+        setEmergencyId(emergency.id);
+      } catch {
+        setNotificationStatus('Backend event failed — recording and dialer still active.');
       }
 
       if (audOk) {
@@ -938,20 +865,7 @@ export default function EmergencyScreen() {
         if (!isCurrentSession()) return;
       }
 
-      if (camOk && USE_ANDROID_BACKGROUND_CAMERA) {
-        setStatusMessage('Starting video recording.');
-        // Requires a real emergencyId — the native journal tags every
-        // segment with it immediately. If backend creation failed above,
-        // video is skipped for this session; audio/GPS/notifications
-        // still proceed exactly as the CameraView path already tolerates.
-        if (activeEmergencyId) {
-          try {
-            await startAndroidCapture(activeEmergencyId, DEFAULT_CAMERA_FACING, resume?.startingSequence ?? 1);
-          } catch {
-            setStatusMessage('Camera did not start — continuing without video.');
-          }
-        }
-      } else if (camOk) {
+      if (camOk) {
         setStatusMessage('Starting video recording.');
         let ready = await waitForCameraReady();
         if (!isCurrentSession()) return;
@@ -1016,7 +930,6 @@ export default function EmergencyScreen() {
     audioRecorder,
     audioAutoRecord,
     cameraAutoRecord,
-    consumePendingResume,
     contacts,
     emergencyCallMode,
     ensurePermissions,
@@ -1025,7 +938,6 @@ export default function EmergencyScreen() {
     resolveEmergency,
     runConfiguredCallAction,
     setEmergencyId,
-    startAndroidCapture,
     triggerEmergency,
     waitForCameraReady,
   ]);
@@ -1082,32 +994,19 @@ export default function EmergencyScreen() {
             <View style={[styles.cameraPanel, { width: previewWidth, height: previewHeight }]} testID="emergency-camera-panel" accessible accessibilityLabel="emergency-camera-panel">
               {isCapturingPhase(phase) && cameraMounted ? (
                 <>
-                  {USE_ANDROID_BACKGROUND_CAMERA && BackgroundCameraPreviewView ? (
-                    // Displays the live feed from BackgroundCameraService's
-                    // own Preview use case (bound to the service's
-                    // lifecycle, not this component's) — (re)mounting this
-                    // just reconnects to whatever session is already
-                    // running, it never starts a second camera binding.
-                    <BackgroundCameraPreviewView
-                      style={styles.cameraPreview}
-                      testID="emergency-camera-view"
-                      accessibilityLabel="emergency-camera-view"
-                    />
-                  ) : (
-                    <CameraView
-                      key={cameraSessionKey}
-                      ref={cameraRef}
-                      active={cameraActive}
-                      style={styles.cameraPreview}
-                      facing={facing}
-                      mode="video"
-                      mute={false}
-                      testID="emergency-camera-view"
-                      accessibilityLabel="emergency-camera-view"
-                      onCameraReady={handleCameraReady}
-                      onMountError={(e) => setStatusMessage(e.message || 'Camera preview could not start.')}
-                    />
-                  )}
+                  <CameraView
+                    key={cameraSessionKey}
+                    ref={cameraRef}
+                    active={cameraActive}
+                    style={styles.cameraPreview}
+                    facing={facing}
+                    mode="video"
+                    mute={false}
+                    testID="emergency-camera-view"
+                    accessibilityLabel="emergency-camera-view"
+                    onCameraReady={handleCameraReady}
+                    onMountError={(e) => setStatusMessage(e.message || 'Camera preview could not start.')}
+                  />
                   <TouchableOpacity
                     activeOpacity={0.82}
                     style={styles.flipCameraBtn}
