@@ -206,6 +206,45 @@ describe("covert messages", () => {
     expect(senderMarkAttempt.status).toBe(404);
   });
 
+  test("matches a US contact saved without a country code to that person's own +1-formatted account", async () => {
+    // Reproduces a real production report: the recipient registered with
+    // "+15551234567" but the sender saved the contact as "5551234567" (no
+    // country code) — both are the same number, but before
+    // normalizePhoneDigits accounted for this, they hashed differently and
+    // the lookup incorrectly reported the contact as unregistered.
+    const sender = await registerUser();
+    const recipient = await registerUser();
+    createdUserIds.push(sender.userId, recipient.userId);
+    await makePremium(sender.userId);
+
+    // A real 10-digit US local number (not uniquePhone()'s longer, made-up-
+    // for-uniqueness shape) so normalizePhoneDigits's "assume US country
+    // code on a bare 10-digit number" rule actually applies to it.
+    const localDigits = `555${String(Date.now()).slice(-7)}`;
+    const recipientPhoneWithCountryCode = `+1${localDigits}`;
+    const recipientPhoneLocalOnly = localDigits;
+
+    await request(app)
+      .patch("/api/users/me")
+      .set("Authorization", `Bearer ${recipient.accessToken}`)
+      .send({ phoneNumber: recipientPhoneWithCountryCode });
+
+    const contact = await request(app)
+      .post("/api/contacts")
+      .set("Authorization", `Bearer ${sender.accessToken}`)
+      .send({ name: "Recipient", phoneNumber: recipientPhoneLocalOnly });
+    expect(contact.status).toBe(201);
+
+    const lookup = await request(app)
+      .get(`/api/covert-messages/recipient-key/${contact.body.id}`)
+      .set("Authorization", `Bearer ${sender.accessToken}`);
+    // The recipient hasn't set a public key in this test, but the important
+    // assertion is that the recipient was *found* (422, not 404) —
+    // confirming the phone-hash match succeeded across formats.
+    expect(lookup.status).toBe(422);
+    expect(lookup.body.error).toMatch(/covert messaging on their device/);
+  });
+
   test("rejects creating a message for a contact that hasn't registered a matching phone number", async () => {
     const sender = await registerUser();
     createdUserIds.push(sender.userId);

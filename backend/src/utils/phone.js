@@ -8,13 +8,20 @@ function isValidPhoneNumber(value) {
 }
 
 // Normalizes a phone number to a digit-only string for hash-based matching
-// (TrustedContact.phoneHash <-> User.phoneHash). Known limitation: this is a
-// naive heuristic, not full E.164 parsing — "5551234567" and "+15551234567"
-// normalize differently even though a human would recognize them as the same
-// US number. Acceptable for v1 (no phone-ownership verification exists yet
-// either); revisit together if this ships broadly.
+// (TrustedContact.phoneHash <-> User.phoneHash). Not full E.164 parsing —
+// there's no country-code picker anywhere in the app, so both sides of a
+// match are free-typed text — but since Bes is US-focused (the emergency
+// dialer is hardcoded to 911), a bare 10-digit number is assumed to be a
+// local US number and normalized to include the "1" country code, so
+// "5551234567" and "+15551234567" collapse to the same hash input. This
+// previously did not happen (see git history), which caused a real
+// production case where a contact's number didn't match its owner's own
+// account. Changing this alone does not fix already-stored hashes — see
+// scripts/backfillPhoneHashes.js.
 function normalizePhoneDigits(value) {
-  return String(value || "").replace(/\D/g, "");
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length === 10) return `1${digits}`;
+  return digits;
 }
 
 module.exports = { isValidPhoneNumber, normalizePhoneDigits };
