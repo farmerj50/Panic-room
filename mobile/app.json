@@ -82,7 +82,9 @@
           "androidCollapsedTitle": "Bes SOS",
           "iosDisplayInForeground": true
         }
-      ]
+      ],
+      "./modules/background-camera/plugin/withBackgroundCamera",
+      "./plugin/withEmulatorCleartext"
     ]
   }
 }
