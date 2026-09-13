@@ -1,0 +1,40 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.backgroundcamera'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.backgroundcamera"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+  lintOptions {
+    abortOnError false
+  }
+}
+
+// Same CameraX version expo-camera already resolves (node_modules/expo-camera/android/build.gradle)
+// — reusing it avoids pulling in a second, conflicting CameraX version.
+configurations.configureEach {
+  resolutionStrategy.force "com.google.guava:listenablefuture:1.0"
+}
+
+dependencies {
+  def camerax_version = "1.6.0"
+
+  implementation "androidx.camera:camera-core:${camerax_version}"
+  implementation "androidx.camera:camera-camera2:${camerax_version}"
+  implementation "androidx.camera:camera-lifecycle:${camerax_version}"
+  implementation "androidx.camera:camera-video:${camerax_version}"
+  implementation "androidx.camera:camera-view:${camerax_version}"
+
+  // LifecycleService: a Service base class that implements LifecycleOwner on
+  // its own lifecycle, independent of any Activity — not pulled in transitively.
+  implementation "androidx.lifecycle:lifecycle-service:2.8.7"
+
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
+}
