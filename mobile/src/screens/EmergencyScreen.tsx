@@ -342,7 +342,7 @@ export default function EmergencyScreen() {
   // before calling recordAsync, but a missing/late ready event must never
   // hang the emergency flow. Returns false on timeout; callers must not
   // call recordAsync in that case.
-  const waitForCameraReady = useCallback(async (timeoutMs = 8000) => {
+  const waitForCameraReady = useCallback(async (timeoutMs = 6000) => {
     let timedOut = false;
     await Promise.race([
       cameraReadyPromiseRef.current,
@@ -352,6 +352,20 @@ export default function EmergencyScreen() {
     ]);
     return !timedOut;
   }, []);
+
+  // A camera session occasionally never fires onCameraReady after a rapid
+  // successive remount (observed on-device: 1st and 2nd mounts ready in
+  // ~1-2s, an immediately-following 3rd mount can hang indefinitely) —
+  // bumping the key again to force an entirely fresh native mount reliably
+  // recovers it, so retry once via a full remount before giving up.
+  const remountCameraAndWaitReady = useCallback(
+    async (timeoutMs = 6000) => {
+      setCameraSessionKey((v) => v + 1);
+      resetCameraReadyGate();
+      return waitForCameraReady(timeoutMs);
+    },
+    [resetCameraReadyGate, waitForCameraReady],
+  );
 
   // Shared by flipCamera() and stopEmergencyAssets() — both need to "stop
   // whatever's currently recording and queue its upload." The synchronous
@@ -367,15 +381,22 @@ export default function EmergencyScreen() {
     try { cameraRef.current?.stopRecording(); } catch {}
     let uri: string | null = null;
     try {
+      // Bounded so a stuck recordAsync promise can never hang the flow —
+      // but generous, since encoding-to-disk can genuinely take a few
+      // seconds and a segment dropped here is lost with no retry path
+      // (finalized is already true above).
       const result = await Promise.race([
         videoRecordingPromiseRef.current ?? Promise.resolve(undefined),
-        wait(2000).then(() => undefined),
+        wait(8000).then(() => undefined),
       ]);
       uri = result?.uri ?? null;
     } catch {}
     videoRecordingPromiseRef.current = null;
 
-    if (!uri) return;
+    if (!uri) {
+      console.warn(`Segment ${segment.sequence} (${segment.facing}) produced no video URI — dropped.`);
+      return;
+    }
     const emergencyId = activeEmergencyIdRef.current;
     const entry: PendingSegmentUpload = {
       segment,
@@ -700,15 +721,18 @@ export default function EmergencyScreen() {
       await finalizeCurrentSegment();
       if (emergencyStoppingRef.current || generation !== captureGenerationRef.current) return;
 
-      // 3: flip facing, force a remount, reset the ready gate for it.
+      // 3: flip facing.
       const newFacing: CameraFacing = facing === 'back' ? 'front' : 'back';
       setFacing(newFacing);
-      setCameraSessionKey((v) => v + 1);
-      resetCameraReadyGate();
 
-      // 4: wait for the new CameraView instance to be ready (bounded).
-      const ready = await waitForCameraReady();
+      // 4: remount and wait for ready (bounded, retried once on timeout —
+      // see remountCameraAndWaitReady's comment).
+      let ready = await remountCameraAndWaitReady();
       if (emergencyStoppingRef.current || generation !== captureGenerationRef.current) return;
+      if (!ready) {
+        ready = await remountCameraAndWaitReady();
+        if (emergencyStoppingRef.current || generation !== captureGenerationRef.current) return;
+      }
       if (!ready) {
         setStatusMessage('Camera restart failed — continuing without video for this segment.');
         return;
@@ -730,7 +754,7 @@ export default function EmergencyScreen() {
       flippingRef.current = false;
       setCameraSwitching(false);
     }
-  }, [cameraMounted, facing, finalizeCurrentSegment, resetCameraReadyGate, waitForCameraReady]);
+  }, [cameraMounted, facing, finalizeCurrentSegment, remountCameraAndWaitReady]);
 
   const activateEmergency = useCallback(async () => {
     if (activationStarted.current) return;
@@ -843,8 +867,12 @@ export default function EmergencyScreen() {
 
       if (camOk) {
         setStatusMessage('Starting video recording.');
-        const ready = await waitForCameraReady();
+        let ready = await waitForCameraReady();
         if (!isCurrentSession()) return;
+        if (!ready) {
+          ready = await remountCameraAndWaitReady();
+          if (!isCurrentSession()) return;
+        }
         if (ready) {
           currentSegmentRef.current = {
             facing: DEFAULT_CAMERA_FACING,
@@ -905,6 +933,7 @@ export default function EmergencyScreen() {
     contacts,
     emergencyCallMode,
     ensurePermissions,
+    remountCameraAndWaitReady,
     resetCameraReadyGate,
     resolveEmergency,
     runConfiguredCallAction,
