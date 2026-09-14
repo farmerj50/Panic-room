@@ -52,3 +52,30 @@ export function getInProgressEmergency(): Promise<InProgressEmergency | null> {
 export function clearInProgressEmergency(): Promise<void> {
   return removeItem(IN_PROGRESS_EMERGENCY_KEY);
 }
+
+// ─── Hidden SOS pending-retry flag ───────────────────────────────────────────
+// Hidden SOS activates silently with no blocking UI (see EmergencyContext's
+// activateEmergencySilently) — if it fails even after its one silent retry,
+// there's no alert to show without breaking the covert intent. Instead this
+// flag is checked next time the Covert Messages screen opens, surfacing a
+// low-key inline retry banner rather than a loud Alert.
+
+const PENDING_HIDDEN_SOS_KEY = 'panicroom_hidden_sos_pending';
+
+export type PendingHiddenSos = {
+  attemptedAt: string;
+  reason: 'create-failed' | 'notify-failed';
+  linkedCovertMessageId?: string;
+};
+
+export function setPendingHiddenSos(value: PendingHiddenSos): Promise<void> {
+  return setJSON(PENDING_HIDDEN_SOS_KEY, value);
+}
+
+export function getPendingHiddenSos(): Promise<PendingHiddenSos | null> {
+  return getJSON<PendingHiddenSos>(PENDING_HIDDEN_SOS_KEY);
+}
+
+export function clearPendingHiddenSos(): Promise<void> {
+  return removeItem(PENDING_HIDDEN_SOS_KEY);
+}

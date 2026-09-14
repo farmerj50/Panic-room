@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Linking,
@@ -11,7 +11,6 @@ import {
   View,
 } from 'react-native';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
-import { RecordingPresets, useAudioRecorder } from 'expo-audio';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -21,14 +20,12 @@ import { COUNTDOWN_SECONDS, EMERGENCY_NUMBER, ENABLE_EMERGENCY_DIALER } from '..
 import {
   addVideoSegment,
   callEmergencyContacts,
-  createEmergency,
   createRecording,
-  notifyEmergencyContacts,
   updateEmergency,
 } from '../services/emergencyService';
-import { getCurrentLocation, getLastKnownLocation, watchLocation } from '../services/locationService';
 import { uploadFile } from '../services/uploadService';
 import { clearInProgressEmergency, useAppStateEmergencyGuard } from '../hooks/useAppStateEmergencyGuard';
+import { mapUrl } from '../utils/mapUrl';
 import type { Contact } from '../types/contact';
 
 // Best-effort, fire-and-forget — no offline queue in v1. A failure here just
@@ -228,11 +225,6 @@ function fmt(s: number) {
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
 
-function mapUrl(location: { latitude: number; longitude: number } | null) {
-  if (!location) return 'Location unavailable';
-  return `https://maps.google.com/?q=${location.latitude},${location.longitude}`;
-}
-
 function phoneUrlTarget(phone: string) {
   return phone.replace(/[^\d+]/g, '');
 }
@@ -245,13 +237,16 @@ export default function EmergencyScreen() {
   const navigation = useNavigation<any>();
   const { width } = useWindowDimensions();
   const {
-    contacts,
+    orderedContacts,
     priorityContact,
     emergencyId,
     setEmergencyId,
     triggerEmergency,
     resolveEmergency,
     emergencySettings,
+    runCoreActivation,
+    stopAudioCapture,
+    stopLocationWatch,
   } = useEmergencyContext();
 
   const {
@@ -261,7 +256,6 @@ export default function EmergencyScreen() {
   } = emergencySettings;
 
   const cameraRef = useRef<CameraView>(null);
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
 
@@ -282,7 +276,6 @@ export default function EmergencyScreen() {
   const activationStarted = useRef(false);
   const sessionRef = useRef(0);
   const stopping = useRef(false);
-  const locationSub = useRef<{ remove: () => void } | null>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Independent of EmergencyContext's emergencyId (which gets nulled out by
   // resolveEmergency() before stopEmergencyAssets finishes) — this is what
@@ -316,10 +309,6 @@ export default function EmergencyScreen() {
 
   const previewWidth = Math.min(width - 32, 420);
   const previewHeight = Math.round(previewWidth * 0.56);
-  const orderedContacts = useMemo(
-    () => [...contacts].sort((a, b) => Number(b.isPriority) - Number(a.isPriority)),
-    [contacts],
-  );
   const callTargetContact = priorityContact ?? orderedContacts[0] ?? null;
 
   useAppStateEmergencyGuard({ emergencyId, phase, elapsed });
@@ -443,8 +432,7 @@ export default function EmergencyScreen() {
         recordingTimerRef.current = null;
       }
 
-      locationSub.current?.remove();
-      locationSub.current = null;
+      stopLocationWatch();
 
       // Finalizes whatever the current video segment is (idempotent — a
       // no-op if a concurrent flip already finalized it) and queues its
@@ -452,8 +440,7 @@ export default function EmergencyScreen() {
       await finalizeCurrentSegment();
 
       try { await Promise.race([cameraRef.current?.pausePreview?.() ?? Promise.resolve(), wait(500)]); } catch {}
-      try { await Promise.race([audioRecorder.stop().catch(() => {}), wait(750)]); } catch {}
-      audioUri = audioRecorder.uri ?? null;
+      audioUri = await stopAudioCapture();
 
       cameraRef.current = null;
     } finally {
@@ -484,7 +471,7 @@ export default function EmergencyScreen() {
       );
     }
     pendingSegmentUploadsRef.current = [];
-  }, [audioRecorder, finalizeCurrentSegment, resolveEmergency]);
+  }, [finalizeCurrentSegment, resolveEmergency, stopAudioCapture, stopLocationWatch]);
 
   const returnHome = useCallback(async () => {
     // Stop media streams synchronously BEFORE React unmounts the CameraView
@@ -778,8 +765,6 @@ export default function EmergencyScreen() {
 
     triggerEmergency();
 
-    let currentLocation: { latitude: number; longitude: number } | null = null;
-    let activeEmergencyId: string | null = null;
     const isCurrentSession = () => sessionRef.current === sessionId && !stopping.current;
 
     try {
@@ -819,50 +804,36 @@ export default function EmergencyScreen() {
         }
       }
 
-      setStatusMessage('Getting GPS location.');
-      // Try live GPS first; fall back to the last background-task location
-      currentLocation = await getCurrentLocation();
-      if (!currentLocation) currentLocation = await getLastKnownLocation();
+      // GPS acquisition, emergency creation, and audio start are the shared
+      // core (EmergencyContext.runCoreActivation) — the same implementation
+      // Hidden SOS uses headlessly. Video capture stays entirely here since
+      // it needs this screen's own mounted CameraView.
+      const result = await runCoreActivation({
+        startAudio: audOk,
+        onStatus: setStatusMessage,
+        onLocationUpdate: (loc) => {
+          currentLocationRef.current = loc;
+          setLocation(loc);
+          if (!loc) setLocationUnavailable(true);
+        },
+        onNotifyResult: (response) => {
+          if (!isCurrentSession()) return;
+          setNotificationStatus(
+            response.sent
+              ? `Trusted contacts notified: ${response.notifiedCount}`
+              : response.error || 'Trusted contact SMS provider is not configured.',
+          );
+        },
+      });
       if (!isCurrentSession()) return;
-      currentLocationRef.current = currentLocation;
-      setLocation(currentLocation);
-      if (!currentLocation) {
-        setLocationUnavailable(true);
-        setStatusMessage('Location unavailable. Continuing without GPS.');
-      }
-      const sub = (await watchLocation((loc) => {
-        currentLocationRef.current = loc;
-        setLocation(loc);
-      })) as any;
-      // Check session AFTER the async call — stopEmergencyAssets may have run
-      // and nulled locationSub.current while watchLocation was in-flight.
-      if (!isCurrentSession()) {
-        sub?.remove();
-        return;
-      }
-      locationSub.current = sub;
 
-      setStatusMessage('Creating emergency event.');
-      try {
-        const emergency = await createEmergency({
-          latitude: currentLocation?.latitude,
-          longitude: currentLocation?.longitude,
-        });
-        activeEmergencyId = emergency.id;
-        activeEmergencyIdRef.current = emergency.id;
-        if (!isCurrentSession()) return;
-        setEmergencyId(emergency.id);
-      } catch {
+      if (result.ok) {
+        activeEmergencyIdRef.current = result.emergencyId;
+      } else {
         setNotificationStatus('Backend event failed — recording and dialer still active.');
       }
-
-      if (audOk) {
-        setStatusMessage('Starting audio recording.');
-        await audioRecorder.prepareToRecordAsync();
-        if (!isCurrentSession()) return;
-        audioRecorder.record();
-        await wait(300);
-        if (!isCurrentSession()) return;
+      if (orderedContacts.length === 0) {
+        setNotificationStatus('No trusted contacts saved. Add them in Contacts.');
       }
 
       if (camOk) {
@@ -891,23 +862,6 @@ export default function EmergencyScreen() {
       recordingTimerRef.current = setInterval(() => setElapsed((v) => v + 1), 1000);
       setPhase('recording');
 
-      if (activeEmergencyId && orderedContacts.length > 0) {
-        setStatusMessage('Notifying trusted contacts.');
-        const response = await notifyEmergencyContacts({
-          emergencyId: activeEmergencyId,
-          contacts: orderedContacts,
-          message: `Bes emergency activated. Location: ${mapUrl(currentLocation)}`,
-        });
-        if (!isCurrentSession()) return;
-        setNotificationStatus(
-          response.sent
-            ? `Trusted contacts notified: ${response.notifiedCount}`
-            : response.error || 'Trusted contact SMS provider is not configured.',
-        );
-      } else if (orderedContacts.length === 0) {
-        setNotificationStatus('No trusted contacts saved. Add them in Contacts.');
-      }
-
       await runConfiguredCallAction();
       if (!isCurrentSession()) return;
 
@@ -927,17 +881,16 @@ export default function EmergencyScreen() {
       setStatusMessage(error instanceof Error ? error.message : 'Emergency activation failed.');
     }
   }, [
-    audioRecorder,
     audioAutoRecord,
     cameraAutoRecord,
-    contacts,
+    orderedContacts,
     emergencyCallMode,
     ensurePermissions,
     remountCameraAndWaitReady,
     resetCameraReadyGate,
     resolveEmergency,
     runConfiguredCallAction,
-    setEmergencyId,
+    runCoreActivation,
     triggerEmergency,
     waitForCameraReady,
   ]);

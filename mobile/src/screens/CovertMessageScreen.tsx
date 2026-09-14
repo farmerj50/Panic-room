@@ -33,6 +33,11 @@ import {
 } from '../services/covertMessageService';
 import { getCurrentLocation } from '../services/locationService';
 import { ApiError } from '../services/apiClient';
+import {
+  clearPendingHiddenSos,
+  getPendingHiddenSos,
+  PendingHiddenSos,
+} from '../hooks/useAppStateEmergencyGuard';
 
 // Cover images are picked from a small built-in set rather than the device's
 // photo library — no file-system access, and no risk of accidentally
@@ -54,7 +59,7 @@ function fmtDate(iso: string) {
 
 export default function CovertMessageScreen() {
   const navigation = useNavigation<any>();
-  const { contacts } = useEmergencyContext();
+  const { contacts, activateEmergencySilently } = useEmergencyContext();
   const { isPremium } = useSubscription();
 
   const [mode, setMode] = useState<'send' | 'inbox'>('send');
@@ -65,6 +70,14 @@ export default function CovertMessageScreen() {
   const [messageText, setMessageText] = useState('');
   const [includeLocation, setIncludeLocation] = useState(false);
   const [sending, setSending] = useState(false);
+  const [isSosSend, setIsSosSend] = useState(false);
+
+  // Local, low-key confirmation for Hidden SOS — deliberately never a loud
+  // Alert.alert (see the send buttons below): a small dot near the SOS
+  // button, not a banner saying "EMERGENCY ACTIVATED". 'idle' renders
+  // nothing at all.
+  const [sosIndicator, setSosIndicator] = useState<'idle' | 'activating' | 'confirmed' | 'pendingRetry'>('idle');
+  const [pendingRetry, setPendingRetry] = useState<PendingHiddenSos | null>(null);
 
   const [inbox, setInbox] = useState<CovertMessage[]>([]);
   const [loadingInbox, setLoadingInbox] = useState(false);
@@ -86,6 +99,29 @@ export default function CovertMessageScreen() {
     if (mode === 'inbox') loadInbox();
   }, [mode, loadInbox]);
 
+  // A prior Hidden SOS that failed even after its silent retry (see
+  // EmergencyContext.activateEmergencySilently) leaves this flag behind —
+  // surface it here as a low-key inline notice rather than a loud alert.
+  useEffect(() => {
+    getPendingHiddenSos()
+      .then(setPendingRetry)
+      .catch(() => {});
+  }, []);
+
+  const retryPendingHiddenSos = useCallback(async () => {
+    if (!pendingRetry) return;
+    const result = await activateEmergencySilently({
+      reason: 'covert-hidden-sos-retry',
+      linkedCovertMessageId: pendingRetry.linkedCovertMessageId,
+    });
+    if (result.ok) {
+      await clearPendingHiddenSos().catch(() => {});
+      setPendingRetry(null);
+      setSosIndicator('confirmed');
+      setTimeout(() => setSosIndicator('idle'), 4000);
+    }
+  }, [pendingRetry, activateEmergencySilently]);
+
   const selectCard = async (card: (typeof COVER_CARDS)[number]) => {
     try {
       const asset = Asset.fromModule(card.source);
@@ -97,7 +133,12 @@ export default function CovertMessageScreen() {
     }
   };
 
-  const handleSend = async () => {
+  // triggerSos is a plain boolean passed explicitly from each button's
+  // onPress (see the JSX below) — it is never derived from messageText or
+  // any other content. This is the structural enforcement of the hard
+  // safety rule: an ordinary "Send Hidden Message" must never trigger
+  // emergency actions, no matter what the hidden text says.
+  const handleSend = async (triggerSos: boolean) => {
     if (!isPremium) {
       navigation.navigate('Paywall', { reason: 'covert-messaging' });
       return;
@@ -115,6 +156,7 @@ export default function CovertMessageScreen() {
       return;
     }
 
+    setIsSosSend(triggerSos);
     setSending(true);
     try {
       const { publicKey: recipientPublicKeyBase64 } = await getRecipientPublicKey(selectedContactId);
@@ -145,13 +187,36 @@ export default function CovertMessageScreen() {
       const pngUri = await ensurePngFile(pickedImageUri);
       const embeddedUri = await embedPayloadIntoFile(pngUri, payload);
       const { key } = await uploadCovertImage(embeddedUri);
-      await createCovertMessage({ recipientContactId: selectedContactId, fileKey: key });
+      // Everything above this line — and this call itself — is byte-for-byte
+      // identical whether or not this is a Hidden SOS send. Only what
+      // happens after the covert message has successfully sent differs.
+      const sentMessage = await createCovertMessage({ recipientContactId: selectedContactId, fileKey: key });
 
-      Alert.alert('Sent', 'Your covert message was sent.');
       setPickedImageUri(null);
       setSelectedCardId(null);
       setMessageText('');
       setSelectedContactId(null);
+
+      if (!triggerSos) {
+        Alert.alert('Sent', 'Your covert message was sent.');
+        return;
+      }
+
+      // SOS-only, strictly after the covert send already succeeded. A
+      // failure here must never look like the message itself failed to
+      // send — it did send. See activateEmergencySilently's own internal
+      // retry/pending-flag handling for what happens if this fails.
+      setSosIndicator('activating');
+      const result = await activateEmergencySilently({
+        reason: 'covert-hidden-sos',
+        linkedCovertMessageId: sentMessage.id,
+      });
+      setSosIndicator(result.ok ? 'confirmed' : 'pendingRetry');
+      if (result.ok) {
+        setTimeout(() => setSosIndicator('idle'), 4000);
+      } else {
+        getPendingHiddenSos().then(setPendingRetry).catch(() => {});
+      }
     } catch (error) {
       if (error instanceof ApiError && error.code === 'PREMIUM_REQUIRED') {
         Alert.alert(
@@ -168,6 +233,16 @@ export default function CovertMessageScreen() {
     } finally {
       setSending(false);
     }
+  };
+
+  // The one moment it's acceptable to interrupt with a dialog — everything
+  // after this confirmation is silent. Worded blandly, not alarmingly, in
+  // case someone glances at the screen while it's up.
+  const confirmSendHiddenSos = () => {
+    Alert.alert('Send this?', 'This will also alert your trusted contacts.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Send', onPress: () => { void handleSend(true); } },
+    ]);
   };
 
   const handleOpenMessage = async (message: CovertMessage) => {
@@ -260,6 +335,7 @@ export default function CovertMessageScreen() {
                       activeOpacity={0.84}
                       style={[styles.contactChip, selectedContactId === contact.id && styles.contactChipActive]}
                       onPress={() => setSelectedContactId(contact.id)}
+                      testID={`covert-contact-${contact.id}`}
                     >
                       <Text
                         style={[
@@ -323,15 +399,58 @@ export default function CovertMessageScreen() {
               </TouchableOpacity>
             </LinearGradient>
 
+            {pendingRetry ? (
+              <TouchableOpacity
+                activeOpacity={0.82}
+                style={styles.retryBanner}
+                onPress={retryPendingHiddenSos}
+                testID="covert-sos-retry-banner"
+              >
+                <Text style={styles.retryBannerText}>
+                  Your last Hidden SOS didn't fully go through — tap to retry.
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+
             <TouchableOpacity
               activeOpacity={0.86}
               style={[styles.sendBtn, sending && styles.disabledBtn]}
-              onPress={handleSend}
+              onPress={() => { void handleSend(false); }}
               disabled={sending}
               testID="covert-send-btn"
             >
-              {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendBtnText}>Send Covertly</Text>}
+              {sending && !isSosSend ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.sendBtnText}>Send Hidden Message</Text>
+              )}
             </TouchableOpacity>
+
+            <View style={styles.sosRow}>
+              <TouchableOpacity
+                activeOpacity={0.86}
+                style={[styles.sosBtn, sending && styles.disabledBtn]}
+                onPress={confirmSendHiddenSos}
+                disabled={sending}
+                testID="covert-send-sos-btn"
+              >
+                {sending && isSosSend ? (
+                  <ActivityIndicator color="#ef445b" />
+                ) : (
+                  <Text style={styles.sosBtnText}>Send Hidden SOS</Text>
+                )}
+              </TouchableOpacity>
+              {sosIndicator !== 'idle' ? (
+                <View
+                  style={[
+                    styles.sosIndicatorDot,
+                    sosIndicator === 'confirmed' && styles.sosIndicatorConfirmed,
+                    sosIndicator === 'pendingRetry' && styles.sosIndicatorPending,
+                  ]}
+                  testID="covert-sos-indicator"
+                />
+              ) : null}
+            </View>
 
             <Text style={styles.disclaimer}>
               This only works when the recipient opens it inside Bes. Sending it through SMS, WhatsApp, or
@@ -489,6 +608,34 @@ const styles = StyleSheet.create({
   },
   disabledBtn: { opacity: 0.62 },
   sendBtnText: { color: '#fff', fontSize: 15, fontWeight: '900' },
+  // Deliberately de-emphasized relative to sendBtn — outlined, not a loud
+  // filled block — this screen is supposed to look boring at a glance.
+  sosRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  sosBtn: {
+    flex: 1,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,91,0.4)',
+    borderRadius: 14,
+    minHeight: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sosBtnText: { color: '#ef445b', fontSize: 15, fontWeight: '900' },
+  // Small, quiet dot — never a modal, never the words "SOS"/"emergency"/
+  // "alert" in the indicator itself. Reuses statusDotUnread's teal for
+  // "confirmed" so no new alarm color enters the palette.
+  sosIndicatorDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#7f7899' },
+  sosIndicatorConfirmed: { backgroundColor: '#4ee1d5' },
+  sosIndicatorPending: { backgroundColor: '#e0b34d' },
+  retryBanner: {
+    backgroundColor: 'rgba(224,179,77,0.12)',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+  },
+  retryBannerText: { color: '#e0b34d', fontSize: 12, fontWeight: '700', textAlign: 'center' },
   disclaimer: { color: '#8b839f', fontSize: 12, lineHeight: 18, marginTop: 16, textAlign: 'center' },
   inboxLoader: { marginVertical: 24 },
   inboxRow: {
