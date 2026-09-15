@@ -16,6 +16,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import type { UnauthStackParamList } from '../navigation/types';
 
+import StoreBadges from '../components/StoreBadges';
+
 import heroBg from '../../assets/images/hero-bg.png';
 import teenGroup from '../../assets/images/teen-group.png';
 import emergencyCard from '../../assets/images/emergency-card.png';
@@ -185,6 +187,7 @@ export default function LandingScreen() {
                   <Text style={styles.learnText}>Sign In</Text>
                   <Text style={styles.learnArrow}>-&gt;</Text>
                 </TouchableOpacity>
+                <StoreBadges placement="hero" style={styles.heroStoreBadges} />
               </View>
 
               {isWide && (
@@ -308,6 +311,10 @@ export default function LandingScreen() {
                 <View style={styles.finger} />
               </View>
             </LinearGradient>
+          </View>
+
+          <View style={styles.bottomStoreBadges}>
+            <StoreBadges placement="footer" />
           </View>
         </View>
       </ScrollView>
@@ -467,6 +474,8 @@ const styles = StyleSheet.create({
   },
   quoteText: { color: '#f5dcff', fontSize: 18, fontStyle: 'italic', fontWeight: '600' },
   quoteHeart: { backgroundColor: '#c78cff', borderRadius: 5, height: 10, transform: [{ rotate: '45deg' }], width: 10 },
+  heroStoreBadges: { marginTop: 18 },
+  bottomStoreBadges: { alignItems: 'center', marginTop: 6, paddingVertical: 8 },
   pageContent: { alignSelf: 'center', gap: 14, paddingHorizontal: 16, paddingTop: 14, width: '100%' },
   featureGrid: { flexDirection: 'row', gap: 14 },
   stackedGrid: { flexDirection: 'column' },
