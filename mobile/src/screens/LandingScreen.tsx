@@ -204,6 +204,24 @@ export default function LandingScreen() {
         </ImageBackground>
 
         <View style={[styles.pageContent, { maxWidth: isDesktop ? 1520 : 980 }]}>
+          <LinearGradient
+            colors={['rgba(12, 15, 43, 0.96)', 'rgba(18, 13, 57, 0.94)']}
+            style={[styles.panel, styles.covertPanel, !isWide && styles.covertPanelNarrow]}
+          >
+            <View style={styles.covertBadgeRow}>
+              <View style={styles.covertBadge}>
+                <Text style={styles.covertBadgeText}>BES PRO</Text>
+              </View>
+            </View>
+            <Text style={styles.panelTitle}>Covert Messaging</Text>
+            <Text style={styles.covertBody}>
+              Send concealed safety information through an ordinary-looking message when
+              discretion matters.
+            </Text>
+            <Text style={styles.covertPrice}>Included with Bes Pro — $4.99/month</Text>
+            <StoreBadges placement="covert-feature" style={styles.covertStoreBadges} />
+          </LinearGradient>
+
           <View style={[styles.featureGrid, !isWide && styles.stackedGrid]}>
             {FEATURE_CARDS.map((card) => (
               <TouchableOpacity
@@ -526,6 +544,24 @@ const styles = StyleSheet.create({
   panelCopy: { zIndex: 2 },
   panelTitle: { color: '#faf7ff', fontSize: 18, fontWeight: '800', marginBottom: 8 },
   panelSubtitle: { color: '#d4cce5', fontSize: 13, lineHeight: 19 },
+  // Ad-funnel confirmation panel — the exact feature the Nextdoor campaign
+  // advertises, placed before the generic feature grid so a visitor
+  // recognizes it immediately, with its own Google Play CTA right there.
+  covertPanel: { minHeight: 0, alignItems: 'flex-start' },
+  covertPanelNarrow: { alignItems: 'stretch' },
+  covertBadgeRow: { flexDirection: 'row', marginBottom: 10 },
+  covertBadge: {
+    backgroundColor: 'rgba(158, 84, 255, 0.22)',
+    borderColor: 'rgba(199, 140, 255, 0.65)',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  covertBadgeText: { color: '#e4ccff', fontSize: 11, fontWeight: '900', letterSpacing: 0.5 },
+  covertBody: { color: '#d4cce5', fontSize: 14, lineHeight: 21, marginBottom: 10, maxWidth: 520 },
+  covertPrice: { color: '#c8b6ff', fontSize: 13, fontWeight: '700', marginBottom: 18 },
+  covertStoreBadges: {},
   everyoneImage: { alignSelf: 'center', height: 108, marginTop: 8, opacity: 0.95, width: '100%' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   audienceChip: {

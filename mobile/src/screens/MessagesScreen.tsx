@@ -219,7 +219,14 @@ export default function MessagesScreen() {
                 <Text style={styles.encryptedIconText}>K</Text>
               </View>
               <View>
-                <Text style={styles.encryptedLabel}>Need it truly private?</Text>
+                <View style={styles.encryptedLabelRow}>
+                  <Text style={styles.encryptedLabel}>Need it truly private?</Text>
+                  {!isPremium && (
+                    <View style={styles.lockBadge}>
+                      <Text style={styles.lockBadgeText}>🔒 Bes Pro</Text>
+                    </View>
+                  )}
+                </View>
                 <Text style={styles.encryptedSub}>Send an end-to-end encrypted covert message.</Text>
               </View>
             </TouchableOpacity>
@@ -238,7 +245,14 @@ export default function MessagesScreen() {
                 <Text style={[styles.quickIconText, { color: action.color }]}>{action.icon}</Text>
               </View>
               <View style={styles.quickCopy}>
-                <Text style={styles.quickLabel}>{action.title}</Text>
+                <View style={styles.quickLabelRow}>
+                  <Text style={styles.quickLabel}>{action.title}</Text>
+                  {action.route === 'CovertMessages' && !isPremium && (
+                    <View style={styles.lockBadge}>
+                      <Text style={styles.lockBadgeText}>🔒 Bes Pro</Text>
+                    </View>
+                  )}
+                </View>
                 <Text style={styles.quickDesc}>{action.desc}</Text>
               </View>
               <Text style={styles.quickArrow}>{'>'}</Text>
@@ -549,6 +563,7 @@ const styles = StyleSheet.create({
     width: 30,
   },
   encryptedIconText: { color: '#b777ff', fontSize: 15, fontWeight: '900' },
+  encryptedLabelRow: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   encryptedLabel: { color: '#d9bcff', fontSize: 14, fontWeight: '900' },
   encryptedSub: { color: '#d5cde6', fontSize: 13, marginTop: 3 },
   quickGrid: {
@@ -584,14 +599,33 @@ const styles = StyleSheet.create({
   },
   quickIconText: { fontSize: 22, fontWeight: '900' },
   quickCopy: { flex: 1 },
+  quickLabelRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
   quickLabel: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '900',
     lineHeight: 22,
-    marginBottom: 8,
   },
   quickDesc: { color: '#cfc8dd', fontSize: 13, lineHeight: 19 },
+  // Small, low-key indicator that a feature is a Bes Pro perk — visible so
+  // free users can discover it exists, but never alarming (matches the
+  // same "quiet, not loud" precedent as CovertMessageScreen's SOS
+  // indicator). Tap behavior is unchanged either way.
+  lockBadge: {
+    backgroundColor: 'rgba(158, 84, 255, 0.2)',
+    borderColor: 'rgba(199, 140, 255, 0.55)',
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  lockBadgeText: { color: '#e4ccff', fontSize: 11, fontWeight: '800' },
   quickArrow: { color: '#a99cc5', fontSize: 24, fontWeight: '300' },
   mainGrid: {
     alignItems: 'flex-start',

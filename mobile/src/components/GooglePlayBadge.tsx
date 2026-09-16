@@ -4,7 +4,7 @@ import googlePlayBadge from '../../assets/images/google-play-badge.png';
 import { GOOGLE_PLAY_URL } from '../config/storeConfig';
 import { trackEvent } from '../services/analyticsService';
 
-type Props = { placement: 'hero' | 'footer' };
+type Props = { placement: 'hero' | 'footer' | 'covert-feature' };
 
 export default function GooglePlayBadge({ placement }: Props) {
   const handlePress = async () => {
