@@ -2,7 +2,7 @@ import { Platform, StyleSheet, Text, View, type StyleProp, type ViewStyle } from
 
 import GooglePlayBadge from './GooglePlayBadge';
 
-type Props = { placement: 'hero' | 'footer'; style?: StyleProp<ViewStyle> };
+type Props = { placement: 'hero' | 'footer' | 'covert-feature'; style?: StyleProp<ViewStyle> };
 
 // Web-only: native installs already have the app, so this renders nothing
 // there rather than showing a visitor their own already-installed app.
