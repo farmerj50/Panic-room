@@ -67,7 +67,7 @@
     "web": "expo start --web",
     "e2e": "wdio run ./e2e/wdio.conf.js",
     "test": "jest",
-    "build:web": "expo export -p web",
+    "build:web": "expo export -p web --clear",
     "start:web": "serve dist -s -l tcp://0.0.0.0:${PORT:-3000}"
   },
   "private": true
