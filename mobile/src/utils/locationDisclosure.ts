@@ -26,7 +26,7 @@ function confirm(title: string, message: string): Promise<boolean> {
 export function confirmForegroundLocationDisclosure(): Promise<boolean> {
   return confirm(
     'Location Access',
-    'Bes collects your precise location data to support emergency safety features, including sharing your location with your trusted contacts (and 911, if enabled) during an active emergency. Your location is used only to provide these safety features and is not used for advertising.',
+    'Bes uses your precise location only when you activate an emergency, to share your live location with your trusted contacts (and 911, if enabled). This is separate from Background Location Monitoring (Bes Pro), which — if you turn it on — tracks your location continuously, even when the app is closed. Your location is never used for advertising.',
   );
 }
 

@@ -1,5 +1,6 @@
 const landingPage = require('../pageobjects/landing.po');
 const authPage = require('../pageobjects/auth.po');
+const onboardingPage = require('../pageobjects/onboarding.po');
 const tabBar = require('../pageobjects/tabBar.po');
 const profilePage = require('../pageobjects/profile.po');
 const contactsPage = require('../pageobjects/contacts.po');
@@ -9,6 +10,7 @@ describe('PanicRoom trusted contacts', () => {
     await landingPage.createAccountBtn.waitForDisplayed({ timeout: 60000, interval: 1000 });
     await landingPage.createAccountBtn.click();
     await authPage.register(`e2e-contacts-${Date.now()}@panicroom.test`, 'TestPass1234!');
+    await onboardingPage.skipAll();
 
     await tabBar.profileBtn.waitForDisplayed({ timeout: 45000 });
     await tabBar.profileBtn.click();

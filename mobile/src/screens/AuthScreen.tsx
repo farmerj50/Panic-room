@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Alert,
   ImageBackground,
@@ -13,10 +13,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -24,31 +21,17 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../context/AuthContext';
 import { saveContactToBackend } from '../services/contactService';
 import { API_URL } from '../config/emergencyConfig';
-import { confirmForegroundLocationDisclosure } from '../utils/locationDisclosure';
 import type { UnauthStackParamList } from '../navigation/types';
 import heroBg from '../../assets/images/hero-bg.png';
 
 type AuthMode = 'login' | 'register';
 type AuthRouteName = 'Auth' | 'Login' | 'Register';
-type RegisterStep = 'account' | 'contact' | 'permissions';
-type PermStatus = 'unknown' | 'granted' | 'denied';
+type RegisterStep = 'account' | 'contact';
 
 const REGISTER_STEPS: Array<{ id: RegisterStep; label: string }> = [
   { id: 'account', label: 'Account' },
   { id: 'contact', label: 'Contact' },
-  { id: 'permissions', label: 'Access' },
 ];
-
-function toStatus(granted: boolean | undefined): PermStatus {
-  if (granted === undefined) return 'unknown';
-  return granted ? 'granted' : 'denied';
-}
-
-function permissionLabel(status: PermStatus) {
-  if (status === 'granted') return 'Allowed';
-  if (status === 'denied') return 'Retry';
-  return 'Allow';
-}
 
 function getInitialAuthMode(route: RouteProp<UnauthStackParamList, AuthRouteName>): AuthMode {
   if (route.params?.mode === 'register' || route.name === 'Register') return 'register';
@@ -69,20 +52,8 @@ export default function AuthScreen() {
   const [trustedPhone, setTrustedPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
-  const [permissionsApproved, setPermissionsApproved] = useState(false);
-  const [cameraPermission, requestCamera] = useCameraPermissions();
-  const [micPermission, requestMic] = useMicrophonePermissions();
-  const [locStatus, setLocStatus] = useState<PermStatus>('unknown');
   const isWide = width >= 820;
 
-  useEffect(() => {
-    Location.getForegroundPermissionsAsync()
-      .then(({ granted }) => setLocStatus(toStatus(granted)))
-      .catch(() => {});
-  }, []);
-
-  const camStatus = toStatus(cameraPermission?.granted);
-  const micStatus = toStatus(micPermission?.granted);
   const contactStarted = Boolean(trustedName.trim() || trustedPhone.trim());
   const contactComplete = Boolean(trustedName.trim() && trustedPhone.trim());
   const stepNumber = useMemo(
@@ -94,59 +65,6 @@ export default function AuthScreen() {
     setMode(next);
     setRegisterStep('account');
     setFormError('');
-  };
-
-  const openSettings = (permission: string) => {
-    if (Platform.OS === 'web') {
-      Alert.alert(
-        `${permission} access`,
-        `Use the site settings icon next to the address bar and allow ${permission.toLowerCase()} for this site.`,
-      );
-      return;
-    }
-
-    Alert.alert(`${permission} access`, `Open Settings to allow ${permission.toLowerCase()}.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Open Settings', onPress: () => Linking.openSettings() },
-    ]);
-  };
-
-  const requestLocation = async () => {
-    if (!(await confirmForegroundLocationDisclosure())) return;
-    const result = await Location.requestForegroundPermissionsAsync();
-    setLocStatus(toStatus(result.granted));
-    if (!result.granted) openSettings('Location');
-  };
-
-  const requestCorePermissions = async () => {
-    let cameraGranted = camStatus === 'granted';
-    let micGranted = micStatus === 'granted';
-    let locationGranted = locStatus === 'granted';
-
-    if (!cameraGranted) {
-      const result = await requestCamera();
-      cameraGranted = Boolean(result?.granted);
-    }
-
-    if (!micGranted) {
-      const result = await requestMic();
-      micGranted = Boolean(result?.granted);
-    }
-
-    if (!locationGranted && (await confirmForegroundLocationDisclosure())) {
-      const result = await Location.requestForegroundPermissionsAsync();
-      locationGranted = Boolean(result.granted);
-      setLocStatus(toStatus(result.granted));
-    }
-
-    const granted = cameraGranted && micGranted && locationGranted;
-    setPermissionsApproved(granted);
-
-    if (!cameraGranted) openSettings('Camera');
-    else if (!micGranted) openSettings('Microphone');
-    else if (!locationGranted) openSettings('Location');
-
-    return granted;
   };
 
   const validateAccount = () => {
@@ -168,16 +86,6 @@ export default function AuthScreen() {
     if (registerStep === 'account') {
       if (!validateAccount()) return;
       setRegisterStep('contact');
-      return;
-    }
-
-    if (registerStep === 'contact') {
-      if (contactStarted && !contactComplete) {
-        setFormError('Enter both a trusted contact name and phone number, or skip this step.');
-        return;
-      }
-      setFormError('');
-      setRegisterStep('permissions');
       return;
     }
 
@@ -207,10 +115,6 @@ export default function AuthScreen() {
           } catch {
             contactSaveFailed = true;
           }
-        }
-
-        if (permissionsApproved) {
-          await AsyncStorage.setItem('setupDone', 'true');
         }
       });
 
@@ -248,17 +152,14 @@ export default function AuthScreen() {
     setTrustedName('');
     setTrustedPhone('');
     setFormError('');
-    setRegisterStep('permissions');
   };
 
   const primaryText =
     mode === 'login'
       ? 'Sign In'
-      : registerStep === 'permissions'
+      : registerStep === 'contact'
         ? 'Create Account'
-        : registerStep === 'contact'
-          ? 'Continue to Access'
-          : 'Continue to Contact';
+        : 'Continue to Contact';
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -285,7 +186,7 @@ export default function AuthScreen() {
                   Private access for your safety data.
                 </Text>
                 <Text style={styles.heroText}>
-                  Create an account, add a trusted contact, and prepare emergency access in one setup flow.
+                  Create an account and add a trusted contact — we'll walk you through emergency access next.
                 </Text>
               </View>
 
@@ -443,44 +344,6 @@ export default function AuthScreen() {
                   </View>
                 )}
 
-                {mode === 'register' && registerStep === 'permissions' && (
-                  <View style={styles.stepPanel}>
-                    <Text style={styles.panelTitle}>Emergency Access</Text>
-                    <Text style={styles.panelText}>
-                      Allow camera, microphone, and location so emergency mode can work immediately.
-                    </Text>
-                    <PermissionRow
-                      color="#4aa8ff"
-                      label="Camera"
-                      status={camStatus}
-                      onPress={async () => {
-                        const result = await requestCamera();
-                        if (!result?.granted) openSettings('Camera');
-                      }}
-                    />
-                    <PermissionRow
-                      color="#b777ff"
-                      label="Microphone"
-                      status={micStatus}
-                      onPress={async () => {
-                        const result = await requestMic();
-                        if (!result?.granted) openSettings('Microphone');
-                      }}
-                    />
-                    <PermissionRow
-                      color="#ff6b9a"
-                      label="Location"
-                      status={locStatus}
-                      onPress={requestLocation}
-                    />
-                    <TouchableOpacity activeOpacity={0.82} style={styles.secondaryButton} onPress={requestCorePermissions} testID="auth-allow-permissions-btn" accessibilityLabel="auth-allow-permissions-btn" accessibilityRole="button">
-                      <Text style={styles.secondaryText}>
-                        {permissionsApproved ? 'Required access allowed' : 'Allow required access'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-
                 <TouchableOpacity
                   activeOpacity={0.86}
                   disabled={submitting}
@@ -529,7 +392,7 @@ export default function AuthScreen() {
                 {mode === 'register' && registerStep !== 'account' && (
                   <TouchableOpacity
                     activeOpacity={0.82}
-                    onPress={() => setRegisterStep(registerStep === 'permissions' ? 'contact' : 'account')}
+                    onPress={() => setRegisterStep('account')}
                     style={styles.backStepButton}
                     accessibilityRole="button"
                   >
@@ -542,42 +405,6 @@ export default function AuthScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
-  );
-}
-
-function PermissionRow({
-  color,
-  label,
-  status,
-  onPress,
-}: {
-  color: string;
-  label: string;
-  status: PermStatus;
-  onPress: () => void;
-}) {
-  const granted = status === 'granted';
-  return (
-    <View style={styles.permissionRow}>
-      <View style={[styles.permissionIcon, { backgroundColor: `${color}24` }]}>
-        <Text style={[styles.permissionIconText, { color }]}>{label.charAt(0)}</Text>
-      </View>
-      <View style={styles.permissionCopy}>
-        <Text style={styles.permissionTitle}>{label}</Text>
-        <Text style={styles.permissionStatus}>{granted ? 'Ready' : 'Needed for emergency mode'}</Text>
-      </View>
-      <TouchableOpacity
-        activeOpacity={0.82}
-        disabled={granted}
-        onPress={onPress}
-        style={[styles.permissionButton, granted && styles.permissionButtonGranted]}
-        accessibilityRole="button"
-      >
-        <Text style={[styles.permissionButtonText, granted && styles.permissionButtonTextGranted]}>
-          {permissionLabel(status)}
-        </Text>
-      </TouchableOpacity>
-    </View>
   );
 }
 
@@ -709,44 +536,6 @@ const styles = StyleSheet.create({
     outlineStyle: 'none' as never,
     paddingHorizontal: 14,
   },
-  permissionRow: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.035)',
-    borderColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 14,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 12,
-    minHeight: 68,
-    padding: 12,
-  },
-  permissionIcon: {
-    alignItems: 'center',
-    borderRadius: 19,
-    height: 38,
-    justifyContent: 'center',
-    width: 38,
-  },
-  permissionIconText: { fontSize: 16, fontWeight: '900' },
-  permissionCopy: { flex: 1, minWidth: 0 },
-  permissionTitle: { color: '#fff', fontSize: 14, fontWeight: '900', marginBottom: 3 },
-  permissionStatus: { color: '#a9a1bd', fontSize: 12 },
-  permissionButton: {
-    alignItems: 'center',
-    borderColor: '#7c3aed',
-    borderRadius: 13,
-    borderWidth: 1,
-    justifyContent: 'center',
-    minHeight: 38,
-    minWidth: 78,
-    paddingHorizontal: 12,
-  },
-  permissionButtonGranted: {
-    backgroundColor: 'rgba(53,225,207,0.14)',
-    borderColor: '#35e1cf',
-  },
-  permissionButtonText: { color: '#d9bcff', fontSize: 12, fontWeight: '900' },
-  permissionButtonTextGranted: { color: '#35e1cf' },
   secondaryButton: {
     alignItems: 'center',
     borderColor: 'rgba(199,140,255,0.28)',

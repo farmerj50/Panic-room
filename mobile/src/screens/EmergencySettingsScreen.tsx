@@ -32,6 +32,8 @@ import {
   confirmBackgroundLocationDisclosure,
   confirmForegroundLocationDisclosure,
 } from '../utils/locationDisclosure';
+import { confirmNotificationsDisclosure } from '../utils/permissionDisclosures';
+import { trackEvent } from '../services/analyticsService';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const heroBg = require('../../assets/images/hero-bg.png');
@@ -74,8 +76,16 @@ export default function EmergencySettingsScreen() {
     setSaving('lock');
     try {
       if (value) {
-        // Check/request notification permission first
+        // Google Play's Prominent Disclosure requirement, same pattern as
+        // the location disclosures below: explain before the OS prompt.
+        trackEvent('notifications_permission_explanation_viewed');
+        if (!(await confirmNotificationsDisclosure())) {
+          trackEvent('notifications_permission_denied');
+          return;
+        }
+
         const notifGranted = await requestNotificationPermission();
+        trackEvent(notifGranted ? 'notifications_permission_granted' : 'notifications_permission_denied');
         if (!notifGranted) {
           Alert.alert(
             'Notification Permission Required',

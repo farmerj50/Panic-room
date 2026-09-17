@@ -1,5 +1,6 @@
 const landingPage = require('../pageobjects/landing.po');
 const authPage = require('../pageobjects/auth.po');
+const onboardingPage = require('../pageobjects/onboarding.po');
 const tabBar = require('../pageobjects/tabBar.po');
 const profilePage = require('../pageobjects/profile.po');
 const paywallPage = require('../pageobjects/paywall.po');
@@ -13,6 +14,7 @@ describe('Bes Premium paywall', () => {
     await landingPage.createAccountBtn.waitForDisplayed({ timeout: 60000, interval: 1000 });
     await landingPage.createAccountBtn.click();
     await authPage.register(email, password);
+    await onboardingPage.skipAll();
 
     await tabBar.emergencyBtn.waitForDisplayed({ timeout: 45000 });
 

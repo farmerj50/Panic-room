@@ -1,5 +1,6 @@
 const landingPage = require('../pageobjects/landing.po');
 const authPage = require('../pageobjects/auth.po');
+const onboardingPage = require('../pageobjects/onboarding.po');
 const tabBar = require('../pageobjects/tabBar.po');
 const emergencyPage = require('../pageobjects/emergency.po');
 
@@ -8,6 +9,7 @@ describe('PanicRoom app backgrounded during an active emergency', () => {
     await landingPage.createAccountBtn.waitForDisplayed({ timeout: 60000, interval: 1000 });
     await landingPage.createAccountBtn.click();
     await authPage.register(`e2e-bg-${Date.now()}@panicroom.test`, 'TestPass1234!');
+    await onboardingPage.skipAll();
 
     await tabBar.emergencyBtn.waitForDisplayed({ timeout: 45000 });
     await tabBar.emergencyBtn.click();

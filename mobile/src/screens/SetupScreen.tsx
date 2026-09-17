@@ -12,52 +12,50 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
-import { useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
-import * as Location from 'expo-location';
 
 import { useEmergencyContext } from '../context/EmergencyContext';
-import { confirmForegroundLocationDisclosure } from '../utils/locationDisclosure';
-
-type PermStatus = 'unknown' | 'granted' | 'denied';
-
-function toStatus(granted: boolean | undefined): PermStatus {
-  if (granted === undefined) return 'unknown';
-  return granted ? 'granted' : 'denied';
-}
+import {
+  getCameraStatus,
+  getForegroundLocationStatus,
+  getMicrophoneStatus,
+  requestCameraPermission,
+  requestForegroundLocationPermission,
+  requestMicrophonePermission,
+  type PermStatus,
+} from '../services/corePermissions';
 
 export default function SetupScreen() {
   const navigation = useNavigation();
   const { markSetupDone, isSetupDone } = useEmergencyContext();
 
-  const [cameraPermission, requestCamera] = useCameraPermissions();
-  const [micPermission, requestMic] = useMicrophonePermissions();
+  const [camStatus, setCamStatus] = useState<PermStatus>('unknown');
+  const [micStatus, setMicStatus] = useState<PermStatus>('unknown');
   const [locStatus, setLocStatus] = useState<PermStatus>('unknown');
 
   useEffect(() => {
-    Location.getForegroundPermissionsAsync()
-      .then(({ granted }) => setLocStatus(toStatus(granted)))
-      .catch(() => {});
+    getCameraStatus().then(setCamStatus).catch(() => {});
+    getMicrophoneStatus().then(setMicStatus).catch(() => {});
+    getForegroundLocationStatus().then(setLocStatus).catch(() => {});
   }, []);
 
-  const camStatus = toStatus(cameraPermission?.granted);
-  const micStatus = toStatus(micPermission?.granted);
   const coreGranted = camStatus === 'granted' && micStatus === 'granted' && locStatus === 'granted';
 
   const handleRequestCamera = async () => {
-    const result = await requestCamera();
-    if (!result?.granted) openSettings('Camera');
+    const status = await requestCameraPermission();
+    setCamStatus(status);
+    if (status !== 'granted') openSettings('Camera');
   };
 
   const handleRequestMic = async () => {
-    const result = await requestMic();
-    if (!result?.granted) openSettings('Microphone');
+    const status = await requestMicrophonePermission();
+    setMicStatus(status);
+    if (status !== 'granted') openSettings('Microphone');
   };
 
   const handleRequestLoc = async () => {
-    if (!(await confirmForegroundLocationDisclosure())) return;
-    const { granted } = await Location.requestForegroundPermissionsAsync();
-    setLocStatus(toStatus(granted));
-    if (!granted) openSettings('Location');
+    const status = await requestForegroundLocationPermission();
+    setLocStatus(status);
+    if (status !== 'granted') openSettings('Location');
   };
 
   const openSettings = (permission: string) => {
@@ -80,31 +78,30 @@ export default function SetupScreen() {
   };
 
   const requestCorePermissions = async () => {
-    let cameraGranted = camStatus === 'granted';
-    let micGranted = micStatus === 'granted';
-    let locationGranted = locStatus === 'granted';
+    let cameraStatus = camStatus;
+    let micStat = micStatus;
+    let locStat = locStatus;
 
-    if (!cameraGranted) {
-      const result = await requestCamera();
-      cameraGranted = Boolean(result?.granted);
+    if (cameraStatus !== 'granted') {
+      cameraStatus = await requestCameraPermission();
+      setCamStatus(cameraStatus);
     }
 
-    if (!micGranted) {
-      const result = await requestMic();
-      micGranted = Boolean(result?.granted);
+    if (micStat !== 'granted') {
+      micStat = await requestMicrophonePermission();
+      setMicStatus(micStat);
     }
 
-    if (!locationGranted && (await confirmForegroundLocationDisclosure())) {
-      const result = await Location.requestForegroundPermissionsAsync();
-      locationGranted = Boolean(result?.granted);
-      setLocStatus(toStatus(result?.granted));
+    if (locStat !== 'granted') {
+      locStat = await requestForegroundLocationPermission();
+      setLocStatus(locStat);
     }
 
-    if (!cameraGranted) openSettings('Camera');
-    else if (!micGranted) openSettings('Microphone');
-    else if (!locationGranted) openSettings('Location');
+    if (cameraStatus !== 'granted') openSettings('Camera');
+    else if (micStat !== 'granted') openSettings('Microphone');
+    else if (locStat !== 'granted') openSettings('Location');
 
-    return cameraGranted && micGranted && locationGranted;
+    return cameraStatus === 'granted' && micStat === 'granted' && locStat === 'granted';
   };
 
   const handleFinish = async () => {

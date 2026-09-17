@@ -32,6 +32,7 @@ import PinSetupScreen from '../screens/PinSetupScreen';
 import DecoyScreen from '../screens/DecoyScreen';
 import DecoySettingsScreen from '../screens/DecoySettingsScreen';
 import PaywallScreen from '../screens/PaywallScreen';
+import OnboardingNavigator from './OnboardingNavigator';
 
 // expo-notifications loads at runtime so the app still boots before `npm install`.
 // Once installed, the module resolves normally; until then every call is a no-op.
@@ -267,7 +268,7 @@ function PinLockGate() {
 }
 
 function AuthenticatedNavigator() {
-  const { consumePostAuthTab, postAuthTab } = useAuth();
+  const { consumePostAuthTab, postAuthTab, needsOnboarding } = useAuth();
   const { consumePendingEmergencyBypass } = usePinLock();
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
   const [navReady, setNavReady] = useState(false);
@@ -305,6 +306,16 @@ function AuthenticatedNavigator() {
     return () => sub.remove();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const routeOnboarding = useCallback(() => {
+    if (!needsOnboarding || !navigationRef.isReady()) return false;
+
+    // Onboarding's own Complete screen consumes both needsOnboarding and
+    // postAuthTab and navigates to Main itself once the user finishes — so
+    // this only needs to redirect here, not consume anything.
+    navigationRef.navigate('Onboarding');
+    return true;
+  }, [navigationRef, needsOnboarding]);
+
   const routePostAuthTab = useCallback(() => {
     if (!postAuthTab || !navigationRef.isReady()) return false;
 
@@ -325,18 +336,23 @@ function AuthenticatedNavigator() {
       return;
     }
 
+    // A freshly registered user must see onboarding before their normal
+    // post-auth landing tab — check this ahead of routePostAuthTab.
+    if (routeOnboarding()) return;
+
     if (routePostAuthTab()) return;
 
     if (pendingRoute.current && navigationRef.isReady()) {
       navigationRef.navigate(pendingRoute.current);
       pendingRoute.current = null;
     }
-  }, [consumePendingEmergencyBypass, navigationRef, routePostAuthTab]);
+  }, [consumePendingEmergencyBypass, navigationRef, routeOnboarding, routePostAuthTab]);
 
   useEffect(() => {
     if (!navReady) return;
+    if (routeOnboarding()) return;
     routePostAuthTab();
-  }, [navReady, routePostAuthTab]);
+  }, [navReady, routeOnboarding, routePostAuthTab]);
 
   return (
     <SubscriptionProvider>
@@ -363,6 +379,7 @@ function AuthenticatedNavigator() {
             <Stack.Screen name="PinSetup" component={PinSetupScreen} />
             <Stack.Screen name="DecoySettings" component={DecoySettingsScreen} />
             <Stack.Screen name="Paywall" component={PaywallScreen} />
+            <Stack.Screen name="Onboarding" component={OnboardingNavigator} />
           </Stack.Navigator>
         </NavigationContainer>
       </EmergencyProvider>

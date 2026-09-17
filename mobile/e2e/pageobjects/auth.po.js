@@ -19,10 +19,6 @@ class AuthPage {
     return $('~auth-skip-contact-btn');
   }
 
-  get allowPermissionsBtn() {
-    return $('~auth-allow-permissions-btn');
-  }
-
   get submitBtn() {
     return $('~auth-submit-btn');
   }
@@ -47,7 +43,9 @@ class AuthPage {
     await this.submitBtn.click();
   }
 
-  // Full multi-step register flow: account -> contact (skipped) -> permissions.
+  // Two-step register flow: account -> contact (skipped) -> createAccount().
+  // Permission granting now happens in the post-registration onboarding
+  // stack (see onboarding.po.js), not as part of this form.
   async register(email, password) {
     await this.emailInput.waitForDisplayed({ timeout: 10000 });
     await this.emailInput.setValue(email);
@@ -56,10 +54,7 @@ class AuthPage {
     await this.submitBtn.click(); // account -> contact
     await driver.pause(500);
     await this.scrollDown();
-    await this.submitBtn.click(); // contact -> permissions (skipped, no contact filled)
-    await driver.pause(500);
-    await this.scrollDown();
-    await this.submitBtn.click(); // permissions -> createAccount()
+    await this.submitBtn.click(); // contact -> createAccount() (no contact filled)
   }
 }
 

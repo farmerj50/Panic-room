@@ -2,6 +2,7 @@ import type { NavigatorScreenParams } from '@react-navigation/native';
 
 export type RootStackParamList = {
   Main: NavigatorScreenParams<TabParamList> | undefined;
+  Onboarding: undefined;
   Home: undefined;
   Resources: undefined;
   SafetyPlan: undefined;

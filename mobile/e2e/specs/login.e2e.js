@@ -1,5 +1,6 @@
 const landingPage = require('../pageobjects/landing.po');
 const authPage = require('../pageobjects/auth.po');
+const onboardingPage = require('../pageobjects/onboarding.po');
 const tabBar = require('../pageobjects/tabBar.po');
 const profilePage = require('../pageobjects/profile.po');
 
@@ -12,6 +13,7 @@ describe('PanicRoom login flow', () => {
     await landingPage.createAccountBtn.waitForDisplayed({ timeout: 60000, interval: 1000 });
     await landingPage.createAccountBtn.click();
     await authPage.register(email, password);
+    await onboardingPage.skipAll(); // new accounts land in onboarding first
 
     await tabBar.emergencyBtn.waitForDisplayed({ timeout: 45000 });
 
@@ -26,7 +28,8 @@ describe('PanicRoom login flow', () => {
     await landingPage.signInBtn.click();
     await authPage.login(email, password);
 
-    // A successful login lands back on the authenticated tab bar.
+    // A successful login lands straight back on the authenticated tab bar —
+    // onboarding is register()-only and must never reappear here.
     await tabBar.emergencyBtn.waitForDisplayed({ timeout: 15000 });
 
     // Leave the app signed out so the next test starts from a known state.

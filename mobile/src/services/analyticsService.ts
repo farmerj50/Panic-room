@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 
 import { GA4_MEASUREMENT_ID } from '../config/analyticsConfig';
+import { trackNativeEvent } from './nativeAnalytics';
 
 declare global {
   interface Window {
@@ -33,10 +34,16 @@ export function configureAnalytics() {
   gtag('config', GA4_MEASUREMENT_ID);
 }
 
-// Fires a GA4 event. Safe no-op on native, and safe no-op if
-// configureAnalytics() never ran (no Measurement ID set yet) — window.gtag
-// simply won't exist.
+// Fires a GA4 event: gtag.js on web (safe no-op if configureAnalytics()
+// never ran, i.e. no Measurement ID set yet — window.gtag simply won't
+// exist), GA4 Measurement Protocol on native (see nativeAnalytics.ts). One
+// entry point for all call sites regardless of platform.
 export function trackEvent(eventName: string, params?: Record<string, unknown>) {
-  if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof window.gtag !== 'function') return;
-  window.gtag('event', eventName, params);
+  if (Platform.OS === 'web') {
+    if (typeof window === 'undefined' || typeof window.gtag !== 'function') return;
+    window.gtag('event', eventName, params);
+    return;
+  }
+
+  void trackNativeEvent(eventName, params);
 }

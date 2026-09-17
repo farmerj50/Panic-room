@@ -1,5 +1,6 @@
 const landingPage = require('../pageobjects/landing.po');
 const authPage = require('../pageobjects/auth.po');
+const onboardingPage = require('../pageobjects/onboarding.po');
 const tabBar = require('../pageobjects/tabBar.po');
 const emergencyPage = require('../pageobjects/emergency.po');
 
@@ -11,6 +12,9 @@ describe('PanicRoom emergency activation flow', () => {
     await landingPage.createAccountBtn.click(); // navigates straight into Auth with mode=register
 
     await authPage.register(`e2e-test-${Date.now()}@panicroom.test`, 'TestPass1234!');
+
+    // ── New accounts land in the one-time onboarding stack before Home ───
+    await onboardingPage.skipAll();
 
     // ── Navigate from Home to the Emergency tab ──────────────────────────
     // Generous timeout: registration is a real network round-trip to the backend.

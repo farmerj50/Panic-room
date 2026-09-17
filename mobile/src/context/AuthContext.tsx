@@ -18,6 +18,7 @@ type AuthContextType = {
   status: AuthStatus;
   user: AuthUser | null;
   postAuthTab: PostAuthTab | null;
+  needsOnboarding: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (
     name: string,
@@ -26,6 +27,7 @@ type AuthContextType = {
     beforeAuthenticate?: () => Promise<void>,
   ) => Promise<void>;
   consumePostAuthTab: () => void;
+  consumeOnboarding: () => void;
   logout: () => Promise<void>;
   deleteAccount: (password: string) => Promise<void>;
 };
@@ -36,6 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [user, setUser] = useState<AuthUser | null>(null);
   const [postAuthTab, setPostAuthTab] = useState<PostAuthTab | null>(null);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -78,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSessionExpiredHandler(() => {
       setUser(null);
       setPostAuthTab(null);
+      setNeedsOnboarding(false);
       setStatus('unauthenticated');
     });
 
@@ -89,6 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       status,
       user,
       postAuthTab,
+      needsOnboarding,
       async login(email, password) {
         const response = await loginRequest({ email, password });
         await setTokens(response.accessToken, response.refreshToken);
@@ -102,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await setTokens(response.accessToken, response.refreshToken);
         await beforeAuthenticate?.();
         setPostAuthTab('Home');
+        setNeedsOnboarding(true);
         setUser(response.user);
         setStatus('authenticated');
         loginPurchases(response.user.id).catch(() => {});
@@ -109,11 +115,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       consumePostAuthTab() {
         setPostAuthTab(null);
       },
+      consumeOnboarding() {
+        setNeedsOnboarding(false);
+      },
       async logout() {
         await logoutRequest();
         await clearAuthToken();
         setUser(null);
         setPostAuthTab(null);
+        setNeedsOnboarding(false);
         setStatus('unauthenticated');
         logoutPurchases().catch(() => {});
       },
@@ -124,11 +134,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await clearAuthToken();
         setUser(null);
         setPostAuthTab(null);
+        setNeedsOnboarding(false);
         setStatus('unauthenticated');
         logoutPurchases().catch(() => {});
       },
     }),
-    [postAuthTab, status, user],
+    [needsOnboarding, postAuthTab, status, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
