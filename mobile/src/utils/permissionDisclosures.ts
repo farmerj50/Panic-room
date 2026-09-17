@@ -1,23 +1,9 @@
-import { Alert } from 'react-native';
+import { confirmDialog as confirm } from './confirmDialog';
 
 // Sibling to locationDisclosure.ts, same pattern: show an in-app
 // explanation and get an explicit affirmative action *before* the OS
 // permission dialog appears, rather than relying on the bare system
 // prompt (which carries no context about why Bes wants the permission).
-
-function confirm(title: string, message: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    Alert.alert(
-      title,
-      message,
-      [
-        { text: 'Not now', style: 'cancel', onPress: () => resolve(false) },
-        { text: 'Continue', onPress: () => resolve(true) },
-      ],
-      { cancelable: false },
-    );
-  });
-}
 
 export const CAMERA_DISCLOSURE = {
   title: 'Camera Access',

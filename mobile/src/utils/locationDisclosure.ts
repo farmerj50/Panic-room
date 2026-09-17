@@ -1,4 +1,4 @@
-import { Alert } from 'react-native';
+import { confirmDialog as confirm } from './confirmDialog';
 
 // Google Play's Prominent Disclosure and Consent Requirement: the OS runtime
 // permission dialog does NOT satisfy this on its own — the app must show its
@@ -7,20 +7,6 @@ import { Alert } from 'react-native';
 // appears. This gates every foreground/background location permission
 // request in the app so that requirement is met consistently everywhere.
 // https://support.google.com/googleplay/android-developer/answer/9799150
-
-function confirm(title: string, message: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    Alert.alert(
-      title,
-      message,
-      [
-        { text: 'Not now', style: 'cancel', onPress: () => resolve(false) },
-        { text: 'Continue', onPress: () => resolve(true) },
-      ],
-      { cancelable: false },
-    );
-  });
-}
 
 // Show before requesting foreground (While Using the App) location access.
 export function confirmForegroundLocationDisclosure(): Promise<boolean> {
