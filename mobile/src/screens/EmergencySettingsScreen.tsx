@@ -5,7 +5,6 @@ import {
   Linking,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -17,6 +16,7 @@ import * as Location from 'expo-location';
 
 import { type EmergencySettings, useEmergencyContext } from '../context/EmergencyContext';
 import { useSubscription } from '../context/SubscriptionContext';
+import SettingRow from '../components/SettingRow';
 import {
   disableLockScreenButton,
   enableLockScreenButton,
@@ -344,37 +344,6 @@ function SectionCard({
   );
 }
 
-function SettingRow({
-  title, description, value, onToggle, loading, platform,
-}: {
-  title: string;
-  description: string;
-  value: boolean;
-  onToggle: (v: boolean) => void;
-  loading?: boolean;
-  platform?: string;
-}) {
-  return (
-    <View style={styles.settingRow}>
-      <View style={styles.settingCopy}>
-        <View style={styles.settingTitleRow}>
-          <Text style={styles.settingTitle}>{title}</Text>
-          {platform && <Text style={styles.platformBadge}>{platform}</Text>}
-        </View>
-        <Text style={styles.settingDesc}>{description}</Text>
-      </View>
-      <Switch
-        value={value}
-        onValueChange={loading ? undefined : onToggle}
-        disabled={loading}
-        trackColor={{ false: 'rgba(255,255,255,0.12)', true: 'rgba(147,76,255,0.7)' }}
-        thumbColor={value ? '#d4abff' : '#6b6388'}
-        ios_backgroundColor="rgba(255,255,255,0.12)"
-      />
-    </View>
-  );
-}
-
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 function OptionGroup<T extends string>({
@@ -464,24 +433,7 @@ const styles = StyleSheet.create({
     height: 1,
     marginVertical: 14,
   },
-  settingRow: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    gap: 14,
-    justifyContent: 'space-between',
-  },
-  settingCopy: { flex: 1 },
-  settingTitleRow: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 5 },
   settingTitle: { color: '#f0ecfb', fontSize: 14, fontWeight: '800' },
-  platformBadge: {
-    backgroundColor: 'rgba(90,78,148,0.28)',
-    borderRadius: 8,
-    color: '#9b91bb',
-    fontSize: 10,
-    fontWeight: '700',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
   settingDesc: { color: '#8b84aa', fontSize: 12, lineHeight: 18 },
   optionGroupDesc: { marginBottom: 12 },
   optionGrid: { gap: 10 },

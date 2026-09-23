@@ -12,13 +12,16 @@ export type RootStackParamList = {
   Profile: undefined;
   Setup: undefined;
   Contacts: undefined;
+  LinkedAccounts: undefined;
   Evidence: undefined;
   Safety: undefined;
   EmergencySettings: undefined;
   CovertMessages: undefined;
   PinSetup: undefined;
   DecoySettings: undefined;
-  Paywall: { reason?: 'background-location' | 'covert-messaging' | 'contacts-cap' } | undefined;
+  Paywall:
+    | { reason?: 'background-location' | 'covert-messaging' | 'contacts-cap' | 'linked-accounts' }
+    | undefined;
 };
 
 export type TabParamList = {

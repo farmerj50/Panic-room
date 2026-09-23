@@ -18,6 +18,10 @@ import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useAuth } from '../context/AuthContext';
 import { useEmergencyContext } from '../context/EmergencyContext';
 import { TabParamList } from '../navigation/types';
+import { trackEvent } from '../services/analyticsService';
+import { getExistingOnboardingVariant } from '../services/experiments';
+import { hasFiredHomeViewedFirst, markHomeViewedFirstFired } from '../services/sessionFlags';
+import { getCameraStatus } from '../services/corePermissions';
 
 import heroBg from '../../assets/images/hero-bg.png';
 import teenGroup from '../../assets/images/teen-group.png';
@@ -119,8 +123,29 @@ export default function HomeScreen() {
     loadContacts();
   }, []);
 
+  // Once-per-session "reached Home" event, read-only on the experiment
+  // variant (never assigns) so a login-only user never gets accidentally
+  // bucketed just by landing here.
+  useEffect(() => {
+    if (hasFiredHomeViewedFirst()) return;
+    markHomeViewedFirstFired();
+    getExistingOnboardingVariant()
+      .then((variant) => trackEvent('home_viewed_first', { variant: variant ?? 'n/a' }))
+      .catch(() => {});
+  }, []);
+
   const goTo = (route: RouteName) => {
     navigation.navigate(route);
+  };
+
+  // Non-blocking, no-dialog pre-warm ahead of the Emergency countdown — the
+  // real disclosure + OS prompt happens inside EmergencyScreen's
+  // ensurePermissions() during the countdown itself, not here. This never
+  // awaits or gates navigation, so it can't delay the app's most
+  // safety-critical tap.
+  const goToEmergency = () => {
+    getCameraStatus().catch(() => {});
+    goTo('Emergency');
   };
 
   // Discreet emergency access: long-pressing the logo goes straight to
@@ -186,7 +211,7 @@ export default function HomeScreen() {
               <TouchableOpacity
                 activeOpacity={0.85}
                 onPress={handleLogoPress}
-                onLongPress={() => goTo('Emergency')}
+                onLongPress={goToEmergency}
                 style={styles.brand}
                 testID="home-logo-btn"
                 accessibilityLabel="home-logo-btn"
@@ -242,7 +267,7 @@ export default function HomeScreen() {
                 </TouchableOpacity>
                 <TouchableOpacity
                   activeOpacity={0.8}
-                  onPress={() => goTo('Emergency')}
+                  onPress={goToEmergency}
                   style={styles.shieldButton}
                 >
                   <View style={styles.smallShield} />
@@ -261,7 +286,7 @@ export default function HomeScreen() {
                 </Text>
                 <TouchableOpacity
                   activeOpacity={0.84}
-                  onPress={() => goTo('Emergency')}
+                  onPress={goToEmergency}
                   style={styles.helpButton}
                 >
                   <Text style={styles.helpText}>I Need Help Now</Text>

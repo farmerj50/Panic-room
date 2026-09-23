@@ -16,6 +16,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import LiveLocationMap from '../components/LiveLocationMap';
 import { useEmergencyContext } from '../context/EmergencyContext';
+import {
+  requestCameraPermission as requestCameraPermissionCore,
+  requestMicrophonePermission as requestMicrophonePermissionCore,
+} from '../services/corePermissions';
+import { getExistingOnboardingVariant } from '../services/experiments';
 import { COUNTDOWN_SECONDS, EMERGENCY_NUMBER, ENABLE_EMERGENCY_DIALER } from '../config/emergencyConfig';
 import {
   addVideoSegment,
@@ -256,8 +261,11 @@ export default function EmergencyScreen() {
   } = emergencySettings;
 
   const cameraRef = useRef<CameraView>(null);
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const [micPermission, requestMicPermission] = useMicrophonePermissions();
+  // Only the reactive status is used here — the request functions the hooks
+  // also return are ignored; requests go through corePermissions.ts's
+  // disclosure-wrapped versions instead (see ensurePermissions below).
+  const [cameraPermission] = useCameraPermissions();
+  const [micPermission] = useMicrophonePermissions();
 
   const [phase, setPhase] = useState<EmergencyPhase>('countdown');
   const [count, setCount] = useState(COUNTDOWN_SECONDS);
@@ -518,23 +526,34 @@ export default function EmergencyScreen() {
 
   // Returns { cameraOk, audioOk } — never throws.
   // Camera/audio denial is non-fatal: emergency continues with GPS only.
+  // Requests are routed through corePermissions.ts (disclosure-wrapped) —
+  // this is the primary ask for anyone in the contextual-onboarding variant
+  // (or anyone who skipped/declined during onboarding), not just a fallback.
   const ensurePermissions = useCallback(async (): Promise<{ cameraOk: boolean; audioOk: boolean }> => {
     let cameraOk = Boolean(cameraPermission?.granted);
     let audioOk = Boolean(micPermission?.granted);
+    const variant = await getExistingOnboardingVariant().catch(() => null);
 
-    // Request at emergency time if not yet granted (e.g. user skipped Setup).
+    // Request at emergency time if not yet granted (e.g. user skipped Setup,
+    // or is in the contextual variant where nothing was asked upfront).
     if (cameraAutoRecord && !cameraOk) {
-      try { const r = await requestCameraPermission(); cameraOk = r.granted; } catch { cameraOk = false; }
+      try {
+        const status = await requestCameraPermissionCore({ context: 'emergency_activation', variant: variant ?? undefined });
+        cameraOk = status === 'granted';
+      } catch { cameraOk = false; }
     }
     if (audioAutoRecord && !audioOk) {
-      try { const r = await requestMicPermission(); audioOk = r.granted; } catch { audioOk = false; }
+      try {
+        const status = await requestMicrophonePermissionCore({ context: 'emergency_activation', variant: variant ?? undefined });
+        audioOk = status === 'granted';
+      } catch { audioOk = false; }
     }
 
     return {
       cameraOk: cameraAutoRecord && cameraOk,
       audioOk: audioAutoRecord && audioOk,
     };
-  }, [cameraAutoRecord, audioAutoRecord, cameraPermission, micPermission, requestCameraPermission, requestMicPermission]);
+  }, [cameraAutoRecord, audioAutoRecord, cameraPermission, micPermission]);
 
   const openExternalCallAction = useCallback(async (
     url: string,

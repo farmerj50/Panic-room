@@ -119,6 +119,55 @@ model User {
   subscriptionExpiresAt DateTime? // THE gate everywhere: entitled iff this is set and in the future
   subscriptionProductId String?
   lastRevenueCatEventAt DateTime? // guards against out-of-order webhook delivery
+
+  ownedAccountLinks  AccountLink[] @relation("OwnedAccountLinks")
+  linkedAccountLinks AccountLink[] @relation("LinkedAccountLinks")
+}
+
+// Bes Pro "Linked Accounts" — distinct from TrustedContact: both sides are
+// real Bes users, and the linked side must explicitly consent (see
+// accountLinkController.js's two-step preview/accept flow). A 'pending'
+// row has linkedUserId: null (the invite code hasn't been redeemed yet,
+// so the identity of the accepting user isn't known until it is);
+// linkedUserId is set exactly once, atomically with status -> 'active'.
+model AccountLink {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  ownerUserId String
+  ownerUser   User   @relation("OwnedAccountLinks", fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  linkedUserId String?
+  linkedUser   User?   @relation("LinkedAccountLinks", fields: [linkedUserId], references: [id], onDelete: Cascade)
+
+  relationshipType String // 'child' | 'family' | 'friend' — descriptive only, never authorization; permissions below are the sole source of truth for what's shared
+  status           String @default("pending") // 'pending' | 'active' | 'revoked'
+
+  // Default: { emergencyAlerts: true, liveLocationDuringEmergency: true, backgroundLocation: false }.
+  // backgroundLocation is owner-readable but only linked-user-settable —
+  // it depends on that user's own separate Background Location Monitoring
+  // opt-in and their consent to share it with this specific owner.
+  // No safetyPlan key yet (deferred) — adding one later is additive, not
+  // a migration.
+  permissions Json @default("{\"emergencyAlerts\": true, \"liveLocationDuringEmergency\": true, \"backgroundLocation\": false}")
+
+  // Invite-code secret, same shape as PasswordResetToken. Unlike a
+  // password-reset code (looked up scoped to an already-known userId),
+  // this is looked up globally by codeHash alone, since the accepting
+  // user's identity isn't known until they redeem it — hence a longer,
+  // higher-entropy code than PasswordResetToken's 6 digits.
+  codeHash   String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int       @default(0)
+
+  acceptedAt    DateTime?
+  revokedAt     DateTime?
+  revokedByRole String? // 'owner' | 'linked' — no third self-relation needed, the revoker is always one of the two users already on this row
+
+  @@index([ownerUserId])
+  @@index([linkedUserId])
+  @@index([codeHash])
 }
 
 model CovertMessage {

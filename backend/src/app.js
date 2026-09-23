@@ -11,6 +11,7 @@ const recordingRoutes = require("./routes/recordingRoutes");
 const userRoutes = require("./routes/userRoutes");
 const covertMessageRoutes = require("./routes/covertMessageRoutes");
 const billingRoutes = require("./routes/billingRoutes");
+const accountLinkRoutes = require("./routes/accountLinkRoutes");
 const legalRoutes = require("./routes/legalRoutes");
 const errorMiddleware = require("./middleware/errorMiddleware");
 
@@ -53,6 +54,7 @@ app.use("/api/recordings", recordingRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/covert-messages", covertMessageRoutes);
 app.use("/api/billing", billingRoutes);
+app.use("/api/account-links", accountLinkRoutes);
 app.use("/legal", legalRoutes);
 
 app.use(errorMiddleware);

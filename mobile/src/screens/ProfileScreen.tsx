@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Image,
@@ -15,7 +15,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
 import { useAuth } from '../context/AuthContext';
 import { usePinLock } from '../context/PinLockContext';
@@ -23,6 +23,12 @@ import { useEmergencyContext } from '../context/EmergencyContext';
 import { useSubscription } from '../context/SubscriptionContext';
 import { getPublicKeyBase64 } from '../services/keyService';
 import { setMyPhoneNumber, setMyPublicKey } from '../services/covertMessageService';
+import { getOwnedLinks } from '../services/accountLinkService';
+import {
+  getCameraStatus,
+  getForegroundLocationStatus,
+  getMicrophoneStatus,
+} from '../services/corePermissions';
 import { clearPin as clearPinStorage } from '../services/pinStorage';
 import { DECOY_ENABLED_KEY } from './DecoySettingsScreen';
 import { API_URL } from '../config/emergencyConfig';
@@ -123,13 +129,42 @@ export default function ProfileScreen() {
   const navigation = useNavigation<any>();
   const { deleteAccount, logout, user } = useAuth();
   const { activateDecoy } = usePinLock();
-  const { contacts, isSetupDone, loadContacts } = useEmergencyContext();
-  const { isPremium } = useSubscription();
+  const { contacts, loadContacts } = useEmergencyContext();
+  const { isPremium, linkedAccountLimit } = useSubscription();
   const { width } = useWindowDimensions();
 
   const isWide = width >= 900;
   const pageMaxWidth = isWide ? 1000 : 620;
-  const safetyPct = Math.min(100, (isSetupDone ? 40 : 10) + Math.min(contacts.length * 20, 60));
+
+  // Live-computed from actual OS permission state rather than the old
+  // isSetupDone boolean (which only ever reflected "granted all three in
+  // one onboarding sitting") — under the contextual-onboarding variant,
+  // permissions are granted individually over time, and this needs to
+  // reflect that regardless of which variant this install is in. Permission
+  // state can also change via OS Settings at any time, so this recomputes
+  // on every focus, not just mount.
+  const [permissionsGrantedCount, setPermissionsGrantedCount] = useState(0);
+  useFocusEffect(
+    useCallback(() => {
+      let mounted = true;
+      (async () => {
+        const [camera, microphone, location] = await Promise.all([
+          getCameraStatus(),
+          getMicrophoneStatus(),
+          getForegroundLocationStatus(),
+        ]);
+        if (!mounted) return;
+        setPermissionsGrantedCount([camera, microphone, location].filter((s) => s === 'granted').length);
+      })();
+      return () => {
+        mounted = false;
+      };
+    }, []),
+  );
+  const safetyPct = Math.min(
+    100,
+    Math.round((permissionsGrantedCount / 3) * 40) + Math.min(contacts.length * 20, 60),
+  );
 
   const [publicKey, setPublicKey] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState(user?.phoneNumber ?? '');
@@ -140,6 +175,30 @@ export default function ProfileScreen() {
   const [showDeleteForm, setShowDeleteForm] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [deletingAccount, setDeletingAccount] = useState(false);
+
+  // Unlike Trusted Contacts (whose count comes for free from the
+  // already-app-wide EmergencyContext), Linked Accounts has no equivalent
+  // global need yet — a light local fetch here is simpler than adding a
+  // new context just for this one count.
+  const [linkedAccountCount, setLinkedAccountCount] = useState(0);
+
+  useEffect(() => {
+    let mounted = true;
+    if (!isPremium) return;
+
+    (async () => {
+      try {
+        const links = await getOwnedLinks();
+        if (mounted) setLinkedAccountCount(links.filter((l) => l.status !== 'revoked').length);
+      } catch {
+        // Non-critical — the badge just won't update this pass.
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [isPremium]);
 
   useEffect(() => {
     let mounted = true;
@@ -464,6 +523,34 @@ export default function ProfileScreen() {
                 {contacts.length} Contact{contacts.length === 1 ? '' : 's'}
               </Text>
             </View>
+            <Text style={styles.rowArrow}>{'>'}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.84}
+            style={[styles.resourceRow, styles.resourceRowBorder]}
+            onPress={() => navigation.navigate('LinkedAccounts')}
+            testID="profile-linked-accounts-btn"
+            accessibilityLabel="profile-linked-accounts-btn"
+          >
+            <View style={[styles.itemIcon, { backgroundColor: 'rgba(74,168,255,0.24)' }]}>
+              <Text style={[styles.itemIconText, { color: '#4aa8ff' }]}>L</Text>
+            </View>
+            <View style={styles.itemCopy}>
+              <Text style={styles.itemName}>Linked Accounts</Text>
+              <Text style={styles.itemDesc}>Invite family or friends to link accounts, with consent.</Text>
+            </View>
+            {isPremium ? (
+              <View style={[styles.valueBadge, { backgroundColor: '#4aa8ff22', borderColor: '#4aa8ff55' }]}>
+                <Text style={[styles.valueText, { color: '#7fb7ff' }]}>
+                  {linkedAccountCount}/{linkedAccountLimit} Linked
+                </Text>
+              </View>
+            ) : (
+              <View style={[styles.valueBadge, { backgroundColor: '#8b4dff22', borderColor: '#8b4dff55' }]}>
+                <Text style={[styles.valueText, { color: '#d9bcff' }]}>Bes Pro</Text>
+              </View>
+            )}
             <Text style={styles.rowArrow}>{'>'}</Text>
           </TouchableOpacity>
 

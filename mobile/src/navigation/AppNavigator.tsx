@@ -19,6 +19,7 @@ import HomeScreen from '../screens/HomeScreen';
 import EmergencyScreen from '../screens/EmergencyScreen';
 import SetupScreen from '../screens/SetupScreen';
 import ContactsScreen from '../screens/ContactsScreen';
+import LinkedAccountsScreen from '../screens/LinkedAccountsScreen';
 import EvidenceScreen from '../screens/EvidenceScreen';
 import ResourcesScreen from '../screens/ResourcesScreen';
 import SafetyPlanScreen from '../screens/SafetyPlanScreen';
@@ -76,6 +77,7 @@ const linking = {
       },
       Setup: 'setup',
       Contacts: 'contacts',
+      LinkedAccounts: 'linked-accounts',
       Evidence: 'evidence',
       Safety: 'safety',
       EmergencySettings: 'emergency-settings',
@@ -372,6 +374,7 @@ function AuthenticatedNavigator() {
             <Stack.Screen name="Profile" component={ProfileRedirect} />
             <Stack.Screen name="Setup" component={SetupScreen} />
             <Stack.Screen name="Contacts" component={ContactsScreen} />
+            <Stack.Screen name="LinkedAccounts" component={LinkedAccountsScreen} />
             <Stack.Screen name="Evidence" component={EvidenceScreen} />
             <Stack.Screen name="CovertMessages" component={CovertMessageScreen} />
             <Stack.Screen name="Safety" component={SafetyPlanScreen} />

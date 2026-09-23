@@ -5,6 +5,7 @@ import { Contact } from '../types/contact';
 import { getContactsFromBackend } from '../services/contactService';
 import { createEmergency, notifyEmergencyContacts } from '../services/emergencyService';
 import { getCurrentLocation, getLastKnownLocation, watchLocation } from '../services/locationService';
+import { getMicrophoneStatus, requestMicrophonePermission } from '../services/corePermissions';
 import { mapUrl } from '../utils/mapUrl';
 import { setPendingHiddenSos } from '../hooks/useAppStateEmergencyGuard';
 
@@ -54,6 +55,12 @@ const SETTINGS_KEY = 'panicroom_emergency_settings';
 
 export type CoreActivationParams = {
   startAudio: boolean;
+  // Skips the disclosure-wrapped mic-permission request below — set by
+  // activateEmergencySilently's headless Hidden SOS path, which can't show
+  // a dialog without blowing its "hidden" cover. That path instead relies
+  // on CovertMessageScreen having already asked proactively at setup time;
+  // record() below still silently no-ops on denial either way.
+  skipMicPermissionPrompt?: boolean;
   onLocationUpdate?: (loc: LatLng | null) => void;
   onStatus?: (message: string) => void;
   onNotifyResult?: (response: NotifyResponse) => void;
@@ -233,6 +240,17 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
       }
 
       if (params.startAudio) {
+        if (!params.skipMicPermissionPrompt) {
+          try {
+            const micStatus = await getMicrophoneStatus();
+            if (micStatus !== 'granted') {
+              await requestMicrophonePermission({ context: 'emergency_activation' });
+            }
+          } catch {
+            // Best-effort — a permission-check hiccup shouldn't block the
+            // activation; the record() call below still no-ops gracefully.
+          }
+        }
         params.onStatus?.('Starting audio recording.');
         try {
           await audioRecorder.prepareToRecordAsync();
@@ -297,10 +315,10 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
       silentActivationInFlight.current = true;
       try {
         triggerEmergency();
-        let result = await runCoreActivation({ startAudio: true });
+        let result = await runCoreActivation({ startAudio: true, skipMicPermissionPrompt: true });
         if (!result.ok) {
           await wait(2000);
-          result = await runCoreActivation({ startAudio: true });
+          result = await runCoreActivation({ startAudio: true, skipMicPermissionPrompt: true });
         }
         if (!result.ok) {
           resolveEmergency();

@@ -11,12 +11,14 @@ const HEADLINES: Record<string, string> = {
   'background-location': 'Unlock Background Location Monitoring',
   'covert-messaging': 'Unlock Covert Messaging',
   'contacts-cap': 'Unlock Unlimited Trusted Contacts',
+  'linked-accounts': 'Unlock Linked Accounts',
 };
 
 const BENEFITS = [
   { icon: 'G', title: 'Background Location Monitoring', desc: 'Keep sharing your GPS even when Bes is closed.' },
   { icon: 'M', title: 'Covert Messaging', desc: 'Send discreet, encrypted messages hidden inside images.' },
   { icon: 'C', title: 'Unlimited Trusted Contacts', desc: 'Add everyone you trust, no cap.' },
+  { icon: 'L', title: 'Linked Accounts', desc: 'Invite up to 5 family or friends to link accounts with consent.' },
 ];
 
 export default function PaywallScreen() {

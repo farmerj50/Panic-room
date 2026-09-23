@@ -32,12 +32,16 @@ import {
   uploadCovertImage,
 } from '../services/covertMessageService';
 import { getCurrentLocation } from '../services/locationService';
+import { getMicrophoneStatus, requestMicrophonePermission } from '../services/corePermissions';
 import { ApiError } from '../services/apiClient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   clearPendingHiddenSos,
   getPendingHiddenSos,
   PendingHiddenSos,
 } from '../hooks/useAppStateEmergencyGuard';
+
+const COVERT_MIC_PROMPT_KEY = 'covert_mic_prompt_shown';
 
 // Cover images are picked from a small built-in set rather than the device's
 // photo library — no file-system access, and no risk of accidentally
@@ -106,6 +110,29 @@ export default function CovertMessageScreen() {
     getPendingHiddenSos()
       .then(setPendingRetry)
       .catch(() => {});
+  }, []);
+
+  // Hidden SOS records audio silently (see EmergencyContext.runCoreActivation's
+  // skipMicPermissionPrompt) because it can't show a dialog without blowing
+  // its cover — so mic permission has to be asked here instead, proactively,
+  // the first time the user opens Covert Messaging. Gated on a one-time
+  // AsyncStorage flag so re-opening this screen after a decline doesn't turn
+  // into exactly the nagging pattern the contextual-permission redesign is
+  // meant to avoid; any later re-ask happens via the normal per-activation
+  // guard for the screen-based (non-silent) emergency path.
+  useEffect(() => {
+    (async () => {
+      const alreadyPrompted = await AsyncStorage.getItem(COVERT_MIC_PROMPT_KEY);
+      if (alreadyPrompted) return;
+      try {
+        const status = await getMicrophoneStatus();
+        if (status !== 'granted') {
+          await requestMicrophonePermission({ context: 'covert_setup' });
+        }
+      } finally {
+        await AsyncStorage.setItem(COVERT_MIC_PROMPT_KEY, 'true');
+      }
+    })();
   }, []);
 
   const retryPendingHiddenSos = useCallback(async () => {

@@ -17,6 +17,9 @@ interface SubscriptionContextType {
   // Backend-authoritative free-tier contact cap; null = unlimited. Never
   // hardcoded client-side — see billingService.getBillingStatus.
   contactLimit: number | null;
+  // Backend-authoritative Bes Pro Linked Accounts cap; 0 for free users,
+  // a fixed number (5) for Pro — never unlimited, unlike contactLimit.
+  linkedAccountLimit: number;
   purchasePackage: (pkg: PurchasesPackage) => Promise<void>;
   restorePurchases: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -29,6 +32,7 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [offering, setOffering] = useState<PurchasesOffering | null>(null);
   const [contactLimit, setContactLimit] = useState<number | null>(3);
+  const [linkedAccountLimit, setLinkedAccountLimit] = useState<number>(0);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -44,6 +48,7 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
       if (!mounted.current) return;
       setIsPremium(status.isPremium);
       setContactLimit(status.contactLimit);
+      setLinkedAccountLimit(status.linkedAccountLimit);
     } catch {
       // Network hiccup — keep whatever we last knew rather than clearing it;
       // the RevenueCat SDK listener below is the fast/authoritative path for
@@ -94,7 +99,16 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
 
   return (
     <SubscriptionContext.Provider
-      value={{ isPremium, loading, offering, contactLimit, purchasePackage, restorePurchases, refresh }}
+      value={{
+        isPremium,
+        loading,
+        offering,
+        contactLimit,
+        linkedAccountLimit,
+        purchasePackage,
+        restorePurchases,
+        refresh,
+      }}
     >
       {children}
     </SubscriptionContext.Provider>

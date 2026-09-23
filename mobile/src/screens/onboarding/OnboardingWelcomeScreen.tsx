@@ -10,7 +10,7 @@ export default function OnboardingWelcomeScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<OnboardingStackParamList>>();
 
   useEffect(() => {
-    trackEvent('onboarding_started');
+    trackEvent('onboarding_started', { variant: 'onboarding' });
   }, []);
 
   return (

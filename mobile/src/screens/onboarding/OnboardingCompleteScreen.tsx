@@ -19,7 +19,7 @@ export default function OnboardingCompleteScreen() {
   const allGranted = camera === 'granted' && microphone === 'granted' && location === 'granted';
 
   useEffect(() => {
-    trackEvent('onboarding_completed', { camera, microphone, location });
+    trackEvent('onboarding_completed', { camera, microphone, location, variant: 'onboarding' });
   }, [camera, microphone, location]);
 
   const handleContinue = async () => {

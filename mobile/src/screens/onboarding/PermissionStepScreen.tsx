@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
-import { trackEvent } from '../../services/analyticsService';
 import type { PermissionStepConfig } from './permissionSteps';
 import type { PermStatus } from '../../services/corePermissions';
 import OnboardingCard from './OnboardingCard';
@@ -12,15 +11,11 @@ type Props = {
 
 // One reusable, config-driven screen for every onboarding permission step —
 // avoids the near-duplicate camera/microphone/location screens that would
-// otherwise exist. Fires its explanation-viewed event on mount, requests
-// the permission on CTA press (corePermissions.ts owns the disclosure +
-// analytics for granted/denied), and advances either way.
+// otherwise exist. corePermissions.ts owns the whole ask funnel (explanation
+// -viewed, disclosure, OS request, granted/denied analytics) so this screen
+// just renders the copy and wires the CTA to config.request().
 export default function PermissionStepScreen({ config, onDone }: Props) {
   const [requesting, setRequesting] = useState(false);
-
-  useEffect(() => {
-    trackEvent(config.explanationViewedEvent);
-  }, [config.explanationViewedEvent]);
 
   const handleAllow = async () => {
     if (requesting) return;

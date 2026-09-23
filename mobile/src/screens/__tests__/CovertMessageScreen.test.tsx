@@ -70,6 +70,14 @@ jest.mock('../../hooks/useAppStateEmergencyGuard', () => ({
   clearPendingHiddenSos: jest.fn().mockResolvedValue(undefined),
 }));
 
+const mockGetMicrophoneStatus = jest.fn();
+const mockRequestMicrophonePermission = jest.fn();
+jest.mock('../../services/corePermissions', () => ({
+  getMicrophoneStatus: (...args: unknown[]) => mockGetMicrophoneStatus(...args),
+  requestMicrophonePermission: (...args: unknown[]) => mockRequestMicrophonePermission(...args),
+}));
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import CovertMessageScreen from '../CovertMessageScreen';
 
 async function fillOutMessage(messageText: string) {
@@ -80,12 +88,18 @@ async function fillOutMessage(messageText: string) {
 }
 
 describe('CovertMessageScreen — Hidden SOS safety rule', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
+    await AsyncStorage.clear();
     mockGetRecipientPublicKey.mockResolvedValue({ publicKey: Buffer.from(new Uint8Array(32)).toString('base64') });
     mockUploadCovertImage.mockResolvedValue({ key: 'file-key-1' });
     mockCreateCovertMessage.mockResolvedValue({ id: 'msg-1', createdAt: new Date().toISOString(), senderId: 's1', status: 'SENT', protocolVersion: 1, fileUrl: 'https://example.com/x.png' });
     mockActivateEmergencySilently.mockResolvedValue({ ok: true, emergencyId: 'em-1', reused: false });
+    // Default to already-granted so the proactive mic-effect (present on
+    // every render) doesn't fire a request during unrelated tests below —
+    // the dedicated describe block for that effect overrides this.
+    mockGetMicrophoneStatus.mockResolvedValue('granted');
+    mockRequestMicrophonePermission.mockResolvedValue('granted');
   });
 
   test.each(['I need help', 'SOS', 'emergency 911'])(
@@ -164,5 +178,52 @@ describe('CovertMessageScreen — Hidden SOS safety rule', () => {
     const sosArgs = embedPayloadIntoFile.mock.calls[0];
 
     expect(sosArgs).toEqual(normalArgs);
+  });
+});
+
+describe('CovertMessageScreen — proactive mic-permission request', () => {
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    await AsyncStorage.clear();
+    mockGetRecipientPublicKey.mockResolvedValue({ publicKey: Buffer.from(new Uint8Array(32)).toString('base64') });
+  });
+
+  test('requests mic permission on first mount when status is not granted and the flag is unset', async () => {
+    mockGetMicrophoneStatus.mockResolvedValue('denied');
+    mockRequestMicrophonePermission.mockResolvedValue('granted');
+
+    render(<CovertMessageScreen />);
+
+    await waitFor(() => expect(mockRequestMicrophonePermission).toHaveBeenCalledWith({ context: 'covert_setup' }));
+    await waitFor(async () => {
+      expect(await AsyncStorage.getItem('covert_mic_prompt_shown')).toBe('true');
+    });
+  });
+
+  test('does not request again on a second mount once the flag is set', async () => {
+    mockGetMicrophoneStatus.mockResolvedValue('denied');
+    mockRequestMicrophonePermission.mockResolvedValue('denied');
+
+    const first = render(<CovertMessageScreen />);
+    await waitFor(() => expect(mockRequestMicrophonePermission).toHaveBeenCalledTimes(1));
+    first.unmount();
+
+    mockRequestMicrophonePermission.mockClear();
+    render(<CovertMessageScreen />);
+
+    // Give the mount-time effect a tick to (not) fire.
+    await waitFor(() => expect(mockGetMicrophoneStatus).toHaveBeenCalled());
+    expect(mockRequestMicrophonePermission).not.toHaveBeenCalled();
+  });
+
+  test('does not request when mic permission is already granted, but still sets the flag', async () => {
+    mockGetMicrophoneStatus.mockResolvedValue('granted');
+
+    render(<CovertMessageScreen />);
+
+    await waitFor(async () => {
+      expect(await AsyncStorage.getItem('covert_mic_prompt_shown')).toBe('true');
+    });
+    expect(mockRequestMicrophonePermission).not.toHaveBeenCalled();
   });
 });

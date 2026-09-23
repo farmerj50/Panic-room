@@ -31,6 +31,13 @@ jest.mock('expo-audio', () => ({
   }),
 }));
 
+const mockGetMicrophoneStatus = jest.fn();
+const mockRequestMicrophonePermission = jest.fn();
+jest.mock('../../services/corePermissions', () => ({
+  getMicrophoneStatus: (...args: unknown[]) => mockGetMicrophoneStatus(...args),
+  requestMicrophonePermission: (...args: unknown[]) => mockRequestMicrophonePermission(...args),
+}));
+
 import { EmergencyProvider, useEmergencyContext } from '../EmergencyContext';
 import { Contact } from '../../types/contact';
 
@@ -67,6 +74,8 @@ describe('EmergencyContext.activateEmergencySilently', () => {
     mockGetContactsFromBackend.mockResolvedValue([CONTACT]);
     mockCreateEmergency.mockResolvedValue({ id: 'em-1' });
     mockNotifyEmergencyContacts.mockResolvedValue({ sent: true, notifiedCount: 1, providerConfigured: true });
+    mockGetMicrophoneStatus.mockResolvedValue('denied');
+    mockRequestMicrophonePermission.mockResolvedValue('granted');
   });
 
   test('fresh activation creates exactly one EmergencyEvent and kicks off exactly one notify call', async () => {
@@ -142,4 +151,51 @@ describe('EmergencyContext.activateEmergencySilently', () => {
     expect(activationResult).toEqual({ ok: false, error: 'CREATE_FAILED' });
     expect(mockCreateEmergency).toHaveBeenCalledTimes(2);
   }, 10000);
+});
+
+describe('EmergencyContext.runCoreActivation mic-permission guard', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetContactsFromBackend.mockResolvedValue([CONTACT]);
+    mockCreateEmergency.mockResolvedValue({ id: 'em-1' });
+    mockNotifyEmergencyContacts.mockResolvedValue({ sent: true, notifiedCount: 1, providerConfigured: true });
+    mockGetMicrophoneStatus.mockResolvedValue('denied');
+    mockRequestMicrophonePermission.mockResolvedValue('granted');
+  });
+
+  // The screen-based path (EmergencyScreen.tsx calling runCoreActivation
+  // directly, no skipMicPermissionPrompt) can show a dialog — it should
+  // request mic permission when not already granted.
+  test('runCoreActivation({ startAudio: true }) requests mic permission when not already granted', async () => {
+    const { result } = await renderCtx();
+
+    await act(async () => {
+      await result.current.runCoreActivation({ startAudio: true });
+    });
+
+    expect(mockGetMicrophoneStatus).toHaveBeenCalled();
+    expect(mockRequestMicrophonePermission).toHaveBeenCalledWith({ context: 'emergency_activation' });
+  });
+
+  test('runCoreActivation({ startAudio: true }) skips the request when mic is already granted', async () => {
+    mockGetMicrophoneStatus.mockResolvedValue('granted');
+    const { result } = await renderCtx();
+
+    await act(async () => {
+      await result.current.runCoreActivation({ startAudio: true });
+    });
+
+    expect(mockRequestMicrophonePermission).not.toHaveBeenCalled();
+  });
+
+  // The headless Hidden SOS path can't show a dialog without blowing its
+  // "hidden" cover — activateEmergencySilently must pass
+  // skipMicPermissionPrompt so runCoreActivation never prompts here.
+  test('activateEmergencySilently never triggers a mic-permission prompt', async () => {
+    const { result } = await renderCtx();
+
+    await activate(result, { reason: 'covert-hidden-sos' });
+
+    expect(mockRequestMicrophonePermission).not.toHaveBeenCalled();
+  });
 });

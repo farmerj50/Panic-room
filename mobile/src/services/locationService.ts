@@ -1,12 +1,18 @@
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { requestForegroundLocationPermission } from './corePermissions';
+
 export const BACKGROUND_LOCATION_TASK = 'PANICROOM_BG_LOCATION';
 
 // ─── Foreground location ────────────────────────────────────────────────────
 
+// Routed through corePermissions.ts so this self-heal path shows the same
+// in-app disclosure as every other permission ask, rather than a bare OS
+// prompt — this became the primary (not fallback) path once the
+// contextual-onboarding variant stopped asking upfront.
 export async function requestLocationPermission(): Promise<boolean> {
-  const { status } = await Location.requestForegroundPermissionsAsync();
+  const status = await requestForegroundLocationPermission({ context: 'emergency_activation' });
   return status === 'granted';
 }
 

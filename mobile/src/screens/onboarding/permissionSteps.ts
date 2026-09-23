@@ -13,8 +13,13 @@ export type PermissionStepConfig = {
   body: string;
   ctaLabel: string;
   request: () => Promise<PermStatus>;
-  explanationViewedEvent: string;
 };
+
+// context/variant are hardcoded literals here, not read from
+// experiments.ts — these screens are only ever reachable when
+// AuthContext.register() has already assigned this install to the
+// 'onboarding' bucket, so no async lookup is needed.
+const ONBOARDING_REQUEST_OPTS = { context: 'onboarding', variant: 'onboarding' as const };
 
 export const CAMERA_STEP: PermissionStepConfig = {
   key: 'camera',
@@ -26,8 +31,7 @@ export const CAMERA_STEP: PermissionStepConfig = {
     "so there's a record of what happened. Bes never records video in the background — only when you " +
     'start an emergency.',
   ctaLabel: 'Allow Camera Access',
-  request: requestCameraPermission,
-  explanationViewedEvent: 'camera_permission_explanation_viewed',
+  request: () => requestCameraPermission(ONBOARDING_REQUEST_OPTS),
 };
 
 export const MICROPHONE_STEP: PermissionStepConfig = {
@@ -39,8 +43,7 @@ export const MICROPHONE_STEP: PermissionStepConfig = {
     'Bes uses your microphone to automatically record audio alongside video when you activate an ' +
     'emergency. Recording only starts when you activate an emergency — never in the background.',
   ctaLabel: 'Allow Microphone Access',
-  request: requestMicrophonePermission,
-  explanationViewedEvent: 'microphone_permission_explanation_viewed',
+  request: () => requestMicrophonePermission(ONBOARDING_REQUEST_OPTS),
 };
 
 export const LOCATION_STEP: PermissionStepConfig = {
@@ -54,6 +57,5 @@ export const LOCATION_STEP: PermissionStepConfig = {
     'Monitoring (Bes Pro), which — if you turn it on later — tracks your location continuously, even ' +
     'when the app is closed. Your location is never used for advertising.',
   ctaLabel: 'Allow Location Access',
-  request: requestForegroundLocationPermission,
-  explanationViewedEvent: 'location_permission_explanation_viewed',
+  request: () => requestForegroundLocationPermission(ONBOARDING_REQUEST_OPTS),
 };

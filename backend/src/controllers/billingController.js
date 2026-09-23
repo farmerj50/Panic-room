@@ -1,5 +1,5 @@
 const prisma = require("../config/db");
-const { isUserPremium, FREE_CONTACT_LIMIT } = require("../services/subscriptionService");
+const { isUserPremium, FREE_CONTACT_LIMIT, MAX_LINKED_ACCOUNTS_PRO } = require("../services/subscriptionService");
 
 // Event types that grant/extend entitlement.
 const ENTITLING_EVENTS = new Set([
@@ -90,6 +90,9 @@ exports.getStatus = async (req, res, next) => {
       subscriptionStatus: user?.subscriptionStatus ?? "free",
       subscriptionExpiresAt: user?.subscriptionExpiresAt ?? null,
       contactLimit: premium ? null : FREE_CONTACT_LIMIT,
+      // Never unlimited (unlike contactLimit's null-for-Pro convention) —
+      // free users get 0, Pro users get the fixed cap.
+      linkedAccountLimit: premium ? MAX_LINKED_ACCOUNTS_PRO : 0,
     });
   } catch (error) {
     next(error);

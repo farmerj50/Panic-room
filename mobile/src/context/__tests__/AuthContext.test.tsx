@@ -31,6 +31,21 @@ jest.mock('../../services/purchasesService', () => ({
   logoutPurchases: (...args: unknown[]) => mockLogoutPurchases(...args),
 }));
 
+const mockGetOnboardingVariant = jest.fn();
+jest.mock('../../services/experiments', () => ({
+  getOnboardingVariant: (...args: unknown[]) => mockGetOnboardingVariant(...args),
+}));
+
+const mockTrackEvent = jest.fn();
+jest.mock('../../services/analyticsService', () => ({
+  trackEvent: (...args: unknown[]) => mockTrackEvent(...args),
+}));
+
+const mockResetSessionFlags = jest.fn();
+jest.mock('../../services/sessionFlags', () => ({
+  resetSessionFlags: (...args: unknown[]) => mockResetSessionFlags(...args),
+}));
+
 import { AuthProvider, useAuth } from '../AuthContext';
 
 const USER = { id: 'u1', email: 'a@b.com', name: 'A', createdAt: '2025-01-01' };
@@ -53,9 +68,11 @@ describe('AuthContext needsOnboarding', () => {
     mockRegisterRequest.mockResolvedValue(AUTH_RESPONSE);
     mockLoginPurchases.mockResolvedValue(undefined);
     mockLogoutPurchases.mockResolvedValue(undefined);
+    mockGetOnboardingVariant.mockResolvedValue('onboarding');
   });
 
-  test('register() sets needsOnboarding to true', async () => {
+  test('register() sets needsOnboarding to true when bucketed into the onboarding variant', async () => {
+    mockGetOnboardingVariant.mockResolvedValue('onboarding');
     const { result } = await renderAuth();
 
     await act(async () => {
@@ -63,6 +80,35 @@ describe('AuthContext needsOnboarding', () => {
     });
 
     expect(result.current.needsOnboarding).toBe(true);
+    expect(result.current.onboardingVariant).toBe('onboarding');
+    expect(mockTrackEvent).toHaveBeenCalledWith('sign_up', { variant: 'onboarding' });
+  });
+
+  test('register() sets needsOnboarding to false when bucketed into the contextual variant', async () => {
+    mockGetOnboardingVariant.mockResolvedValue('contextual');
+    const { result } = await renderAuth();
+
+    await act(async () => {
+      await result.current.register('A', 'a@b.com', 'password123456');
+    });
+
+    expect(result.current.needsOnboarding).toBe(false);
+    expect(result.current.onboardingVariant).toBe('contextual');
+    expect(mockTrackEvent).toHaveBeenCalledWith('sign_up', { variant: 'contextual' });
+  });
+
+  // The critical regression test for this experiment's bucketing correctness:
+  // a login-only user must never be assigned to a variant just by using the
+  // app — only register() may call the assigning getOnboardingVariant().
+  test('login() never calls getOnboardingVariant()', async () => {
+    const { result } = await renderAuth();
+
+    await act(async () => {
+      await result.current.login('a@b.com', 'password123456');
+    });
+
+    expect(mockGetOnboardingVariant).not.toHaveBeenCalled();
+    expect(result.current.onboardingVariant).toBeNull();
   });
 
   // The one behavior this suite exists to lock down: a returning user must
@@ -88,18 +134,21 @@ describe('AuthContext needsOnboarding', () => {
     expect(result.current.needsOnboarding).toBe(false);
   });
 
-  test('logout() resets needsOnboarding to false', async () => {
+  test('logout() resets needsOnboarding and onboardingVariant to false/null', async () => {
     const { result } = await renderAuth();
 
     await act(async () => {
       await result.current.register('A', 'a@b.com', 'password123456');
     });
     expect(result.current.needsOnboarding).toBe(true);
+    expect(result.current.onboardingVariant).toBe('onboarding');
 
     await act(async () => {
       await result.current.logout();
     });
 
     expect(result.current.needsOnboarding).toBe(false);
+    expect(result.current.onboardingVariant).toBeNull();
+    expect(mockResetSessionFlags).toHaveBeenCalled();
   });
 });
