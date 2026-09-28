@@ -17,6 +17,7 @@ import { Asset } from 'expo-asset';
 import { Buffer } from 'buffer';
 import { decodeUTF8, encodeUTF8 } from 'tweetnacl-util';
 
+import EmojiQuickBar from '../components/EmojiQuickBar';
 import { useEmergencyContext } from '../context/EmergencyContext';
 import { useSubscription } from '../context/SubscriptionContext';
 import { getOrCreateKeyPair } from '../services/keyService';
@@ -414,6 +415,11 @@ export default function CovertMessageScreen() {
                 onChangeText={setMessageText}
                 multiline
                 testID="covert-message-input"
+              />
+              <EmojiQuickBar
+                value={messageText}
+                onChangeText={setMessageText}
+                testID="covert-message-emoji-bar"
               />
 
               <TouchableOpacity

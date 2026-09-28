@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 
+import EmojiQuickBar from '../components/EmojiQuickBar';
 import { getPrivateData, savePrivateData } from '../services/privateDataService';
 import heroBg from '../../assets/images/hero-bg.png';
 import journalCard from '../../assets/images/journal-card.png';
@@ -227,15 +228,22 @@ export default function JournalScreen() {
               </TouchableOpacity>
             </View>
             <View style={[styles.sectionBody, isWide && styles.sectionBodyWide]}>
-              <TextInput
-                multiline
-                placeholder="Talked to someone safe today..."
-                placeholderTextColor="#8c84a8"
-                style={[styles.noteInput, isWide && styles.noteInputWide]}
-                textAlignVertical="top"
-                value={notes.privateNotes}
-                onChangeText={(value) => updateNote('privateNotes', value)}
-              />
+              <View style={isWide && styles.noteInputWide}>
+                <TextInput
+                  multiline
+                  placeholder="Talked to someone safe today..."
+                  placeholderTextColor="#8c84a8"
+                  style={styles.noteInput}
+                  textAlignVertical="top"
+                  value={notes.privateNotes}
+                  onChangeText={(value) => updateNote('privateNotes', value)}
+                />
+                <EmojiQuickBar
+                  value={notes.privateNotes}
+                  onChangeText={(value) => updateNote('privateNotes', value)}
+                  testID="journal-private-notes-emoji-bar"
+                />
+              </View>
               {isWide && (
                 <ImageBackground source={safetyPlanCard} resizeMode="cover" imageStyle={styles.sideImage} style={styles.sideArt}>
                   <LinearGradient
@@ -292,6 +300,11 @@ export default function JournalScreen() {
               value={notes.moodCheckIn}
               onChangeText={(value) => updateNote('moodCheckIn', value)}
             />
+            <EmojiQuickBar
+              value={notes.moodCheckIn}
+              onChangeText={(value) => updateNote('moodCheckIn', value)}
+              testID="journal-mood-emoji-bar"
+            />
           </LinearGradient>
 
           <LinearGradient
@@ -320,6 +333,11 @@ export default function JournalScreen() {
               textAlignVertical="top"
               value={notes.incidentNotes}
               onChangeText={(value) => updateNote('incidentNotes', value)}
+            />
+            <EmojiQuickBar
+              value={notes.incidentNotes}
+              onChangeText={(value) => updateNote('incidentNotes', value)}
+              testID="journal-incident-emoji-bar"
             />
           </LinearGradient>
 
@@ -359,6 +377,11 @@ export default function JournalScreen() {
               textAlignVertical="top"
               value={notes.evidenceNotes}
               onChangeText={(value) => updateNote('evidenceNotes', value)}
+            />
+            <EmojiQuickBar
+              value={notes.evidenceNotes}
+              onChangeText={(value) => updateNote('evidenceNotes', value)}
+              testID="journal-evidence-emoji-bar"
             />
           </LinearGradient>
 

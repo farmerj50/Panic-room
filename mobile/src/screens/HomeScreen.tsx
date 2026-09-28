@@ -23,6 +23,7 @@ import { getExistingOnboardingVariant } from '../services/experiments';
 import { hasFiredHomeViewedFirst, markHomeViewedFirstFired } from '../services/sessionFlags';
 import { getCameraStatus } from '../services/corePermissions';
 
+import appIcon from '../../assets/icon.png';
 import heroBg from '../../assets/images/hero-bg.png';
 import teenGroup from '../../assets/images/teen-group.png';
 import emergencyCard from '../../assets/images/emergency-card.png';
@@ -217,7 +218,7 @@ export default function HomeScreen() {
                 accessibilityLabel="home-logo-btn"
               >
                 <View style={styles.logoMark}>
-                  <View style={styles.logoHeart} />
+                  <Image source={appIcon} resizeMode="cover" style={styles.logoImage} />
                 </View>
                 <Text style={styles.brandText}>Bes</Text>
               </TouchableOpacity>
@@ -488,13 +489,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 54,
   },
-  logoHeart: {
-    backgroundColor: '#ead5ff',
-    borderRadius: 9,
-    height: 18,
-    transform: [{ rotate: '45deg' }],
-    width: 18,
-  },
+  logoImage: { borderRadius: 15, height: 48, width: 48 },
   brandText: {
     color: '#f6efff',
     fontSize: 28,
