@@ -347,7 +347,7 @@ export default function LandingScreen() {
               <View style={styles.phoneMock}>
                 <View style={styles.phoneNotch} />
                 <View style={styles.phoneLogo}>
-                  <View style={styles.phoneLogoHeart} />
+                  <Image source={appIcon} resizeMode="cover" style={styles.phoneLogoImage} />
                 </View>
                 <Text style={styles.phoneText}>Bes</Text>
                 <View style={styles.finger} />
@@ -684,7 +684,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     width: 48,
   },
-  phoneLogoHeart: { backgroundColor: '#e4ccff', borderRadius: 7, height: 14, transform: [{ rotate: '45deg' }], width: 14 },
+  phoneLogoImage: { borderRadius: 16, height: 42, width: 42 },
   phoneText: { color: '#ffffff', fontSize: 12, fontWeight: '700' },
   finger: { backgroundColor: '#d69a75', borderRadius: 16, bottom: -8, height: 64, position: 'absolute', right: 24, transform: [{ rotate: '-14deg' }], width: 24 },
 });

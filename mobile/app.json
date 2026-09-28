@@ -62,7 +62,8 @@
         {
           "cameraPermission": "Bes records video evidence during emergencies.",
           "microphonePermission": "Bes records audio during emergencies.",
-          "recordAudioAndroid": true
+          "recordAudioAndroid": true,
+          "barcodeScannerEnabled": false
         }
       ],
       [
@@ -103,7 +104,8 @@
       ],
       "./plugin/withProguardOptimize",
       "./plugin/withEdgeToEdgeSystemBars",
-      "./plugin/withReleaseSigning"
+      "./plugin/withReleaseSigning",
+      "./plugin/withRemoveBarcodeScannerActivity"
     ]
   }
 }

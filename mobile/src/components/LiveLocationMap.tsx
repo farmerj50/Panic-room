@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Image, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Image } from 'expo-image';
 
 import { TILE_SIZE, project, tileUrl } from '../utils/mapTiles';
 
@@ -72,14 +73,12 @@ export default function LiveLocationMap({ latitude, longitude, zoom = 17 }: Prop
               key={tile.key}
               // OpenStreetMap's tile usage policy requires a descriptive User-Agent
               // identifying the app — requests without one get blocked with a 403.
-              // Only takes effect on native; web's <img> can't override User-Agent
-              // (browser-controlled), which OSM's policy treats as fine either way.
-              // Must be wrapped in an array: RN's Image.android.js only extracts
-              // `headers` from `source` when it takes the array branch — a bare
-              // object source silently drops headers on Android (iOS is fine either
-              // way). Do not "simplify" this back to a plain object.
-              source={[{ uri: tile.url, headers: { 'User-Agent': 'Bes-SafetyApp/1.0 (+https://bes-app.com)' } }]}
+              // expo-image's ImageSource takes headers directly on a plain object
+              // (unlike RN core's Image, which on Android only reads `headers` when
+              // `source` is array-wrapped) — confirmed against Image.types.d.ts.
+              source={{ uri: tile.url, headers: { 'User-Agent': 'Bes-SafetyApp/1.0 (+https://bes-app.com)' } }}
               style={[styles.tile, { left: tile.left, top: tile.top }]}
+              cachePolicy="disk"
               onError={() => setFailedTiles((current) => ({ ...current, [tile.key]: true }))}
             />
           ),
