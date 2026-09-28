@@ -23,7 +23,7 @@ import { deleteContactFromBackend, saveContactToBackend, updateContactInBackend 
 import { ApiError } from '../services/apiClient';
 import { Contact } from '../types/contact';
 
-import resourcesCard from '../../assets/images/resources-card.png';
+import resourcesCard from '../../assets/images/resources-card.webp';
 
 const CONTACT_COLORS = ['#d94fa3', '#fb7a33', '#17b8ac', '#8b5cf6', '#4aa8ff', '#f59e0b'];
 

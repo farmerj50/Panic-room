@@ -18,9 +18,9 @@ import { useNavigation } from '@react-navigation/native';
 import { useEmergencyContext } from '../context/EmergencyContext';
 import { useSubscription } from '../context/SubscriptionContext';
 
-import journalCard from '../../assets/images/journal-card.png';
-import resourcesCard from '../../assets/images/resources-card.png';
-import teenGroup from '../../assets/images/teen-group.png';
+import journalCard from '../../assets/images/journal-card.webp';
+import resourcesCard from '../../assets/images/resources-card.webp';
+import teenGroup from '../../assets/images/teen-group.webp';
 
 const CONTACT_COLORS = ['#ff6b9a', '#b777ff', '#4aa8ff', '#f59e0b', '#4ee1d5'];
 

@@ -18,11 +18,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 
 import { getPrivateData, savePrivateData } from '../services/privateDataService';
-import heroBg from '../../assets/images/hero-bg.png';
-import teenGroup from '../../assets/images/teen-group.png';
-import safetyPlanCard from '../../assets/images/safety-plan-card.png';
-import resourcesCard from '../../assets/images/resources-card.png';
-import journalCard from '../../assets/images/journal-card.png';
+import heroBg from '../../assets/images/hero-bg.webp';
+import teenGroup from '../../assets/images/teen-group.webp';
+import safetyPlanCard from '../../assets/images/safety-plan-card.webp';
+import resourcesCard from '../../assets/images/resources-card.webp';
+import journalCard from '../../assets/images/journal-card.webp';
 
 type StepId =
   | 'safeLocations'

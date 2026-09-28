@@ -3,13 +3,13 @@ import {
   Alert,
   Linking,
   Platform,
-  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -92,6 +92,12 @@ async function uploadVideoSegmentEntry(emergencyId: string, entry: PendingSegmen
   }
 }
 
+// NOTE: This screen's layout (countdown/activating/recording/error states) was
+// authored and only verified in portrait. The app's hard portrait lock was
+// removed from app.json (2026-09) to satisfy Play Console's static manifest
+// scan; targetSdk 36's large-screen policy already overrode/ignored the lock
+// on large screens regardless. Landscape/large-screen layout on this specific
+// screen is unverified — follow-up, not a blocker.
 type EmergencyPhase = 'countdown' | 'activating' | 'recording' | 'error';
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -923,7 +929,7 @@ export default function EmergencyScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#070817" />
+      <StatusBar style="light" />
 
       {phase === 'countdown' ? (
         <View style={styles.countdownWrap} testID="emergency-countdown-screen" accessible accessibilityLabel="emergency-countdown-screen">

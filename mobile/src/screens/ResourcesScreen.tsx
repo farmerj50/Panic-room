@@ -16,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 
-import teenGroup from '../../assets/images/teen-group.png';
+import teenGroup from '../../assets/images/teen-group.webp';
 
 type ResourceAction = {
   label: 'Call' | 'Text' | 'Find' | 'Open';

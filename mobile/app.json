@@ -2,8 +2,8 @@
   "expo": {
     "name": "Bes",
     "slug": "bes",
-    "version": "1.0.19",
-    "orientation": "portrait",
+    "version": "1.0.20",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "ios": {
@@ -29,7 +29,7 @@
     },
     "android": {
       "package": "com.ginslayer.besapp",
-      "versionCode": 26,
+      "versionCode": 27,
       "adaptiveIcon": {
         "backgroundColor": "#22084A",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -101,7 +101,8 @@
           }
         }
       ],
-      "./plugin/withProguardOptimize"
+      "./plugin/withProguardOptimize",
+      "./plugin/withEdgeToEdgeSystemBars"
     ]
   }
 }

@@ -3,13 +3,13 @@ import {
   Image,
   ImageBackground,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
@@ -24,12 +24,12 @@ import { hasFiredHomeViewedFirst, markHomeViewedFirstFired } from '../services/s
 import { getCameraStatus } from '../services/corePermissions';
 
 import appIcon from '../../assets/icon.png';
-import heroBg from '../../assets/images/hero-bg.png';
-import teenGroup from '../../assets/images/teen-group.png';
-import emergencyCard from '../../assets/images/emergency-card.png';
-import safetyPlanCard from '../../assets/images/safety-plan-card.png';
-import resourcesCard from '../../assets/images/resources-card.png';
-import journalCard from '../../assets/images/journal-card.png';
+import heroBg from '../../assets/images/hero-bg.webp';
+import teenGroup from '../../assets/images/teen-group.webp';
+import emergencyCard from '../../assets/images/emergency-card.webp';
+import safetyPlanCard from '../../assets/images/safety-plan-card.webp';
+import resourcesCard from '../../assets/images/resources-card.webp';
+import journalCard from '../../assets/images/journal-card.webp';
 
 type Nav = BottomTabNavigationProp<TabParamList>;
 type RouteName = keyof TabParamList;
@@ -175,7 +175,7 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor="#050715" />
+      <StatusBar style="light" />
 
       <ScrollView
         bounces={false}

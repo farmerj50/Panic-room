@@ -19,7 +19,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { forgotPasswordRequest, resetPasswordRequest } from '../services/authService';
 import type { UnauthStackParamList } from '../navigation/types';
-import heroBg from '../../assets/images/hero-bg.png';
+import heroBg from '../../assets/images/hero-bg.webp';
 
 type Step = 'request' | 'confirm';
 

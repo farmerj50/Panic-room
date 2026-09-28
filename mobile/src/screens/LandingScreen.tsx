@@ -2,13 +2,13 @@ import {
   Image,
   ImageBackground,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
@@ -19,13 +19,13 @@ import type { UnauthStackParamList } from '../navigation/types';
 import StoreBadges from '../components/StoreBadges';
 
 import appIcon from '../../assets/icon.png';
-import heroBg from '../../assets/images/hero-bg.png';
+import heroBg from '../../assets/images/hero-bg.webp';
 import covertHeartCard from '../../assets/covert-cards/heart.png';
-import teenGroup from '../../assets/images/teen-group.png';
-import emergencyCard from '../../assets/images/emergency-card.png';
-import safetyPlanCard from '../../assets/images/safety-plan-card.png';
-import resourcesCard from '../../assets/images/resources-card.png';
-import journalCard from '../../assets/images/journal-card.png';
+import teenGroup from '../../assets/images/teen-group.webp';
+import emergencyCard from '../../assets/images/emergency-card.webp';
+import safetyPlanCard from '../../assets/images/safety-plan-card.webp';
+import resourcesCard from '../../assets/images/resources-card.webp';
+import journalCard from '../../assets/images/journal-card.webp';
 
 type Nav = NativeStackNavigationProp<UnauthStackParamList, 'Landing'>;
 
@@ -103,7 +103,7 @@ export default function LandingScreen() {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor="#050715" />
+      <StatusBar style="light" />
 
       <ScrollView
         bounces={false}

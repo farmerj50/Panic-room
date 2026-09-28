@@ -22,7 +22,7 @@ import { useAuth } from '../context/AuthContext';
 import { saveContactToBackend } from '../services/contactService';
 import { API_URL } from '../config/emergencyConfig';
 import type { UnauthStackParamList } from '../navigation/types';
-import heroBg from '../../assets/images/hero-bg.png';
+import heroBg from '../../assets/images/hero-bg.webp';
 
 type AuthMode = 'login' | 'register';
 type AuthRouteName = 'Auth' | 'Login' | 'Register';

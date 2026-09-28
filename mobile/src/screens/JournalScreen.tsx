@@ -17,9 +17,9 @@ import { useNavigation } from '@react-navigation/native';
 
 import EmojiQuickBar from '../components/EmojiQuickBar';
 import { getPrivateData, savePrivateData } from '../services/privateDataService';
-import heroBg from '../../assets/images/hero-bg.png';
-import journalCard from '../../assets/images/journal-card.png';
-import safetyPlanCard from '../../assets/images/safety-plan-card.png';
+import heroBg from '../../assets/images/hero-bg.webp';
+import journalCard from '../../assets/images/journal-card.webp';
+import safetyPlanCard from '../../assets/images/safety-plan-card.webp';
 
 const JOURNAL_KEY = 'journalNotes';
 

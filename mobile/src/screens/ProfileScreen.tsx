@@ -34,10 +34,10 @@ import { DECOY_ENABLED_KEY } from './DecoySettingsScreen';
 import { API_URL } from '../config/emergencyConfig';
 import { ANDROID_PACKAGE_NAME, PREMIUM_PRODUCT_ID } from '../config/purchasesConfig';
 
-import heroBg from '../../assets/images/hero-bg.png';
-import journalCard from '../../assets/images/journal-card.png';
-import resourcesCard from '../../assets/images/resources-card.png';
-import teenGroup from '../../assets/images/teen-group.png';
+import heroBg from '../../assets/images/hero-bg.webp';
+import journalCard from '../../assets/images/journal-card.webp';
+import resourcesCard from '../../assets/images/resources-card.webp';
+import teenGroup from '../../assets/images/teen-group.webp';
 
 const SAFETY_CARDS = [
   {

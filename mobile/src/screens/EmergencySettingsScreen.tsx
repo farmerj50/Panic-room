@@ -36,7 +36,7 @@ import { confirmNotificationsDisclosure } from '../utils/permissionDisclosures';
 import { trackEvent } from '../services/analyticsService';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const heroBg = require('../../assets/images/hero-bg.png');
+const heroBg = require('../../assets/images/hero-bg.webp');
 
 type CallMode = EmergencySettings['emergencyCallMode'];
 
