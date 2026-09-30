@@ -122,6 +122,8 @@ model User {
 
   ga4ClientId String? // mobile GA4 Measurement Protocol client_id, sent once at registration — lets server-fired events (e.g. subscription_completed from the RevenueCat webhook) land in the same GA4 funnel as this user's client-side events
 
+  welcomeEmailSentAt DateTime? // set only after Resend successfully accepts the welcome email — idempotency guard against duplicate sends
+
   ownedAccountLinks  AccountLink[] @relation("OwnedAccountLinks")
   linkedAccountLinks AccountLink[] @relation("LinkedAccountLinks")
 }

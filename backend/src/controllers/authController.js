@@ -11,6 +11,7 @@ const {
 } = require("../services/refreshTokenService");
 const { issueResetCode, verifyAndConsumeResetCode } = require("../services/passwordResetService");
 const { sendSms, hasSmsProviderConfig } = require("../services/smsServices");
+const { hasResendConfig, sendWelcomeEmail } = require("../services/emailService");
 
 const PASSWORD_ROUNDS = 12;
 const ACCESS_TOKEN_EXPIRES_IN = "15m";
@@ -76,6 +77,18 @@ exports.register = async (req, res, next) => {
     const refreshToken = await issueRefreshToken(user.id, {
       userAgent: req.headers["user-agent"],
     });
+
+    if (hasResendConfig() && !user.welcomeEmailSentAt) {
+      try {
+        // `email` — the local plaintext var above, NOT `user.email`: this
+        // schema stores email encrypted (emailEncrypted/emailHash), the
+        // Prisma User record has no plain `.email` field.
+        await sendWelcomeEmail({ to: email });
+        await prisma.user.update({ where: { id: user.id }, data: { welcomeEmailSentAt: new Date() } });
+      } catch (error) {
+        console.error("Failed to send Bes welcome email:", error?.message || error);
+      }
+    }
 
     res.status(201).json({
       accessToken: signAccessToken(user.id),
