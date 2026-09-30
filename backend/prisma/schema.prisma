@@ -120,6 +120,8 @@ model User {
   subscriptionProductId String?
   lastRevenueCatEventAt DateTime? // guards against out-of-order webhook delivery
 
+  ga4ClientId String? // mobile GA4 Measurement Protocol client_id, sent once at registration — lets server-fired events (e.g. subscription_completed from the RevenueCat webhook) land in the same GA4 funnel as this user's client-side events
+
   ownedAccountLinks  AccountLink[] @relation("OwnedAccountLinks")
   linkedAccountLinks AccountLink[] @relation("LinkedAccountLinks")
 }

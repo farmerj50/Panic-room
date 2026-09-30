@@ -46,6 +46,7 @@ exports.register = async (req, res, next) => {
     const email = normalizeEmail(req.body.email);
     const name = String(req.body.name || "").trim();
     const password = String(req.body.password || "");
+    const ga4ClientId = req.body.ga4ClientId ? String(req.body.ga4ClientId).trim().slice(0, 128) : null;
 
     if (!isValidEmail(email)) {
       return res.status(400).json({ error: "Enter a valid email address." });
@@ -68,6 +69,7 @@ exports.register = async (req, res, next) => {
         emailEncrypted: encrypt(email),
         nameEncrypted: name ? encrypt(name) : null,
         passwordHash,
+        ga4ClientId,
       },
     });
 

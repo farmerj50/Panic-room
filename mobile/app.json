@@ -2,7 +2,7 @@
   "expo": {
     "name": "Bes",
     "slug": "bes",
-    "version": "1.0.20",
+    "version": "1.0.21",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -29,7 +29,7 @@
     },
     "android": {
       "package": "com.ginslayer.besapp",
-      "versionCode": 27,
+      "versionCode": 28,
       "adaptiveIcon": {
         "backgroundColor": "#22084A",
         "foregroundImage": "./assets/android-icon-foreground.png",

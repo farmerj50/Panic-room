@@ -24,7 +24,7 @@ export function loginRequest(data: { email: string; password: string }) {
   });
 }
 
-export function registerRequest(data: { name: string; email: string; password: string }) {
+export function registerRequest(data: { name: string; email: string; password: string; ga4ClientId?: string }) {
   return apiRequest<AuthResponse>('/api/auth/register', {
     method: 'POST',
     auth: false,

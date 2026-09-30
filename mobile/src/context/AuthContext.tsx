@@ -1,6 +1,8 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import { Platform } from 'react-native';
 
 import { clearAuthToken, getAuthToken, setSessionExpiredHandler, setTokens } from '../services/apiClient';
+import { getGA4ClientId } from '../services/nativeAnalytics';
 import {
   AuthUser,
   deleteAccountRequest,
@@ -111,7 +113,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loginPurchases(response.user.id).catch(() => {});
       },
       async register(name, email, password, beforeAuthenticate) {
-        const response = await registerRequest({ name, email, password });
+        const ga4ClientId = Platform.OS === 'web' ? undefined : await getGA4ClientId();
+        const response = await registerRequest({ name, email, password, ga4ClientId });
         await setTokens(response.accessToken, response.refreshToken);
         await beforeAuthenticate?.();
         const variant = await getOnboardingVariant();

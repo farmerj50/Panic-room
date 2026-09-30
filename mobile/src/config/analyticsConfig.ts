@@ -3,12 +3,12 @@
 // build time (see mobile/src/config/emergencyConfig.ts for the same
 // pattern), so setting this in Railway requires a redeploy of the web
 // build to take effect — it is not read at runtime server-side.
+//
+// Used only by the web gtag.js path (analyticsService.ts's
+// configureAnalytics()) — a GA4 Measurement ID is meant to be public, every
+// website ships it in plain HTML. Native builds proxy events through the
+// Bes backend instead (see nativeAnalytics.ts) and never need this value;
+// the real secret (GA4_API_SECRET) lives server-side only, never as an
+// EXPO_PUBLIC_* var, since those are bundled into the client and
+// extractable from the APK/AAB.
 export const GA4_MEASUREMENT_ID = process.env.EXPO_PUBLIC_GA4_MEASUREMENT_ID ?? '';
-
-// Used only by nativeAnalytics.ts (GA4 Measurement Protocol) — native builds
-// have no backend proxy for this, so the secret ships inside the public
-// APK/bundle same as GA4_MEASUREMENT_ID. That's an accepted tradeoff: GA4
-// Measurement Protocol API secrets are rate-limit/routing tokens, not
-// authentication credentials, per Google's own docs — not a real secret
-// needing rotation-on-leak handling.
-export const GA4_API_SECRET = process.env.EXPO_PUBLIC_GA4_API_SECRET ?? '';

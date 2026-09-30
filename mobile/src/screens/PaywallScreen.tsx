@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 
 import { useSubscription } from '../context/SubscriptionContext';
+import { trackEvent } from '../services/analyticsService';
 import type { RootStackParamList } from '../navigation/types';
 
 const HEADLINES: Record<string, string> = {
@@ -33,6 +34,11 @@ export default function PaywallScreen() {
   const pkg = offering?.availablePackages?.[0] ?? null;
   const priceString = pkg?.product.priceString ?? '$4.99/mo';
 
+  useEffect(() => {
+    trackEvent('paywall_viewed', { reason: route.params?.reason ?? null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleSubscribe = async () => {
     if (!pkg) {
       Alert.alert('Not available', 'Bes Premium isn’t available right now. Please try again later.');
@@ -40,6 +46,7 @@ export default function PaywallScreen() {
     }
     setBusy(true);
     try {
+      trackEvent('subscription_started');
       await purchasePackage(pkg);
       Alert.alert('You’re Premium!', 'Bes Premium is now active. Thank you for supporting Bes.', [
         { text: 'OK', onPress: () => navigation.goBack() },

@@ -20,6 +20,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useAuth } from '../context/AuthContext';
 import { saveContactToBackend } from '../services/contactService';
+import { trackEvent } from '../services/analyticsService';
 import { API_URL } from '../config/emergencyConfig';
 import type { UnauthStackParamList } from '../navigation/types';
 import heroBg from '../../assets/images/hero-bg.webp';
@@ -85,6 +86,7 @@ export default function AuthScreen() {
   const continueRegister = async () => {
     if (registerStep === 'account') {
       if (!validateAccount()) return;
+      trackEvent('account_form_submitted');
       setRegisterStep('contact');
       return;
     }
@@ -112,6 +114,7 @@ export default function AuthScreen() {
               phoneNumber: trustedPhone.trim(),
               isPriority: true,
             });
+            trackEvent('trusted_contact_added');
           } catch {
             contactSaveFailed = true;
           }

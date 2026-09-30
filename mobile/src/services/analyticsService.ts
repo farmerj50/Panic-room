@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
 import { GA4_MEASUREMENT_ID } from '../config/analyticsConfig';
 import { trackNativeEvent } from './nativeAnalytics';
@@ -36,14 +37,22 @@ export function configureAnalytics() {
 
 // Fires a GA4 event: gtag.js on web (safe no-op if configureAnalytics()
 // never ran, i.e. no Measurement ID set yet — window.gtag simply won't
-// exist), GA4 Measurement Protocol on native (see nativeAnalytics.ts). One
-// entry point for all call sites regardless of platform.
+// exist), proxied through the Bes backend on native (see
+// nativeAnalytics.ts). One entry point for all call sites regardless of
+// platform. Every event carries platform/app_version context so funnel
+// reports can be sliced without every call site repeating it.
 export function trackEvent(eventName: string, params?: Record<string, unknown>) {
+  const fullParams = {
+    ...params,
+    platform: Platform.OS,
+    app_version: Constants.expoConfig?.version ?? 'unknown',
+  };
+
   if (Platform.OS === 'web') {
     if (typeof window === 'undefined' || typeof window.gtag !== 'function') return;
-    window.gtag('event', eventName, params);
+    window.gtag('event', eventName, fullParams);
     return;
   }
 
-  void trackNativeEvent(eventName, params);
+  void trackNativeEvent(eventName, fullParams);
 }

@@ -1,5 +1,6 @@
 const prisma = require("../config/db");
 const { isUserPremium, FREE_CONTACT_LIMIT, MAX_LINKED_ACCOUNTS_PRO } = require("../services/subscriptionService");
+const { sendServerGA4Event } = require("../services/ga4Service");
 
 // Event types that grant/extend entitlement.
 const ENTITLING_EVENTS = new Set([
@@ -70,6 +71,13 @@ exports.handleWebhook = async (req, res, next) => {
     data.lastRevenueCatEventAt = eventTimestamp;
 
     await prisma.user.update({ where: { id: event.app_user_id }, data });
+
+    if (event.type === "INITIAL_PURCHASE") {
+      prisma.user
+        .findUnique({ where: { id: event.app_user_id }, select: { ga4ClientId: true } })
+        .then((u) => u?.ga4ClientId && sendServerGA4Event(u.ga4ClientId, "subscription_completed", { product_id: event.product_id ?? null }))
+        .catch(() => {});
+    }
 
     res.status(200).json({ received: true });
   } catch (error) {
