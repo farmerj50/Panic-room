@@ -49,6 +49,7 @@ export default function AuthScreen() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [trustedName, setTrustedName] = useState('');
   const [trustedPhone, setTrustedPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -280,18 +281,30 @@ export default function AuthScreen() {
 
                     <View style={styles.field}>
                       <Text style={styles.label}>Password</Text>
-                      <TextInput
-                        autoCapitalize="none"
-                        autoComplete="password"
-                        onChangeText={setPassword}
-                        placeholder={mode === 'register' ? 'At least 12 characters' : 'Password'}
-                        placeholderTextColor="#7f7899"
-                        secureTextEntry
-                        style={styles.input}
-                        value={password}
-                        testID="auth-password-input"
-                        accessibilityLabel="auth-password-input"
-                      />
+                      <View style={styles.passwordFieldWrap}>
+                        <TextInput
+                          autoCapitalize="none"
+                          autoComplete="password"
+                          onChangeText={setPassword}
+                          placeholder={mode === 'register' ? 'At least 12 characters' : 'Password'}
+                          placeholderTextColor="#7f7899"
+                          secureTextEntry={!showPassword}
+                          style={[styles.input, styles.passwordInput]}
+                          value={password}
+                          testID="auth-password-input"
+                          accessibilityLabel="auth-password-input"
+                        />
+                        <TouchableOpacity
+                          activeOpacity={0.7}
+                          onPress={() => setShowPassword((v) => !v)}
+                          style={styles.passwordToggle}
+                          testID="auth-password-toggle"
+                          accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                          accessibilityRole="button"
+                        >
+                          <Text style={styles.passwordToggleIcon}>{showPassword ? '🙈' : '👁️'}</Text>
+                        </TouchableOpacity>
+                      </View>
                       {mode === 'register' && (
                         <Text style={styles.helperText}>
                           {password.length}/12 characters minimum
@@ -539,6 +552,18 @@ const styles = StyleSheet.create({
     outlineStyle: 'none' as never,
     paddingHorizontal: 14,
   },
+  passwordFieldWrap: { justifyContent: 'center' },
+  passwordInput: { paddingRight: 46 },
+  passwordToggle: {
+    alignItems: 'center',
+    bottom: 0,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: 2,
+    top: 0,
+    width: 44,
+  },
+  passwordToggleIcon: { fontSize: 18 },
   secondaryButton: {
     alignItems: 'center',
     borderColor: 'rgba(199,140,255,0.28)',
