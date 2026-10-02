@@ -21,6 +21,7 @@ import { useAuth } from '../context/AuthContext';
 import { usePinLock } from '../context/PinLockContext';
 import { useEmergencyContext } from '../context/EmergencyContext';
 import { useSubscription } from '../context/SubscriptionContext';
+import { useTour } from '../context/TourContext';
 import { getPublicKeyBase64 } from '../services/keyService';
 import { setMyPhoneNumber, setMyPublicKey } from '../services/covertMessageService';
 import { getOwnedLinks } from '../services/accountLinkService';
@@ -131,6 +132,7 @@ export default function ProfileScreen() {
   const { activateDecoy } = usePinLock();
   const { contacts, loadContacts } = useEmergencyContext();
   const { isPremium, linkedAccountLimit } = useSubscription();
+  const { restart: restartTour } = useTour();
   const { width } = useWindowDimensions();
 
   const isWide = width >= 900;
@@ -730,6 +732,21 @@ export default function ProfileScreen() {
               <Text style={styles.cardArrow}>{'>'}</Text>
             </TouchableOpacity>
           ))}
+          <TouchableOpacity
+            activeOpacity={0.84}
+            style={[styles.supportCard, !isWide && styles.supportCardNarrow]}
+            onPress={restartTour}
+            testID="profile-take-tour-btn"
+          >
+            <View style={[styles.supportIcon, { backgroundColor: '#7c3aed24' }]}>
+              <Text style={[styles.supportIconText, { color: '#7c3aed' }]}>T</Text>
+            </View>
+            <View style={styles.cardCopy}>
+              <Text style={styles.supportLabel}>Take a Tour</Text>
+              <Text style={styles.supportDesc}>A 30-second walkthrough of Bes's safety tools.</Text>
+            </View>
+            <Text style={styles.cardArrow}>{'>'}</Text>
+          </TouchableOpacity>
         </View>
 
         <Text style={styles.sectionLabel}>Legal</Text>

@@ -25,6 +25,7 @@ type AuthContextType = {
   postAuthTab: PostAuthTab | null;
   needsOnboarding: boolean;
   onboardingVariant: OnboardingVariant | null;
+  shouldOfferTour: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (
     name: string,
@@ -34,6 +35,7 @@ type AuthContextType = {
   ) => Promise<void>;
   consumePostAuthTab: () => void;
   consumeOnboarding: () => void;
+  consumeShouldOfferTour: () => boolean;
   logout: () => Promise<void>;
   deleteAccount: (password: string) => Promise<void>;
 };
@@ -46,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [postAuthTab, setPostAuthTab] = useState<PostAuthTab | null>(null);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [onboardingVariant, setOnboardingVariant] = useState<OnboardingVariant | null>(null);
+  const [shouldOfferTour, setShouldOfferTour] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -90,6 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPostAuthTab(null);
       setNeedsOnboarding(false);
       setOnboardingVariant(null);
+      setShouldOfferTour(false);
       resetSessionFlags();
       setStatus('unauthenticated');
     });
@@ -104,6 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       postAuthTab,
       needsOnboarding,
       onboardingVariant,
+      shouldOfferTour,
       async login(email, password) {
         const response = await loginRequest({ email, password });
         await setTokens(response.accessToken, response.refreshToken);
@@ -122,6 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         trackEvent('sign_up', { variant });
         setPostAuthTab('Home');
         setNeedsOnboarding(variant === 'onboarding');
+        setShouldOfferTour(true);
         setUser(response.user);
         setStatus('authenticated');
         loginPurchases(response.user.id).catch(() => {});
@@ -132,6 +138,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       consumeOnboarding() {
         setNeedsOnboarding(false);
       },
+      consumeShouldOfferTour() {
+        setShouldOfferTour(false);
+        return shouldOfferTour;
+      },
       async logout() {
         await logoutRequest();
         await clearAuthToken();
@@ -139,6 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPostAuthTab(null);
         setNeedsOnboarding(false);
         setOnboardingVariant(null);
+        setShouldOfferTour(false);
         resetSessionFlags();
         setStatus('unauthenticated');
         logoutPurchases().catch(() => {});
@@ -152,12 +163,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPostAuthTab(null);
         setNeedsOnboarding(false);
         setOnboardingVariant(null);
+        setShouldOfferTour(false);
         resetSessionFlags();
         setStatus('unauthenticated');
         logoutPurchases().catch(() => {});
       },
     }),
-    [needsOnboarding, onboardingVariant, postAuthTab, status, user],
+    [needsOnboarding, onboardingVariant, postAuthTab, shouldOfferTour, status, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

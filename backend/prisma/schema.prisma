@@ -124,6 +124,9 @@ model User {
 
   welcomeEmailSentAt DateTime? // set only after Resend successfully accepts the welcome email — idempotency guard against duplicate sends
 
+  tourCompletedAt DateTime? // set when the user finishes the post-registration guided tour
+  tourSkippedAt   DateTime? // set when the user explicitly skips the tour (either at the offer prompt or mid-tour)
+
   ownedAccountLinks  AccountLink[] @relation("OwnedAccountLinks")
   linkedAccountLinks AccountLink[] @relation("LinkedAccountLinks")
 }

@@ -9,6 +9,8 @@ import { AuthProvider, useAuth } from '../context/AuthContext';
 import { PinLockProvider, usePinLock } from '../context/PinLockContext';
 import { EmergencyProvider } from '../context/EmergencyContext';
 import { SubscriptionProvider } from '../context/SubscriptionContext';
+import { TourProvider, useTour } from '../context/TourContext';
+import TourOverlay from '../components/TourOverlay';
 import { RootStackParamList, TabParamList, UnauthStackParamList } from './types';
 import { ACTION_ACTIVATE_SOS, restoreLockScreenButton, setupNotificationHandler } from '../services/lockScreenService';
 
@@ -270,9 +272,23 @@ function PinLockGate() {
 }
 
 function AuthenticatedNavigator() {
+  const navigationRef = useNavigationContainerRef<RootStackParamList>();
+
+  return (
+    <TourProvider navigationRef={navigationRef}>
+      <AuthenticatedNavigatorInner navigationRef={navigationRef} />
+    </TourProvider>
+  );
+}
+
+function AuthenticatedNavigatorInner({
+  navigationRef,
+}: {
+  navigationRef: ReturnType<typeof useNavigationContainerRef<RootStackParamList>>;
+}) {
   const { consumePostAuthTab, postAuthTab, needsOnboarding } = useAuth();
   const { consumePendingEmergencyBypass } = usePinLock();
-  const navigationRef = useNavigationContainerRef<RootStackParamList>();
+  const { maybeOffer } = useTour();
   const [navReady, setNavReady] = useState(false);
   const pendingRoute = useRef<keyof RootStackParamList | null>(null);
 
@@ -323,8 +339,9 @@ function AuthenticatedNavigator() {
 
     navigationRef.navigate('Main', { screen: postAuthTab });
     consumePostAuthTab();
+    maybeOffer();
     return true;
-  }, [consumePostAuthTab, navigationRef, postAuthTab]);
+  }, [consumePostAuthTab, maybeOffer, navigationRef, postAuthTab]);
 
   const onNavReady = useCallback(() => {
     setNavReady(true);
@@ -385,6 +402,7 @@ function AuthenticatedNavigator() {
             <Stack.Screen name="Onboarding" component={OnboardingNavigator} />
           </Stack.Navigator>
         </NavigationContainer>
+        <TourOverlay />
       </EmergencyProvider>
     </SubscriptionProvider>
   );

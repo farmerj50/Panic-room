@@ -93,3 +93,22 @@ exports.updateMe = async (req, res, next) => {
     next(error);
   }
 };
+
+exports.updateTourStatus = async (req, res, next) => {
+  try {
+    const { status } = req.body;
+    if (status !== "completed" && status !== "skipped") {
+      return res.status(400).json({ error: 'status must be "completed" or "skipped".' });
+    }
+
+    const field = status === "completed" ? "tourCompletedAt" : "tourSkippedAt";
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { [field]: new Date() },
+    });
+
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+};

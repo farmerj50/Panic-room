@@ -4,6 +4,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useAuth } from '../../context/AuthContext';
 import { useEmergencyContext } from '../../context/EmergencyContext';
+import { useTour } from '../../context/TourContext';
 import { trackEvent } from '../../services/analyticsService';
 import type { RootStackParamList } from '../../navigation/types';
 import type { OnboardingStackParamList } from '../../navigation/OnboardingNavigator';
@@ -14,6 +15,7 @@ export default function OnboardingCompleteScreen() {
   const route = useRoute<RouteProp<OnboardingStackParamList, 'Complete'>>();
   const { consumeOnboarding, consumePostAuthTab } = useAuth();
   const { markSetupDone } = useEmergencyContext();
+  const { maybeOffer } = useTour();
 
   const { camera, microphone, location } = route.params;
   const allGranted = camera === 'granted' && microphone === 'granted' && location === 'granted';
@@ -29,6 +31,7 @@ export default function OnboardingCompleteScreen() {
     consumeOnboarding();
     consumePostAuthTab();
     navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.navigate('Main', { screen: 'Home' });
+    maybeOffer();
   };
 
   return (
