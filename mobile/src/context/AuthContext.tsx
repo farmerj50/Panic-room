@@ -65,6 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!mounted) return;
 
         setUser(response.user);
+        setShouldOfferTour(!response.user.tourOffered);
         setStatus('authenticated');
         // Best-effort: a RevenueCat hiccup must never block session restore.
         loginPurchases(response.user.id).catch(() => {});
@@ -114,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await setTokens(response.accessToken, response.refreshToken);
         setPostAuthTab(null);
         setUser(response.user);
+        setShouldOfferTour(!response.user.tourOffered);
         setStatus('authenticated');
         loginPurchases(response.user.id).catch(() => {});
       },
@@ -127,7 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         trackEvent('sign_up', { variant });
         setPostAuthTab('Home');
         setNeedsOnboarding(variant === 'onboarding');
-        setShouldOfferTour(true);
+        setShouldOfferTour(!response.user.tourOffered);
         setUser(response.user);
         setStatus('authenticated');
         loginPurchases(response.user.id).catch(() => {});

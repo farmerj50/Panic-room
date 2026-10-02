@@ -8,6 +8,7 @@ export type AuthUser = {
   createdAt: string;
   publicKey?: string;
   phoneNumber?: string;
+  tourOffered: boolean;
 };
 
 export type AuthResponse = {

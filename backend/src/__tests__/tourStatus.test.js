@@ -14,7 +14,7 @@ async function registerUser() {
   const res = await request(app)
     .post("/api/auth/register")
     .send({ email, password: PASSWORD, name: "Tour Test User" });
-  return { accessToken: res.body.accessToken, userId: res.body.user.id };
+  return { accessToken: res.body.accessToken, userId: res.body.user.id, email };
 }
 
 async function deleteUser(userId) {
@@ -80,5 +80,25 @@ describe("tour status", () => {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     expect(user.tourSkippedAt).toBeInstanceOf(Date);
     expect(user.tourCompletedAt).toBeNull();
+  });
+
+  test("tourOffered is false on a fresh account and true after completing/skipping, reflected on login", async () => {
+    const { accessToken, userId, email } = await registerUser();
+    createdUserIds.push(userId);
+
+    const freshRegister = await request(app)
+      .post("/api/auth/register")
+      .send({ email: uniqueEmail(), password: PASSWORD, name: "Fresh" });
+    createdUserIds.push(freshRegister.body.user.id);
+    expect(freshRegister.body.user.tourOffered).toBe(false);
+
+    await request(app)
+      .patch("/api/users/me/tour")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ status: "skipped" });
+
+    const login = await request(app).post("/api/auth/login").send({ email, password: PASSWORD });
+    expect(login.status).toBe(200);
+    expect(login.body.user.tourOffered).toBe(true);
   });
 });

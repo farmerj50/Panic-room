@@ -361,11 +361,17 @@ function AuthenticatedNavigatorInner({
 
     if (routePostAuthTab()) return;
 
+    // Login and restored sessions reach here directly (no onboarding, no
+    // postAuthTab redirect) — this is the only chance to offer the tour on
+    // those paths, since routeOnboarding/routePostAuthTab own the offer for
+    // the registration paths above.
+    maybeOffer();
+
     if (pendingRoute.current && navigationRef.isReady()) {
       navigationRef.navigate(pendingRoute.current);
       pendingRoute.current = null;
     }
-  }, [consumePendingEmergencyBypass, navigationRef, routeOnboarding, routePostAuthTab]);
+  }, [consumePendingEmergencyBypass, maybeOffer, navigationRef, routeOnboarding, routePostAuthTab]);
 
   useEffect(() => {
     if (!navReady) return;

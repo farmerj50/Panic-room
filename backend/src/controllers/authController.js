@@ -32,6 +32,10 @@ function serializeUser(user) {
     createdAt: user.createdAt,
     publicKey: user.publicKey ?? undefined,
     phoneNumber: user.phoneEncrypted ? safeDecrypt(user.phoneEncrypted) ?? undefined : undefined,
+    // Lets the client decide whether to offer the guided tour without a
+    // separate round trip: true once the user has either completed or
+    // explicitly skipped it, at the prompt or mid-tour.
+    tourOffered: Boolean(user.tourCompletedAt || user.tourSkippedAt),
   };
 }
 
