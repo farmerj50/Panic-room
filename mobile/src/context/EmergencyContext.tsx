@@ -4,6 +4,7 @@ import { RecordingPresets, useAudioRecorder } from 'expo-audio';
 import { Contact } from '../types/contact';
 import { getContactsFromBackend } from '../services/contactService';
 import { createEmergency, notifyEmergencyContacts } from '../services/emergencyService';
+import { isTourActive } from '../services/tourModeState';
 import { getCurrentLocation, getLastKnownLocation, watchLocation } from '../services/locationService';
 import { getMicrophoneStatus, requestMicrophonePermission } from '../services/corePermissions';
 import { mapUrl } from '../utils/mapUrl';
@@ -212,6 +213,9 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
   // success. The notify outcome is delivered later via onNotifyResult.
   const runCoreActivation = useCallback(
     async (params: CoreActivationParams): Promise<CoreActivationResult> => {
+      if (isTourActive()) {
+        throw new Error('Emergency activation is disabled during the tour.');
+      }
       params.onStatus?.('Getting GPS location.');
       let currentLocation = await getCurrentLocation();
       if (!currentLocation) currentLocation = await getLastKnownLocation();

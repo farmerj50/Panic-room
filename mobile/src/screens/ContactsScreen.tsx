@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   ImageBackground,
@@ -15,7 +15,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { useTour, useTourTarget, useTourTargetPress } from '../context/TourContext';
+import TourStepCard from '../components/TourStepCard';
 
 import { useEmergencyContext } from '../context/EmergencyContext';
 import { useSubscription } from '../context/SubscriptionContext';
@@ -41,6 +43,8 @@ function getInitial(name: string) {
 
 export default function ContactsScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const tourMode = Boolean(route.params?.tourMode);
   const { contacts, setContacts } = useEmergencyContext();
   const { contactLimit } = useSubscription();
   const { width } = useWindowDimensions();
@@ -64,6 +68,7 @@ export default function ContactsScreen() {
   };
 
   const handleAdd = async () => {
+    if (tourMode) return;
     if (!name.trim() || !phone.trim()) {
       Alert.alert('Missing info', 'Please enter both a name and phone number.');
       return;
@@ -92,6 +97,7 @@ export default function ContactsScreen() {
   };
 
   const handleDelete = async (id: string) => {
+    if (tourMode) return;
     Alert.alert('Remove contact?', 'This contact will be removed from your trusted circle.', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -110,6 +116,7 @@ export default function ContactsScreen() {
   };
 
   const handleTogglePriority = async (id: string) => {
+    if (tourMode) return;
     const target = contacts.find((contact) => contact.id === id);
     if (!target) return;
 
@@ -128,6 +135,7 @@ export default function ContactsScreen() {
   };
 
   const textContact = async (contact: Contact) => {
+    if (tourMode) return;
     const body = encodeURIComponent('Checking in from Bes. Are you safe?');
     await Linking.openURL(`sms:${contact.phoneNumber}?body=${body}`);
   };
@@ -137,8 +145,24 @@ export default function ContactsScreen() {
       navigation.navigate('Paywall', { reason: 'contacts-cap' });
       return;
     }
+    if (tourMode) {
+      setShowAdd(true);
+      return;
+    }
     setShowAdd((current) => !current);
   };
+  const addTrigger = useTourTargetPress('contacts-add', handleAddTrigger, true);
+  const addRef = useTourTarget<any>('contacts-add');
+  const nameInputRef = useTourTarget<TextInput>('contacts-name-input');
+  const listRef = useRef<ScrollView>(null);
+  const { phase, currentStep } = useTour();
+  const showFormTourCard = phase === 'touring' && currentStep?.key === 'contacts-form';
+
+  useEffect(() => {
+    if (phase === 'touring' && currentStep?.key === 'contacts-form') {
+      listRef.current?.scrollToEnd({ animated: true });
+    }
+  }, [phase, currentStep]);
 
   const sortedContacts = [...contacts].sort(
     (a, b) => Number(b.isPriority) - Number(a.isPriority),
@@ -146,11 +170,17 @@ export default function ContactsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} testID="contacts-screen" accessible accessibilityLabel="contacts-screen">
+      {showFormTourCard ? (
+        <View style={styles.formTourCard}>
+          <TourStepCard />
+        </View>
+      ) : null}
       <KeyboardAvoidingView
         style={styles.keyboard}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
+          ref={listRef}
           contentContainerStyle={[styles.scroll, { maxWidth: pageMaxWidth }]}
           showsVerticalScrollIndicator={false}
         >
@@ -315,9 +345,10 @@ export default function ContactsScreen() {
           </LinearGradient>
 
           <TouchableOpacity
+            ref={addRef}
             activeOpacity={0.86}
             style={styles.addContactCard}
-            onPress={handleAddTrigger}
+            onPress={addTrigger}
             testID="contacts-add-toggle-btn"
             accessibilityLabel="contacts-add-toggle-btn"
           >
@@ -345,6 +376,7 @@ export default function ContactsScreen() {
               <Text style={styles.formTitle}>Contact Details</Text>
               <View style={styles.formGrid}>
                 <TextInput
+                  ref={nameInputRef}
                   style={styles.input}
                   placeholder="Name"
                   placeholderTextColor="#7f7899"
@@ -367,12 +399,14 @@ export default function ContactsScreen() {
               <TouchableOpacity
                 style={[styles.addButton, saving && styles.disabledButton]}
                 onPress={handleAdd}
-                disabled={saving}
+                disabled={saving || tourMode}
                 activeOpacity={0.84}
                 testID="contacts-save-btn"
                 accessibilityLabel="contacts-save-btn"
               >
-                <Text style={styles.addButtonText}>{saving ? 'Saving...' : '+ Add Contact'}</Text>
+                <Text style={styles.addButtonText}>
+                  {tourMode ? 'Demo: not saved' : saving ? 'Saving...' : '+ Add Contact'}
+                </Text>
               </TouchableOpacity>
             </LinearGradient>
           )}
@@ -408,6 +442,7 @@ export default function ContactsScreen() {
 }
 
 const styles = StyleSheet.create({
+  formTourCard: { position: 'absolute', left: 16, right: 16, bottom: 24, zIndex: 50, elevation: 50 },
   safe: { flex: 1, backgroundColor: '#050715' },
   keyboard: { flex: 1 },
   scroll: {

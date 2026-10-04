@@ -16,12 +16,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useTour, useTourTarget, useTourTargetPress } from '../context/TourContext';
 
 import { useAuth } from '../context/AuthContext';
 import { usePinLock } from '../context/PinLockContext';
 import { useEmergencyContext } from '../context/EmergencyContext';
 import { useSubscription } from '../context/SubscriptionContext';
-import { useTour } from '../context/TourContext';
 import { getPublicKeyBase64 } from '../services/keyService';
 import { setMyPhoneNumber, setMyPublicKey } from '../services/covertMessageService';
 import { getOwnedLinks } from '../services/accountLinkService';
@@ -133,6 +133,9 @@ export default function ProfileScreen() {
   const { contacts, loadContacts } = useEmergencyContext();
   const { isPremium, linkedAccountLimit } = useSubscription();
   const { restart: restartTour } = useTour();
+  const settingsRef = useTourTarget<any>('profile-settings-btn');
+  const openSettings = () => navigation.navigate('Settings');
+  const settingsPress = useTourTargetPress('profile-settings', openSettings);
   const { width } = useWindowDimensions();
 
   const isWide = width >= 900;
@@ -479,6 +482,24 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           )}
         </LinearGradient>
+
+        <TouchableOpacity
+          ref={settingsRef}
+          activeOpacity={0.84}
+          style={[styles.safetyCard, !isWide && styles.fullWidth, styles.settingsEntry]}
+          onPress={settingsPress}
+          testID="profile-settings-btn"
+          accessibilityLabel="profile-settings-btn"
+        >
+          <View style={[styles.largeIcon, { backgroundColor: '#7c3aed24' }]}>
+            <Text style={[styles.largeIconText, { color: '#7c3aed' }]}>S</Text>
+          </View>
+          <View style={styles.cardCopy}>
+            <Text style={styles.cardTitle}>Settings</Text>
+            <Text style={styles.cardDesc}>Permissions, emergency settings, subscription, and your account.</Text>
+          </View>
+          <Text style={styles.cardArrow}>{'>'}</Text>
+        </TouchableOpacity>
 
         <Text style={styles.sectionLabel}>Safety & Security</Text>
         <View style={[styles.safetyGrid, !isWide && styles.safetyGridNarrow]}>
@@ -936,6 +957,7 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
+  settingsEntry: { marginBottom: 16 },
   safe: { flex: 1, backgroundColor: '#050715' },
   scroll: {
     alignSelf: 'center',

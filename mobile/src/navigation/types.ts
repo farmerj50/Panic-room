@@ -11,7 +11,9 @@ export type RootStackParamList = {
   Messages: undefined;
   Profile: undefined;
   Setup: undefined;
-  Contacts: undefined;
+  Settings: undefined;
+  CovertMessageDemo: undefined;
+  Contacts: { tourMode?: boolean } | undefined;
   LinkedAccounts: undefined;
   Evidence: undefined;
   Safety: undefined;
@@ -28,7 +30,7 @@ export type TabParamList = {
   Home: undefined;
   Resources: undefined;
   SafetyPlan: undefined;
-  Emergency: undefined;
+  Emergency: { tourMode?: boolean } | undefined;
   Messages: undefined;
   Profile: undefined;
   Journal: undefined;

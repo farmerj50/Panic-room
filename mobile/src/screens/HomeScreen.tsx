@@ -13,6 +13,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
+import { useTourTarget, useTourTargetPress } from '../context/TourContext';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 
 import { useAuth } from '../context/AuthContext';
@@ -148,6 +149,8 @@ export default function HomeScreen() {
     getCameraStatus().catch(() => {});
     goTo('Emergency');
   };
+  const helpRef = useTourTarget<View>('home-help');
+  const onHelpPress = useTourTargetPress('home-emergency', goToEmergency);
 
   // Discreet emergency access: long-pressing the logo goes straight to
   // Emergency (handled by TouchableOpacity's onLongPress below). A quick
@@ -285,16 +288,18 @@ export default function HomeScreen() {
                   Private support, emergency help, and trusted connections when you need them
                   most.
                 </Text>
-                <TouchableOpacity
-                  activeOpacity={0.84}
-                  onPress={goToEmergency}
-                  style={styles.helpButton}
-                >
-                  <Text style={styles.helpText}>I Need Help Now</Text>
-                  <View style={styles.helpShield}>
-                    <View style={styles.helpShieldInner} />
-                  </View>
-                </TouchableOpacity>
+                <View ref={helpRef}>
+                  <TouchableOpacity
+                    activeOpacity={0.84}
+                    onPress={onHelpPress}
+                    style={styles.helpButton}
+                  >
+                    <Text style={styles.helpText}>I Need Help Now</Text>
+                    <View style={styles.helpShield}>
+                      <View style={styles.helpShieldInner} />
+                    </View>
+                  </TouchableOpacity>
+                </View>
                 <TouchableOpacity
                   activeOpacity={0.78}
                   onPress={() => goTo('Profile')}

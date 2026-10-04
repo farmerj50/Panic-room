@@ -11,7 +11,8 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import EmergencyTourDemo from './EmergencyTourDemo';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import LiveLocationMap from '../components/LiveLocationMap';
@@ -244,7 +245,7 @@ function isCapturingPhase(phase: EmergencyPhase) {
   return phase === 'activating' || phase === 'recording';
 }
 
-export default function EmergencyScreen() {
+function EmergencyLiveScreen() {
   const navigation = useNavigation<any>();
   const { width } = useWindowDimensions();
   const {
@@ -1090,6 +1091,12 @@ export default function EmergencyScreen() {
       )}
     </SafeAreaView>
   );
+}
+
+export default function EmergencyScreen() {
+  const route = useRoute<any>();
+  if (route.params?.tourMode) return <EmergencyTourDemo />;
+  return <EmergencyLiveScreen />;
 }
 
 const styles = StyleSheet.create({

@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
+import { useTourTarget, useTourTargetPress } from '../context/TourContext';
 
 import { useEmergencyContext } from '../context/EmergencyContext';
 import { useSubscription } from '../context/SubscriptionContext';
@@ -125,6 +126,8 @@ export default function MessagesScreen() {
     if (isPremium) navigation.navigate('CovertMessages');
     else navigation.navigate('Paywall', { reason: 'covert-messaging' });
   };
+  const covertRef = useTourTarget<any>('messages-covert');
+  const covertPress = useTourTargetPress('messages-covert', goToCovertMessages);
 
   const orderedContacts = useMemo(
     () => [...contacts].sort((a, b) => Number(b.isPriority) - Number(a.isPriority)),
@@ -237,9 +240,10 @@ export default function MessagesScreen() {
           {QUICK_ACTIONS.map((action) => (
             <TouchableOpacity
               key={action.title}
+              ref={action.route === 'CovertMessages' ? covertRef : undefined}
               activeOpacity={0.84}
               style={[styles.quickCard, !isWide && styles.quickCardNarrow]}
-              onPress={() => (action.route === 'CovertMessages' ? goToCovertMessages() : navigation.navigate(action.route))}
+              onPress={action.route === 'CovertMessages' ? covertPress : () => navigation.navigate(action.route)}
             >
               <View style={[styles.quickIconCircle, { backgroundColor: `${action.color}24` }]}>
                 <Text style={[styles.quickIconText, { color: action.color }]}>{action.icon}</Text>
