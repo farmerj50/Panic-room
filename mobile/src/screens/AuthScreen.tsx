@@ -95,10 +95,10 @@ export default function AuthScreen() {
     await createAccount();
   };
 
-  const createAccount = async () => {
+  const createAccount = async ({ skipContact = false }: { skipContact?: boolean } = {}) => {
     if (!validateAccount()) return;
 
-    if (contactStarted && !contactComplete) {
+    if (!skipContact && contactStarted && !contactComplete) {
       setFormError('Enter both a trusted contact name and phone number, or skip this step.');
       return;
     }
@@ -108,7 +108,7 @@ export default function AuthScreen() {
     setSubmitting(true);
     try {
       await register(name.trim(), email.trim(), password, async () => {
-        if (contactComplete) {
+        if (!skipContact && contactComplete) {
           try {
             await saveContactToBackend({
               name: trustedName.trim(),
@@ -156,6 +156,7 @@ export default function AuthScreen() {
     setTrustedName('');
     setTrustedPhone('');
     setFormError('');
+    void createAccount({ skipContact: true });
   };
 
   const primaryText =
