@@ -38,6 +38,20 @@ async function seedFakeSocialConnections(email) {
   return user.id;
 }
 
+// Marks the account as an active Bes Pro subscriber server-side (what
+// /api/billing/status reports), so the app shows its subscriber-only UI.
+async function makePremium(email) {
+  const user = await findUser(email);
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { subscriptionStatus: 'active', subscriptionExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+  });
+}
+
+async function userExists(email) {
+  return Boolean(await prisma.user.findFirst({ where: { emailHash: hashLookup(email) }, select: { id: true } }));
+}
+
 async function trustedContactCount(email) {
   const user = await findUser(email);
   return prisma.trustedContact.count({ where: { userId: user.id } });
@@ -58,4 +72,11 @@ async function disconnect() {
   await prisma.$disconnect();
 }
 
-module.exports = { seedFakeSocialConnections, trustedContactCount, latestEmergencySegments, disconnect };
+module.exports = {
+  seedFakeSocialConnections,
+  makePremium,
+  userExists,
+  trustedContactCount,
+  latestEmergencySegments,
+  disconnect,
+};

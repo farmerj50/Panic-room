@@ -1,6 +1,11 @@
 const jwt = require("jsonwebtoken");
 
-function authenticate(req, res, next) {
+const prisma = require("../config/db");
+
+// Verifies the access token AND that its account still exists. The JWT alone
+// stays valid for its full lifetime (15m), so without the lookup a deleted
+// account's token kept working until it expired.
+async function authenticate(req, res, next) {
   const header = req.headers.authorization || "";
   const [scheme, token] = header.split(" ");
 
@@ -8,13 +13,25 @@ function authenticate(req, res, next) {
     return res.status(401).json({ error: "Authentication required" });
   }
 
+  let payload;
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = { id: payload.sub };
-    return next();
+    payload = jwt.verify(token, process.env.JWT_SECRET);
   } catch {
     return res.status(401).json({ error: "Invalid or expired session" });
   }
+  if (typeof payload?.sub !== "string" || !payload.sub) {
+    return res.status(401).json({ error: "Invalid or expired session" });
+  }
+
+  try {
+    const user = await prisma.user.findUnique({ where: { id: payload.sub }, select: { id: true } });
+    if (!user) return res.status(401).json({ error: "Invalid or expired session" });
+  } catch (error) {
+    return next(error);
+  }
+
+  req.user = { id: payload.sub };
+  return next();
 }
 
 function requireUserId(req, res, next) {

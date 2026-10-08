@@ -7,6 +7,7 @@ const {
   TIKTOK_PUBLISH_INIT_URL,
   TIKTOK_PUBLISH_STATUS_URL,
   TIKTOK_CREATOR_INFO_URL,
+  TIKTOK_REVOKE_URL,
 } = require("./socialSharingConfig");
 
 const REQUEST_TIMEOUT_MS = 10000;
@@ -75,6 +76,26 @@ async function refreshAccessToken(refreshToken) {
     });
   }
   return body;
+}
+
+// Revokes Bes's authorization on the user's TikTok account (used when the
+// Bes account is deleted). TikTok answers success with an empty body.
+async function revokeAccessToken(accessToken) {
+  const response = await fetch(TIKTOK_REVOKE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", "Cache-Control": "no-cache" },
+    body: new URLSearchParams({
+      client_key: process.env.TIKTOK_CLIENT_ID,
+      client_secret: process.env.TIKTOK_CLIENT_SECRET,
+      token: accessToken,
+    }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    const details = await response.text().catch(() => "");
+    throw new TikTokProviderError(`TikTok revoke failed: ${details}`, { status: response.status });
+  }
 }
 
 async function fetchProfile(accessToken) {
@@ -203,6 +224,7 @@ module.exports = {
   refreshAccessToken,
   fetchProfile,
   fetchCreatorInfo,
+  revokeAccessToken,
   publishVideoFile,
   pollPublishStatus,
 };

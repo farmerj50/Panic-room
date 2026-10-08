@@ -1,9 +1,35 @@
 const bcrypt = require("bcrypt");
 
 const prisma = require("../config/db");
-const { encrypt, hashLookup } = require("../services/cryptoService");
+const { encrypt, decrypt, hashLookup } = require("../services/cryptoService");
 const { isValidPhoneNumber, normalizePhoneDigits } = require("../utils/phone");
 const { deleteUserFiles } = require("../services/storageService");
+const tiktokClient = require("../services/tiktokClient");
+const { hasTikTokConfig } = require("../services/socialSharingConfig");
+
+const REVOKE_BUDGET_MS = 5000;
+
+// Best-effort: revoke Bes's access on the user's TikTok account before the
+// stored tokens are deleted. Never blocks or fails account deletion — the
+// tokens are removed from Bes either way. Instagram has no equivalent call:
+// we only hold a Page access token, and Meta's permission revoke needs the
+// user's own token, so the deletion screen tells users how to remove Bes in
+// Facebook settings instead.
+async function revokeTikTokAccess(userId) {
+  if (!hasTikTokConfig()) return;
+  try {
+    const connection = await prisma.socialConnection.findUnique({
+      where: { userId_provider: { userId, provider: "tiktok" } },
+    });
+    if (!connection?.accessTokenEncrypted) return;
+    await Promise.race([
+      tiktokClient.revokeAccessToken(decrypt(connection.accessTokenEncrypted)),
+      new Promise((resolve) => setTimeout(resolve, REVOKE_BUDGET_MS)),
+    ]);
+  } catch (error) {
+    console.warn("TikTok revoke during account deletion failed:", error?.message || error);
+  }
+}
 
 exports.setPublicKey = async (req, res, next) => {
   try {
@@ -43,9 +69,12 @@ exports.deleteMe = async (req, res, next) => {
       return res.status(401).json({ error: "Incorrect password." });
     }
 
+    await revokeTikTokAccess(req.user.id);
+
     // Deletes the User row and, via onDelete: Cascade, every TrustedContact,
-    // EmergencyEvent, Recording, RefreshToken, PrivateData, and
-    // CovertMessage (sent or received) row tied to it.
+    // EmergencyEvent (and its video segments), Recording, RefreshToken,
+    // PrivateData, CovertMessage (sent or received), and SocialConnection
+    // (with every stored TikTok/Instagram token) row tied to it.
     await prisma.user.delete({ where: { id: req.user.id } });
 
     // Best-effort: the account is already gone at this point regardless of

@@ -5,6 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import { TourStepKey, useTour, useTourTarget, useTourTargetPress } from '../context/TourContext';
 import { useSubscription } from '../context/SubscriptionContext';
 import { ANDROID_PACKAGE_NAME, PREMIUM_PRODUCT_ID } from '../config/purchasesConfig';
+import { contentColumn } from '../config/layout';
 
 type RowProps = {
   label: string;
@@ -115,10 +116,10 @@ export default function SettingsScreen() {
           testID="settings-delete"
           stepKey="settings-delete"
           label="Delete Account"
-          desc="Manage account deletion from here."
+          desc="Permanently delete your account and data."
           icon="D"
           color="#e74c3c"
-          onPress={() => navigation.navigate('Main', { screen: 'Profile' })}
+          onPress={() => navigation.navigate('DeleteAccount')}
         />
       </ScrollView>
     </SafeAreaView>
@@ -127,11 +128,11 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#050715' },
-  header: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
+  header: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12, ...contentColumn },
   back: { padding: 8 },
   backText: { color: '#fff', fontSize: 20, fontWeight: '700' },
   title: { color: '#fff', fontSize: 20, fontWeight: '800' },
-  list: { padding: 16, gap: 12 },
+  list: { padding: 16, gap: 12, ...contentColumn },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

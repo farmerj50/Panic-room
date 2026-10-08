@@ -36,6 +36,7 @@ import DecoyScreen from '../screens/DecoyScreen';
 import DecoySettingsScreen from '../screens/DecoySettingsScreen';
 import PaywallScreen from '../screens/PaywallScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import DeleteAccountScreen from '../screens/DeleteAccountScreen';
 import CovertMessageDemoScreen from '../screens/CovertMessageDemoScreen';
 import SocialSharingScreen from '../screens/SocialSharingScreen';
 import OnboardingNavigator from './OnboardingNavigator';
@@ -89,6 +90,12 @@ const linking = {
       CovertMessages: 'covert-messages',
       PinSetup: 'pin-setup',
       DecoySettings: 'decoy-settings',
+      // Without entries here, these screens had no URL on web: loading or
+      // refreshing them in the browser fell back to Home.
+      Settings: 'settings',
+      DeleteAccount: 'delete-account',
+      SocialSharing: 'social-sharing',
+      CovertMessageDemo: 'covert-message-demo',
     },
   },
 };
@@ -409,6 +416,7 @@ function AuthenticatedNavigatorInner({
             <Stack.Screen name="DecoySettings" component={DecoySettingsScreen} />
             <Stack.Screen name="Paywall" component={PaywallScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
+            <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
             <Stack.Screen name="CovertMessageDemo" component={CovertMessageDemoScreen} />
             <Stack.Screen name="SocialSharing" component={SocialSharingScreen} />
             <Stack.Screen name="Onboarding" component={OnboardingNavigator} />

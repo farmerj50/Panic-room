@@ -136,9 +136,9 @@ enforce, e.g. "recordings older than X days are automatically deleted."]
 - **Access and correction** — you can view and update your name, trusted
   contacts, and phone number directly in the app.
 - **Deletion** — you can permanently delete your account and all associated
-  data (trusted contacts, emergency history, recordings, and covert
-  messages) at any time from Profile → Delete Account, after confirming
-  your password. This immediately and permanently removes your data; it
+  data (trusted contacts, emergency history, recordings, covert messages,
+  and connected TikTok/Instagram accounts) at any time from Profile →
+  Settings → Delete Account, after confirming your password. This immediately and permanently removes your data; it
   cannot be undone or recovered by us. You can also reach us at
   **support@bes-app.com** with deletion questions.
 - **Regeneration of your encryption key** — you can generate a new Covert

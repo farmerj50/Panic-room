@@ -38,6 +38,7 @@ const TIKTOK_USER_INFO_URL = "https://open.tiktokapis.com/v2/user/info/";
 const TIKTOK_PUBLISH_INIT_URL = "https://open.tiktokapis.com/v2/post/publish/video/init/";
 const TIKTOK_PUBLISH_STATUS_URL = "https://open.tiktokapis.com/v2/post/publish/status/fetch/";
 const TIKTOK_CREATOR_INFO_URL = "https://open.tiktokapis.com/v2/post/publish/creator_info/query/";
+const TIKTOK_REVOKE_URL = "https://open.tiktokapis.com/v2/oauth/revoke/";
 
 const META_GRAPH_VERSION = "v21.0";
 const META_GRAPH_BASE = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
@@ -53,6 +54,7 @@ module.exports = {
   TIKTOK_PUBLISH_INIT_URL,
   TIKTOK_PUBLISH_STATUS_URL,
   TIKTOK_CREATOR_INFO_URL,
+  TIKTOK_REVOKE_URL,
   META_GRAPH_BASE,
   META_OAUTH_DIALOG_URL,
 };

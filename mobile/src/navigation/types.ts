@@ -12,6 +12,7 @@ export type RootStackParamList = {
   Profile: undefined;
   Setup: undefined;
   Settings: undefined;
+  DeleteAccount: undefined;
   CovertMessageDemo: undefined;
   SocialSharing: undefined;
   Contacts: { tourMode?: boolean } | undefined;

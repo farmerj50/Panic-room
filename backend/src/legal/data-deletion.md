@@ -6,10 +6,19 @@ you no longer have access to the app.
 
 ## Delete your account from the app (fastest way)
 
-1. Open Bes and go to **Profile**.
-2. Scroll to **Danger Zone** and tap **Delete Account**.
-3. Confirm your password when prompted.
+1. Open Bes and go to **Profile**, then tap **Settings** (top right).
+2. Tap **Delete Account**. (You can also reach the same screen from
+   Profile → **Danger Zone** → **Delete Account**.)
+3. Review what will be deleted, then enter your password.
 4. Confirm a second time — this step is irreversible.
+
+**Save any evidence you need first.** Deleting your account permanently
+removes your emergency recordings, location history, and stored evidence.
+You can open and save recordings from Profile → **Evidence** beforehand.
+
+**Bes Pro subscribers:** deleting your account does **not** cancel your
+Google Play subscription. Cancel it in Google Play (Bes shows a shortcut on
+the Delete Account screen), or Google Play will keep billing you.
 
 Your account is deleted **immediately** once you confirm. There is no
 waiting period, and we cannot recover it afterward — not even at your
@@ -24,7 +33,16 @@ Deleting your account permanently removes:
 - Your emergency event history, including captured location data.
 - All audio/video recordings and their files in storage.
 - All Covert Messages you sent or received, and your encryption key record.
-- All active and refresh sessions (you're signed out everywhere).
+- Any connected TikTok or Instagram accounts, including the access tokens
+  Bes stored for them.
+- All active and refresh sessions — you're signed out everywhere, and any
+  existing session stops working immediately.
+
+**Connected social accounts:** when you delete your account, Bes also
+revokes its access to your TikTok account automatically. Instagram doesn't
+offer an equivalent for the kind of access Bes holds, so to fully remove
+Bes from Instagram, also remove it in Facebook → Settings & privacy →
+Settings → **Business integrations**.
 
 Nothing is retained after deletion — this is a full removal, not a
 deactivation or soft delete.

@@ -128,7 +128,7 @@ const SUPPORT_CARDS = [
 
 export default function ProfileScreen() {
   const navigation = useNavigation<any>();
-  const { deleteAccount, logout, user } = useAuth();
+  const { logout, user } = useAuth();
   const { activateDecoy } = usePinLock();
   const { contacts, loadContacts } = useEmergencyContext();
   const { isPremium, linkedAccountLimit } = useSubscription();
@@ -177,9 +177,6 @@ export default function ProfileScreen() {
   const [phoneInput, setPhoneInput] = useState('');
   const [savingPhone, setSavingPhone] = useState(false);
 
-  const [showDeleteForm, setShowDeleteForm] = useState(false);
-  const [deletePassword, setDeletePassword] = useState('');
-  const [deletingAccount, setDeletingAccount] = useState(false);
 
   // Unlike Trusted Contacts (whose count comes for free from the
   // already-app-wide EmergencyContext), Linked Accounts has no equivalent
@@ -248,48 +245,6 @@ export default function ProfileScreen() {
     } finally {
       setSavingPhone(false);
     }
-  };
-
-  const handleDeleteAccountPress = () => {
-    Alert.alert(
-      'Delete your account?',
-      'This permanently deletes your account, trusted contacts, emergency history, recordings, and covert messages. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Continue', style: 'destructive', onPress: () => setShowDeleteForm(true) },
-      ],
-    );
-  };
-
-  const handleConfirmDeleteAccount = () => {
-    if (!deletePassword) return;
-
-    Alert.alert(
-      'Are you absolutely sure?',
-      'There is no way to undo this once it starts.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete My Account',
-          style: 'destructive',
-          onPress: async () => {
-            setDeletingAccount(true);
-            try {
-              await deleteAccount(deletePassword);
-              // deleteAccount() flips AuthContext to 'unauthenticated' on
-              // success, which drops the app back to the sign-in stack —
-              // no explicit navigation needed here.
-            } catch (error) {
-              Alert.alert(
-                'Could not delete account',
-                error instanceof Error ? error.message : 'Check your connection and try again.',
-              );
-              setDeletingAccount(false);
-            }
-          },
-        },
-      ],
-    );
   };
 
   const handleManageSubscription = () => {
@@ -868,65 +823,24 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </TouchableOpacity>
 
-          {showDeleteForm ? (
-            <View style={styles.form} testID="profile-delete-form">
-              <Text style={styles.formTitle}>Confirm your password to delete your account</Text>
-              <View style={styles.formGrid}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Password"
-                  placeholderTextColor="#7f7899"
-                  value={deletePassword}
-                  onChangeText={setDeletePassword}
-                  secureTextEntry
-                  testID="profile-delete-password-input"
-                  accessibilityLabel="profile-delete-password-input"
-                />
-              </View>
-              <TouchableOpacity
-                style={[styles.clearBtn, deletingAccount && styles.disabledButton]}
-                onPress={handleConfirmDeleteAccount}
-                disabled={deletingAccount}
-                activeOpacity={0.84}
-                testID="profile-delete-confirm-btn"
-                accessibilityLabel="profile-delete-confirm-btn"
-              >
-                <Text style={styles.clearBtnText}>
-                  {deletingAccount ? 'Deleting...' : 'Permanently Delete Account'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.cancelDeleteBtn}
-                onPress={() => {
-                  setShowDeleteForm(false);
-                  setDeletePassword('');
-                }}
-                disabled={deletingAccount}
-                activeOpacity={0.82}
-              >
-                <Text style={styles.cancelDeleteText}>Cancel</Text>
-              </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.84}
+            style={styles.resourceRow}
+            onPress={() => navigation.navigate('DeleteAccount')}
+            testID="profile-delete-account-btn"
+            accessibilityLabel="profile-delete-account-btn"
+          >
+            <View style={[styles.itemIcon, { backgroundColor: 'rgba(239,68,91,0.22)' }]}>
+              <Text style={[styles.itemIconText, { color: '#ff6f7f' }]}>D</Text>
             </View>
-          ) : (
-            <TouchableOpacity
-              activeOpacity={0.84}
-              style={styles.resourceRow}
-              onPress={handleDeleteAccountPress}
-              testID="profile-delete-account-btn"
-              accessibilityLabel="profile-delete-account-btn"
-            >
-              <View style={[styles.itemIcon, { backgroundColor: 'rgba(239,68,91,0.22)' }]}>
-                <Text style={[styles.itemIconText, { color: '#ff6f7f' }]}>D</Text>
-              </View>
-              <View style={styles.itemCopy}>
-                <Text style={[styles.itemName, { color: '#fff' }]}>Delete Account</Text>
-                <Text style={styles.itemDesc}>
-                  Permanently delete your account and all associated data.
-                </Text>
-              </View>
-              <Text style={styles.rowArrow}>{'>'}</Text>
-            </TouchableOpacity>
-          )}
+            <View style={styles.itemCopy}>
+              <Text style={[styles.itemName, { color: '#fff' }]}>Delete Account</Text>
+              <Text style={styles.itemDesc}>
+                Permanently delete your account and all associated data.
+              </Text>
+            </View>
+            <Text style={styles.rowArrow}>{'>'}</Text>
+          </TouchableOpacity>
         </LinearGradient>
 
         <LinearGradient
@@ -1265,6 +1179,4 @@ const styles = StyleSheet.create({
   },
   disabledButton: { opacity: 0.62 },
   addButtonText: { color: '#fff', fontSize: 15, fontWeight: '900' },
-  cancelDeleteBtn: { alignItems: 'center', marginTop: 12, paddingVertical: 8 },
-  cancelDeleteText: { color: '#a99cc5', fontSize: 14, fontWeight: '700' },
 });
