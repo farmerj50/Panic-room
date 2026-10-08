@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Linking,
@@ -33,6 +33,16 @@ import { uploadFile } from '../services/uploadService';
 import { clearInProgressEmergency, useAppStateEmergencyGuard } from '../hooks/useAppStateEmergencyGuard';
 import { mapUrl } from '../utils/mapUrl';
 import type { Contact } from '../types/contact';
+import {
+  listConnections,
+  type SocialConnection,
+  type SocialProvider,
+  type SocialShareResult,
+} from '../services/socialSharingService';
+import { createShareSegmentResolver } from '../services/shareSegment';
+import SocialShareOverlay from '../components/SocialShareOverlay';
+
+const SOCIAL_PROVIDER_LABELS: Record<SocialProvider, string> = { tiktok: 'TikTok', instagram: 'Instagram' };
 
 // Best-effort, fire-and-forget — no offline queue in v1. A failure here just
 // means EvidenceScreen shows nothing for that asset; it never blocks the UI.
@@ -328,6 +338,50 @@ function EmergencyLiveScreen() {
 
   useAppStateEmergencyGuard({ emergencyId, phase, elapsed });
 
+  // Fetched once per mount, not polled — Settings is where connection
+  // state actually changes, not this screen. Only providers that are both
+  // connected and enabled for emergency sharing are offered here.
+  const [shareableProviders, setShareableProviders] = useState<SocialConnection[]>([]);
+  const [shareOpenRequest, setShareOpenRequest] = useState(0);
+  const [sharedTo, setSharedTo] = useState<SocialProvider[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    listConnections()
+      .then((result) => {
+        if (!cancelled) {
+          setShareableProviders(
+            result.connections.filter((c) => c.status === 'connected' && c.enabledForEmergency),
+          );
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Fully isolated from the activation pipeline, same shape as
+  // callPriorityContact/facetimePriorityContact: never calls or is called by
+  // runCoreActivation/triggerEmergency/resolveEmergency. The button this is
+  // wired to only renders once `emergencyId` is set (see the controls row
+  // below), so this can never run before activation has happened. Posting
+  // itself happens in SocialShareOverlay, behind an explicit review step.
+  const shareToSocial = useCallback(() => {
+    if (shareableProviders.length === 0) {
+      Alert.alert('Not connected', 'Connect TikTok or Instagram in Settings to share emergency video.');
+      return;
+    }
+    setShareOpenRequest((v) => v + 1);
+  }, [shareableProviders.length]);
+
+  const handleShared = useCallback((result: SocialShareResult) => {
+    if (result.status === 'posted') {
+      setSharedTo((prev) => (prev.includes(result.provider) ? prev : [...prev, result.provider]));
+    } else if (result.status === 'processing') {
+      setStatusMessage(`${SOCIAL_PROVIDER_LABELS[result.provider]} is still processing the video.`);
+    }
+  }, []);
+
   // Call right before every CameraView (re)mount (initial start, and every
   // flip) so anything awaiting readiness is waiting on a fresh promise, not
   // one already resolved by the previous CameraView instance.
@@ -467,6 +521,12 @@ function EmergencyLiveScreen() {
 
     const emergencyIdForUpload = activeEmergencyIdRef.current;
     activeEmergencyIdRef.current = null;
+    // Best-effort, like the uploads below: without this the server kept
+    // every past emergency as ACTIVE forever (Evidence showed them all as
+    // still active). Status is display-only server-side.
+    if (emergencyIdForUpload) {
+      updateEmergency(emergencyIdForUpload, { status: 'RESOLVED' }).catch(() => {});
+    }
     if (emergencyIdForUpload && audioUri) {
       uploadEmergencyAsset(emergencyIdForUpload, audioUri, 'audio');
     }
@@ -723,7 +783,11 @@ function EmergencyLiveScreen() {
   // segment's upload (step 6 below is fire-and-forget, already queued
   // inside finalizeCurrentSegment). Every checkpoint re-checks the
   // cancellation guard so an exit that happens mid-flip always wins.
-  const flipCamera = useCallback(async () => {
+  //
+  // cutToNewSegment is that whole sequence; flipCamera passes the opposite
+  // facing, requestShareSegmentCut passes the same facing (a forced cut
+  // with no visible flip — still the same brief recording gap).
+  const cutToNewSegment = useCallback(async (newFacing: CameraFacing) => {
     if (!cameraMounted || flippingRef.current || emergencyStoppingRef.current) return;
     flippingRef.current = true;
     const generation = captureGenerationRef.current;
@@ -734,8 +798,7 @@ function EmergencyLiveScreen() {
       await finalizeCurrentSegment();
       if (emergencyStoppingRef.current || generation !== captureGenerationRef.current) return;
 
-      // 3: flip facing.
-      const newFacing: CameraFacing = facing === 'back' ? 'front' : 'back';
+      // 3: set facing (unchanged for a share cut).
       setFacing(newFacing);
 
       // 4: remount and wait for ready (bounded, retried once on timeout —
@@ -767,7 +830,47 @@ function EmergencyLiveScreen() {
       flippingRef.current = false;
       setCameraSwitching(false);
     }
-  }, [cameraMounted, facing, finalizeCurrentSegment, remountCameraAndWaitReady]);
+  }, [cameraMounted, finalizeCurrentSegment, remountCameraAndWaitReady]);
+
+  const flipCamera = useCallback(
+    () => cutToNewSegment(facing === 'back' ? 'front' : 'back'),
+    [cutToNewSegment, facing],
+  );
+
+  // Only ever called by the share resolver below, and only when there is no
+  // uploaded, uploading, or retryable segment to use instead. If a flip is
+  // already in progress, that flip is itself producing a segment — wait for
+  // it rather than cutting again.
+  const requestShareSegmentCut = useCallback(async () => {
+    if (flippingRef.current) {
+      for (let i = 0; i < 40 && flippingRef.current; i += 1) await wait(250);
+      return;
+    }
+    await cutToNewSegment(facing);
+  }, [cutToNewSegment, facing]);
+
+  // The resolver is created once and reads everything through refs, so the
+  // one-in-flight dedupe it provides survives re-renders.
+  const requestShareSegmentCutRef = useRef(requestShareSegmentCut);
+  requestShareSegmentCutRef.current = requestShareSegmentCut;
+  const resolveShareSegment = useMemo(
+    () =>
+      createShareSegmentResolver<PendingSegmentUpload>({
+        getEntries: () => pendingSegmentUploadsRef.current,
+        isStopping: () => emergencyStoppingRef.current,
+        requestCut: () => requestShareSegmentCutRef.current(),
+        retryUpload: (entry) => {
+          const id = activeEmergencyIdRef.current;
+          if (!id) return Promise.resolve();
+          // Exposed as entry.promise so stopEmergencyAssets' sweep awaits
+          // this retry instead of racing a second one against it.
+          entry.status = 'pending';
+          entry.promise = uploadVideoSegmentEntry(id, entry).catch(() => {});
+          return entry.promise;
+        },
+      }),
+    [],
+  );
 
   const activateEmergency = useCallback(async () => {
     if (activationStarted.current) return;
@@ -788,6 +891,7 @@ function EmergencyLiveScreen() {
     pendingSegmentUploadsRef.current = [];
     flippingRef.current = false;
     setFacing(DEFAULT_CAMERA_FACING);
+    setSharedTo([]);
 
     triggerEmergency();
 
@@ -851,7 +955,13 @@ function EmergencyLiveScreen() {
           );
         },
       });
-      if (!isCurrentSession()) return;
+      if (!isCurrentSession()) {
+        // Exited while the create request was in flight: stopEmergencyAssets
+        // never saw this id, so close it out here rather than leave an
+        // orphaned ACTIVE event in the user's Evidence history.
+        if (result.ok) updateEmergency(result.emergencyId, { status: 'RESOLVED' }).catch(() => {});
+        return;
+      }
 
       if (result.ok) {
         activeEmergencyIdRef.current = result.emergencyId;
@@ -1022,6 +1132,11 @@ function EmergencyLiveScreen() {
           <View style={styles.statusPanel}>
             <Text style={styles.statusText} testID="emergency-status-text" accessibilityLabel="emergency-status-text">{statusMessage}</Text>
             {notificationStatus && <Text style={styles.notificationText}>{notificationStatus}</Text>}
+            {sharedTo.length > 0 && (
+              <Text style={styles.sharedText} testID="emergency-shared-text" accessibilityLabel="emergency-shared-text">
+                ✓ Shared to {sharedTo.map((p) => SOCIAL_PROVIDER_LABELS[p]).join(' and ')}
+              </Text>
+            )}
             {location ? (
               <Text style={styles.locationText} testID="emergency-gps-text" accessibilityLabel="emergency-gps-text">
                 GPS {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
@@ -1086,7 +1201,39 @@ function EmergencyLiveScreen() {
               <Text style={styles.actionIcon}>F</Text>
               <Text style={styles.actionLabel}>FaceTime</Text>
             </TouchableOpacity>
+
+            {/* Only exists once a real emergencyId exists — i.e. only after
+                activation has happened. This is what makes the "share is an
+                independent, post-activation action" rule structural rather
+                than just a convention: the button literally cannot be
+                tapped before there's an emergency to share. */}
+            {emergencyId ? (
+              <TouchableOpacity
+                activeOpacity={0.82}
+                style={[styles.actionBtn, styles.shareBtn]}
+                onPress={shareToSocial}
+                testID="emergency-share-btn"
+                accessibilityLabel="emergency-share-btn"
+              >
+                <Text style={styles.actionIcon}>S</Text>
+                <Text style={styles.actionLabel}>Share</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
+
+          {/* Keyed per emergency so the one-shot auto prompt resets with
+              each new activation. Same emergencyId gate as the Share button. */}
+          {emergencyId ? (
+            <SocialShareOverlay
+              key={emergencyId}
+              emergencyId={emergencyId}
+              recording={phase === 'recording'}
+              providers={shareableProviders}
+              resolveShareSegment={resolveShareSegment}
+              openRequest={shareOpenRequest}
+              onShared={handleShared}
+            />
+          ) : null}
         </View>
       )}
     </SafeAreaView>
@@ -1179,6 +1326,8 @@ const styles = StyleSheet.create({
   contactBtn: { backgroundColor: 'rgba(245,158,11,0.18)', borderColor: '#f59e0b' },
   allContactsBtn: { backgroundColor: 'rgba(78,225,213,0.14)', borderColor: '#4ee1d5' },
   videoBtn: { backgroundColor: 'rgba(74,168,255,0.18)', borderColor: '#4aa8ff' },
+  sharedText: { color: '#22c55e', fontSize: 13, fontWeight: '800', marginTop: 6, textAlign: 'center' },
+  shareBtn: { backgroundColor: 'rgba(244,114,182,0.18)', borderColor: '#f472b6' },
   stopSquare: { backgroundColor: '#fff', borderRadius: 4, height: 18, width: 18 },
   actionIcon: { color: '#fff', fontSize: 20, fontWeight: '900', lineHeight: 22 },
   actionLabel: { color: '#fff', fontSize: 11, fontWeight: '800', textAlign: 'center' },

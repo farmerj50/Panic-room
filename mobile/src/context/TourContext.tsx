@@ -32,6 +32,7 @@ export type TourStepKey =
   | 'settings-pro'
   | 'settings-tour'
   | 'settings-delete'
+  | 'settings-social-sharing'
   | 'outro';
 
 type NavRef = NavigationContainerRefWithCurrent<RootStackParamList>;

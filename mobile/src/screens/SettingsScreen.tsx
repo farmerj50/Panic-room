@@ -3,6 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 
 import { TourStepKey, useTour, useTourTarget, useTourTargetPress } from '../context/TourContext';
+import { useSubscription } from '../context/SubscriptionContext';
 import { ANDROID_PACKAGE_NAME, PREMIUM_PRODUCT_ID } from '../config/purchasesConfig';
 
 type RowProps = {
@@ -43,6 +44,12 @@ function SettingsRow({ label, desc, icon, color, onPress, testID, stepKey }: Row
 export default function SettingsScreen() {
   const navigation = useNavigation<any>();
   const { restart: restartTour } = useTour();
+  const { isPremium } = useSubscription();
+
+  const goToSocialSharing = () => {
+    if (isPremium) navigation.navigate('SocialSharing');
+    else navigation.navigate('Paywall', { reason: 'social-sharing' });
+  };
 
   const openPlaySubscriptions = () =>
     Linking.openURL(
@@ -94,6 +101,15 @@ export default function SettingsScreen() {
           icon="T"
           color="#7c3aed"
           onPress={restartTour}
+        />
+        <SettingsRow
+          testID="settings-social-sharing"
+          stepKey="settings-social-sharing"
+          label="Emergency Social Sharing"
+          desc="Connect TikTok or Instagram to share emergency video."
+          icon="S"
+          color="#f472b6"
+          onPress={goToSocialSharing}
         />
         <SettingsRow
           testID="settings-delete"

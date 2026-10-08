@@ -2,6 +2,7 @@
   "expo": {
     "name": "Bes",
     "slug": "bes",
+    "scheme": "bes",
     "version": "1.0.28",
     "orientation": "default",
     "icon": "./assets/icon.png",
@@ -105,7 +106,9 @@
       "./plugin/withProguardOptimize",
       "./plugin/withEdgeToEdgeSystemBars",
       "./plugin/withReleaseSigning",
-      "./plugin/withRemoveBarcodeScannerActivity"
+      "./plugin/withRemoveBarcodeScannerActivity",
+      "expo-web-browser",
+      "expo-video"
     ]
   }
 }

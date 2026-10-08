@@ -22,6 +22,8 @@ jest.mock('expo-camera', () => ({
   useMicrophonePermissions: () => [{ granted: false }, jest.fn()],
 }));
 
+jest.mock('expo-video', () => ({ VideoView: () => null, useVideoPlayer: jest.fn() }));
+
 jest.mock('expo-status-bar', () => ({ StatusBar: () => null }));
 
 jest.mock('../../context/TourContext', () => ({
@@ -99,6 +101,18 @@ describe('Emergency tourMode', () => {
     expect(screen.getByTestId('emergency-tour-banner')).toBeTruthy();
     expect(screen.queryByTestId('emergency-countdown-screen')).toBeNull();
     expect(screen.queryByTestId('emergency-live-screen')).toBeNull();
+    // The Share-to-social action only exists on the live screen, gated on a
+    // real emergencyId (see EmergencyScreen.tsx) — the tour's static demo
+    // renders a completely separate component with no import overlap, so
+    // this button can never appear during the tour.
+    expect(screen.queryByTestId('emergency-share-btn')).toBeNull();
+    // Same for the auto Share prompt / Publishing overlay, even well past
+    // when it would appear on a real emergency.
+    act(() => {
+      jest.advanceTimersByTime(15000);
+    });
+    expect(screen.queryByTestId('social-share-overlay')).toBeNull();
+    expect(screen.queryByTestId('social-share-prompt')).toBeNull();
   });
 
   test('never activates, notifies, dials, or prompts for permissions, even past the countdown', async () => {

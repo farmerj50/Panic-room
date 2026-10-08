@@ -41,6 +41,11 @@ async function registerAndDetectVariant(tag) {
     { timeout: 30000, interval: 500, timeoutMsg: 'Neither the onboarding Welcome screen nor Home appeared after registration' },
   );
 
+  // Home then shows the one-time "Take the Tour" offer card, which blocks
+  // taps (e.g. the Emergency tab) until dismissed. The onboarding variant
+  // gets it after skipAll(), which already dismisses it.
+  if (variant === 'contextual') await onboardingPage.dismissTourOfferIfPresent();
+
   return { email, password, variant };
 }
 

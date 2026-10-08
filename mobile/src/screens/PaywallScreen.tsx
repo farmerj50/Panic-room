@@ -13,6 +13,7 @@ const HEADLINES: Record<string, string> = {
   'covert-messaging': 'Unlock Covert Messaging',
   'contacts-cap': 'Unlock Unlimited Trusted Contacts',
   'linked-accounts': 'Unlock Linked Accounts',
+  'social-sharing': 'Unlock Emergency Social Sharing',
 };
 
 const BENEFITS = [
@@ -20,6 +21,7 @@ const BENEFITS = [
   { icon: 'M', title: 'Covert Messaging', desc: 'Send discreet, encrypted messages hidden inside images.' },
   { icon: 'C', title: 'Unlimited Trusted Contacts', desc: 'Add everyone you trust, no cap.' },
   { icon: 'L', title: 'Linked Accounts', desc: 'Invite up to 5 family or friends to link accounts with consent.' },
+  { icon: 'S', title: 'Emergency Social Sharing', desc: 'Connect TikTok and Instagram to share emergency video when you choose to.' },
 ];
 
 export default function PaywallScreen() {

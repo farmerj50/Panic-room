@@ -29,7 +29,7 @@ describe('PanicRoom trusted contacts', () => {
     // above the add-contact form we just scrolled down to reach, and
     // saving collapses that form — scroll back toward the top to find it.
     await contactsPage.scrollToTop();
-    const savedRow = await contactsPage.scrollToElement(`//*[@text="${contactName}"]`);
+    const savedRow = await contactsPage.scrollToElement(contactsPage.rowSelector(contactName));
     expect(await savedRow.isDisplayed()).toBe(true);
   });
 

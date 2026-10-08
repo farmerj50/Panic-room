@@ -30,8 +30,14 @@ class ContactsPage {
   // Each row's accessibility label is the same static "contacts-row" (the
   // convention this codebase uses throughout), so a specific contact is
   // found by its visible name text instead of a unique per-row identifier.
+  // Scoped to saved list rows: an unscoped text match also hits the name
+  // still typed in the add form after a rejected save (false "row exists").
+  rowSelector(name) {
+    return `//*[@content-desc="contacts-row"]//*[@text="${name}"]`;
+  }
+
   rowByName(name) {
-    return $(`//*[@text="${name}"]`);
+    return $(this.rowSelector(name));
   }
 
   // The contact-limit indicator text added above pushed the add-contact
@@ -119,25 +125,22 @@ class ContactsPage {
   }
 
   async addContact(name, phone) {
-    // isExisting() (not isDisplayed()) decides whether the form needs
-    // opening — nameInput isn't in the tree at all when the form is
-    // closed, but scrolling first (per scrollToElement) to look for it
-    // would exhaust the whole page hunting for something that isn't
-    // there, ending up scrolled past addToggleBtn with no way back except
-    // scrolling up. isExisting() works regardless of current scroll
-    // position, so it correctly tells "closed" (not existing) apart from
-    // "open but off-screen" (existing, not displayed) up front.
-    // A single isExisting() check right after navigating can be a false
-    // negative (the off-screen part of the tree isn't attached/measured
-    // yet under software rendering) — retry briefly before concluding the
-    // form really is closed.
-    let formExists = false;
-    for (let i = 0; i < 3 && !formExists; i++) {
-      formExists = await this.nameInput.isExisting().catch(() => false);
-      if (!formExists) await driver.pause(400);
+    // The toggle's own arrow is the authoritative open/closed state
+    // ('v' = open, '>' = closed). Probing for nameInput instead (the old
+    // approach) false-negatived on a fresh account, whose form starts open,
+    // and the toggle tap then CLOSED it. scrollToElement accepts the toggle
+    // once its top edge is on-screen, but the arrow sits lower and is
+    // clipped out of the tree until the whole card is visible — so keep
+    // scrolling until the arrow itself is present before deciding.
+    const toggle = await this.scrollToElement('~contacts-add-toggle-btn');
+    const arrowCount = async (glyph) => (await toggle.$$(`.//*[@text="${glyph}"]`).length);
+    for (let i = 0; i < 4 && (await arrowCount('v')) + (await arrowCount('>')) === 0; i++) {
+      await this.scrollDownStep();
     }
-    if (!formExists) {
-      await this.scrollToElementAndClick('~contacts-add-toggle-btn');
+    const isOpen = async () => (await arrowCount('v')) > 0;
+    if (!(await isOpen())) {
+      await toggle.click();
+      await driver.waitUntil(isOpen, { timeout: 5000, timeoutMsg: 'add-contact form did not open' });
     }
     await this.scrollToElement('~contacts-name-input');
     await this.nameInput.waitForDisplayed({ timeout: 10000 });

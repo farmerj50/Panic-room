@@ -13,6 +13,7 @@ export type RootStackParamList = {
   Setup: undefined;
   Settings: undefined;
   CovertMessageDemo: undefined;
+  SocialSharing: undefined;
   Contacts: { tourMode?: boolean } | undefined;
   LinkedAccounts: undefined;
   Evidence: undefined;
@@ -22,7 +23,14 @@ export type RootStackParamList = {
   PinSetup: undefined;
   DecoySettings: undefined;
   Paywall:
-    | { reason?: 'background-location' | 'covert-messaging' | 'contacts-cap' | 'linked-accounts' }
+    | {
+        reason?:
+          | 'background-location'
+          | 'covert-messaging'
+          | 'contacts-cap'
+          | 'linked-accounts'
+          | 'social-sharing';
+      }
     | undefined;
 };
 

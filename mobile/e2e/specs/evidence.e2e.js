@@ -36,7 +36,11 @@ describe('PanicRoom evidence screen', () => {
 
     // The EmergencyEvent itself is created (and awaited) before recording
     // even starts, so it exists regardless of whether the best-effort
-    // audio/video upload has finished by the time we check Evidence.
+    // audio/video upload has finished by the time we check Evidence — but
+    // only once recording HAS started: the live screen appears earlier,
+    // mid-activation, and exiting then raced the create request (observed:
+    // the row landed ~1s after Evidence had already fetched an empty list).
+    await emergencyPage.waitForRecordingPhase(30000);
     await emergencyPage.exitBtn.click();
     await tabBar.emergencyBtn.waitForDisplayed({ timeout: 15000 });
 
@@ -49,5 +53,10 @@ describe('PanicRoom evidence screen', () => {
       async () => (await evidencePage.cards).length > 0,
       { timeout: 15000, interval: 500, timeoutMsg: 'No evidence card appeared after the emergency' },
     );
+
+    // Exit marks the event RESOLVED server-side — it used to stay ACTIVE
+    // forever, so every past emergency looked like it was still happening.
+    await $('//*[@text="RESOLVED"]').waitForDisplayed({ timeout: 10000 });
+    expect(await $('//*[@text="ACTIVE"]').isExisting()).toBe(false);
   });
 });

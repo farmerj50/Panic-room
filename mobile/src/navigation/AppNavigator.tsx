@@ -37,6 +37,7 @@ import DecoySettingsScreen from '../screens/DecoySettingsScreen';
 import PaywallScreen from '../screens/PaywallScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import CovertMessageDemoScreen from '../screens/CovertMessageDemoScreen';
+import SocialSharingScreen from '../screens/SocialSharingScreen';
 import OnboardingNavigator from './OnboardingNavigator';
 
 // expo-notifications loads at runtime so the app still boots before `npm install`.
@@ -409,6 +410,7 @@ function AuthenticatedNavigatorInner({
             <Stack.Screen name="Paywall" component={PaywallScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
             <Stack.Screen name="CovertMessageDemo" component={CovertMessageDemoScreen} />
+            <Stack.Screen name="SocialSharing" component={SocialSharingScreen} />
             <Stack.Screen name="Onboarding" component={OnboardingNavigator} />
           </Stack.Navigator>
         </NavigationContainer>

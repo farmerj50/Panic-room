@@ -129,6 +129,36 @@ model User {
 
   ownedAccountLinks  AccountLink[] @relation("OwnedAccountLinks")
   linkedAccountLinks AccountLink[] @relation("LinkedAccountLinks")
+
+  socialConnections SocialConnection[]
+}
+
+// Emergency Social Sharing (Phase A — infrastructure only, see plan). A
+// connection row is created once a provider OAuth flow completes; until this
+// app has real TikTok/Instagram developer credentials, initiateConnect
+// always 503s and no row is ever created from a real flow. A row can still
+// be seeded manually for local testing of the connected-state UI.
+model SocialConnection {
+  id       String @id @default(uuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider String // 'tiktok' | 'instagram'
+  status   String @default("pending") // 'pending' | 'connected' | 'reauth_required' | 'revoked' | 'error'
+
+  providerUserId   String?
+  providerUsername String?
+
+  accessTokenEncrypted  String?
+  refreshTokenEncrypted String?
+  expiresAt             DateTime?
+  scopes                String?
+
+  enabledForEmergency Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, provider])
 }
 
 // Bes Pro "Linked Accounts" — distinct from TrustedContact: both sides are

@@ -269,6 +269,7 @@ export default function ContactsScreen() {
                     accessibilityLabel="contacts-row"
                     style={[
                       styles.contactRow,
+                      !isWide && styles.contactRowNarrow,
                       index < sortedContacts.length - 1 && styles.contactRowBorder,
                     ]}
                   >
@@ -290,54 +291,56 @@ export default function ContactsScreen() {
                       <Text style={styles.contactPhone}>{formatPhone(contact.phoneNumber)}</Text>
                     </View>
 
-                    <TouchableOpacity
-                      activeOpacity={0.82}
-                      style={[
-                        styles.statusBadge,
-                        contact.isPriority ? styles.priorityBadge : styles.secondaryBadge,
-                      ]}
-                      onPress={() => handleTogglePriority(contact.id)}
-                    >
-                      <Text
-                        style={[
-                          styles.statusBadgeText,
-                          contact.isPriority ? styles.priorityBadgeText : styles.secondaryBadgeText,
-                        ]}
-                      >
-                        {contact.isPriority ? '* Priority' : 'S Secondary'}
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      activeOpacity={0.82}
-                      style={[
-                        styles.circleAction,
-                        contact.isPriority && styles.circleActionActive,
-                      ]}
-                      onPress={() => handleTogglePriority(contact.id)}
-                    >
-                      <Text style={styles.circleActionText}>P</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      activeOpacity={0.82}
-                      style={styles.circleAction}
-                      onPress={() => textContact(contact)}
-                    >
-                      <Text style={styles.circleActionText}>M</Text>
-                    </TouchableOpacity>
-
-                    {editMode ? (
+                    <View style={[styles.contactActions, !isWide && styles.contactActionsNarrow]}>
                       <TouchableOpacity
                         activeOpacity={0.82}
-                        style={styles.removeButton}
-                        onPress={() => handleDelete(contact.id)}
+                        style={[
+                          styles.statusBadge,
+                          contact.isPriority ? styles.priorityBadge : styles.secondaryBadge,
+                        ]}
+                        onPress={() => handleTogglePriority(contact.id)}
                       >
-                        <Text style={styles.removeButtonText}>Remove</Text>
+                        <Text
+                          style={[
+                            styles.statusBadgeText,
+                            contact.isPriority ? styles.priorityBadgeText : styles.secondaryBadgeText,
+                          ]}
+                        >
+                          {contact.isPriority ? '* Priority' : 'S Secondary'}
+                        </Text>
                       </TouchableOpacity>
-                    ) : (
-                      <Text style={styles.rowArrow}>{'>'}</Text>
-                    )}
+
+                      <TouchableOpacity
+                        activeOpacity={0.82}
+                        style={[
+                          styles.circleAction,
+                          contact.isPriority && styles.circleActionActive,
+                        ]}
+                        onPress={() => handleTogglePriority(contact.id)}
+                      >
+                        <Text style={styles.circleActionText}>P</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        activeOpacity={0.82}
+                        style={styles.circleAction}
+                        onPress={() => textContact(contact)}
+                      >
+                        <Text style={styles.circleActionText}>M</Text>
+                      </TouchableOpacity>
+
+                      {editMode ? (
+                        <TouchableOpacity
+                          activeOpacity={0.82}
+                          style={styles.removeButton}
+                          onPress={() => handleDelete(contact.id)}
+                        >
+                          <Text style={styles.removeButtonText}>Remove</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <Text style={styles.rowArrow}>{'>'}</Text>
+                      )}
+                    </View>
                   </View>
                 );
               })
@@ -569,6 +572,12 @@ const styles = StyleSheet.create({
     minHeight: 116,
     paddingVertical: 18,
   },
+  // On phone widths the badge + action buttons left the name column ~0px
+  // wide (name/phone invisible, row ballooned as the name wrapped one
+  // character per line). Wrap the actions onto their own line instead.
+  contactRowNarrow: { flexWrap: 'wrap', rowGap: 14 },
+  contactActions: { alignItems: 'center', flexDirection: 'row', gap: 18 },
+  contactActionsNarrow: { justifyContent: 'flex-end', width: '100%' },
   contactRowBorder: { borderBottomColor: 'rgba(255,255,255,0.08)', borderBottomWidth: 1 },
   avatar: {
     alignItems: 'center',
