@@ -2,6 +2,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTourTarget } from '../context/TourContext';
+import { contentColumn } from '../config/layout';
 
 // Deliberately imports nothing from EmergencyContext, camera, location, or
 // notification code. The tour's Emergency walkthrough renders this instead of
@@ -13,24 +14,26 @@ export default function EmergencyTourDemo() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.banner} testID="emergency-tour-banner">
-        <Text style={styles.bannerTitle}>Tour demo</Text>
-        <Text style={styles.bannerText}>Nothing is being activated.</Text>
-      </View>
+      <View style={styles.column}>
+        <View style={styles.banner} testID="emergency-tour-banner">
+          <Text style={styles.bannerTitle}>Tour demo</Text>
+          <Text style={styles.bannerText}>Nothing is being activated.</Text>
+        </View>
 
-      <View ref={cameraRef} style={styles.cameraPanel} testID="emergency-camera">
-        <Text style={styles.panelLabel}>Evidence capture</Text>
-        <Text style={styles.panelText}>Camera preview appears here during a real emergency.</Text>
-      </View>
+        <View ref={cameraRef} style={styles.cameraPanel} testID="emergency-camera">
+          <Text style={styles.panelLabel}>Evidence capture</Text>
+          <Text style={styles.panelText}>Camera preview appears here during a real emergency.</Text>
+        </View>
 
-      <View ref={locationRef} style={styles.locationPanel} testID="emergency-location">
-        <Text style={styles.panelLabel}>Live location</Text>
-        <Text style={styles.panelText}>Your location is shared with trusted contacts during a real emergency.</Text>
-      </View>
+        <View ref={locationRef} style={styles.locationPanel} testID="emergency-location">
+          <Text style={styles.panelLabel}>Live location</Text>
+          <Text style={styles.panelText}>Your location is shared with trusted contacts during a real emergency.</Text>
+        </View>
 
-      <View style={styles.callPanel}>
-        <View ref={callRef} style={styles.disabledCallBtn} testID="emergency-911">
-          <Text style={styles.disabledCallText}>Demo: 911 is not called</Text>
+        <View style={styles.callPanel}>
+          <View ref={callRef} style={styles.disabledCallBtn} testID="emergency-911">
+            <Text style={styles.disabledCallText}>Demo: 911 is not called</Text>
+          </View>
         </View>
       </View>
     </SafeAreaView>
@@ -41,8 +44,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#050715',
-    padding: 20,
+  },
+  column: {
+    flex: 1,
     gap: 16,
+    padding: 20,
+    ...contentColumn,
   },
   banner: {
     backgroundColor: 'rgba(124,58,237,0.18)',

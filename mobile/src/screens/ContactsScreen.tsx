@@ -172,7 +172,9 @@ export default function ContactsScreen() {
     <SafeAreaView style={styles.safe} testID="contacts-screen" accessible accessibilityLabel="contacts-screen">
       {showFormTourCard ? (
         <View style={styles.formTourCard}>
-          <TourStepCard />
+          <View style={styles.formTourCardInner}>
+            <TourStepCard />
+          </View>
         </View>
       ) : null}
       <KeyboardAvoidingView
@@ -445,7 +447,8 @@ export default function ContactsScreen() {
 }
 
 const styles = StyleSheet.create({
-  formTourCard: { position: 'absolute', left: 16, right: 16, bottom: 24, zIndex: 50, elevation: 50 },
+  formTourCard: { position: 'absolute', left: 16, right: 16, bottom: 24, zIndex: 50, elevation: 50, alignItems: 'center' },
+  formTourCardInner: { width: '100%', maxWidth: 520 },
   safe: { flex: 1, backgroundColor: '#050715' },
   keyboard: { flex: 1 },
   scroll: {

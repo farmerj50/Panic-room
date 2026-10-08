@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { getEmergencies } from '../services/emergencyService';
 import { Emergency, EmergencyVideoSegment } from '../types/Emergency';
+import { contentColumn } from '../config/layout';
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleString();
@@ -127,11 +128,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
+    ...contentColumn,
   },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   backText: { color: '#fff', fontSize: 24 },
   title: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  scroll: { padding: 16, paddingBottom: 40 },
+  scroll: { padding: 16, paddingBottom: 40, ...contentColumn },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyIcon: { fontSize: 56 },
   emptyText: { color: '#fff', fontSize: 16, fontWeight: '600', marginTop: 16 },

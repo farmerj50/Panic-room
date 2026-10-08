@@ -13,6 +13,7 @@ import {
   type SocialConnection,
   type SocialProvider,
 } from '../services/socialSharingService';
+import { contentColumn } from '../config/layout';
 
 // Covers the one scenario where this still matters: a provider's backend
 // config (socialSharingConfig.js) is ever unset again — e.g. a Railway env
@@ -200,7 +201,7 @@ export default function SocialSharingScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#050715' },
-  scroll: { paddingBottom: 42, paddingHorizontal: 18, paddingTop: 16 },
+  scroll: { paddingBottom: 42, paddingHorizontal: 18, paddingTop: 16, ...contentColumn },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
   headerButton: { alignItems: 'center', height: 42, justifyContent: 'center', width: 42 },
   headerButtonText: { color: '#fff', fontSize: 28, fontWeight: '500' },

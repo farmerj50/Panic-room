@@ -34,6 +34,7 @@ import {
 } from '../utils/locationDisclosure';
 import { confirmNotificationsDisclosure } from '../utils/permissionDisclosures';
 import { trackEvent } from '../services/analyticsService';
+import { contentColumn } from '../config/layout';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const heroBg = require('../../assets/images/hero-bg.webp');
@@ -383,7 +384,7 @@ function OptionGroup<T extends string>({
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#050715' },
-  scroll: { paddingBottom: 120 },
+  scroll: { paddingBottom: 120, ...contentColumn },
   hero: {
     height: 220,
     justifyContent: 'flex-end',

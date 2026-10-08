@@ -3,6 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 
 import { useTourTarget } from '../context/TourContext';
+import { contentColumn } from '../config/layout';
 
 // Read-only example. Imports nothing from covert-messaging, crypto, network,
 // or subscription code, so it can't encrypt, send, or open the paywall.
@@ -39,11 +40,11 @@ export default function CovertMessageDemoScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#050715' },
-  header: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
+  header: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12, ...contentColumn },
   back: { padding: 8 },
   backText: { color: '#fff', fontSize: 20, fontWeight: '700' },
   title: { color: '#fff', fontSize: 18, fontWeight: '800', flexShrink: 1 },
-  body: { padding: 16, gap: 16 },
+  body: { padding: 16, gap: 16, ...contentColumn },
   intro: { color: '#d8d2e8', fontSize: 14, lineHeight: 21 },
   bubble: {
     backgroundColor: '#0d1231',
