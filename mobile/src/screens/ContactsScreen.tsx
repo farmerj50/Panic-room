@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   ImageBackground,
@@ -6,6 +6,7 @@ import {
   Linking,
   Platform,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -15,13 +16,19 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { useTour, useTourTarget, useTourTargetPress } from '../context/TourContext';
 import TourStepCard from '../components/TourStepCard';
 
 import { useEmergencyContext } from '../context/EmergencyContext';
 import { useSubscription } from '../context/SubscriptionContext';
-import { deleteContactFromBackend, saveContactToBackend, updateContactInBackend } from '../services/contactService';
+import {
+  createSmsInvite,
+  deleteContactFromBackend,
+  saveContactToBackend,
+  updateContactInBackend,
+} from '../services/contactService';
+import type { ContactSmsStatus } from '../types/contact';
 import { ApiError } from '../services/apiClient';
 import { Contact } from '../types/contact';
 
@@ -41,11 +48,29 @@ function getInitial(name: string) {
   return name.trim().charAt(0).toUpperCase() || '?';
 }
 
+// Emergency TEXT alert status per contact. Calls are never gated by this.
+const SMS_BADGES: Record<ContactSmsStatus, { label: string; color: string; canInvite: boolean }> = {
+  accepted: { label: 'Texts on', color: '#4ee1a0', canInvite: false },
+  pending: { label: 'Texts need their OK', color: '#f5b84b', canInvite: true },
+  declined: { label: 'Declined texts', color: '#a9a1bd', canInvite: true },
+  revoked: { label: 'Texts off', color: '#a9a1bd', canInvite: true },
+  number_changed: { label: 'Number changed — re-invite', color: '#f5b84b', canInvite: true },
+  opted_out: { label: 'Replied STOP to texts', color: '#ff8a8a', canInvite: false },
+};
+
 export default function ContactsScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const tourMode = Boolean(route.params?.tourMode);
-  const { contacts, setContacts } = useEmergencyContext();
+  const { contacts, setContacts, loadContacts } = useEmergencyContext();
+
+  // Re-fetch on focus so a contact's SMS status (e.g. they just accepted the
+  // invite in their browser) shows without restarting the app.
+  useFocusEffect(
+    useCallback(() => {
+      void loadContacts();
+    }, [loadContacts]),
+  );
   const { contactLimit } = useSubscription();
   const { width } = useWindowDimensions();
   const [name, setName] = useState('');
@@ -67,6 +92,18 @@ export default function ContactsScreen() {
     navigation.navigate('Profile');
   };
 
+  // Sends a single-use consent link from the user's own messaging app. The
+  // contact opens it in any browser (no app needed) and taps Accept.
+  const sendSmsInvite = async (contact: Contact) => {
+    if (tourMode) return;
+    try {
+      const invite = await createSmsInvite(contact.id);
+      await Share.share({ message: invite.shareMessage });
+    } catch {
+      Alert.alert('Could not create invite', 'Check your connection and try again.');
+    }
+  };
+
   const handleAdd = async () => {
     if (tourMode) return;
     if (!name.trim() || !phone.trim()) {
@@ -84,6 +121,14 @@ export default function ContactsScreen() {
       setName('');
       setPhone('');
       setShowAdd(false);
+      Alert.alert(
+        'Turn on emergency texts?',
+        `${saved.name} will get calls during an emergency. To also get text alerts, they need to accept a quick invite — no app needed.`,
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Send invite', onPress: () => void sendSmsInvite(saved) },
+        ],
+      );
     } catch (error) {
       if (error instanceof ApiError && error.code === 'CONTACT_LIMIT_REACHED') {
         setShowAdd(false);
@@ -291,6 +336,26 @@ export default function ContactsScreen() {
                     <View style={styles.contactCopy}>
                       <Text style={styles.contactName}>{contact.name}</Text>
                       <Text style={styles.contactPhone}>{formatPhone(contact.phoneNumber)}</Text>
+                      {(() => {
+                        const badge = SMS_BADGES[contact.smsStatus ?? 'pending'];
+                        return (
+                          <View style={styles.smsRow}>
+                            <Text style={[styles.smsBadge, { color: badge.color }]} testID="contact-sms-status">
+                              {badge.label}
+                            </Text>
+                            {badge.canInvite && (
+                              <TouchableOpacity
+                                onPress={() => void sendSmsInvite(contact)}
+                                testID="contact-sms-invite-btn"
+                                accessibilityLabel="contact-sms-invite-btn"
+                                accessibilityRole="button"
+                              >
+                                <Text style={styles.smsInvite}>Send SMS invite</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        );
+                      })()}
                     </View>
 
                     <View style={[styles.contactActions, !isWide && styles.contactActionsNarrow]}>
@@ -605,6 +670,9 @@ const styles = StyleSheet.create({
   priorityStarText: { color: '#fff', fontSize: 15, fontWeight: '900', lineHeight: 18 },
   contactCopy: { flex: 1, minWidth: 0 },
   contactName: { color: '#fff', fontSize: 24, fontWeight: '900', marginBottom: 8 },
+  smsRow: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 6 },
+  smsBadge: { fontSize: 14, fontWeight: '800' },
+  smsInvite: { color: '#b98cff', fontSize: 14, fontWeight: '800', textDecorationLine: 'underline' },
   contactPhone: { color: '#aaa4bb', fontSize: 21 },
   statusBadge: {
     alignItems: 'center',

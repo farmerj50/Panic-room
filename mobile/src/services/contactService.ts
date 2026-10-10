@@ -33,3 +33,11 @@ export async function deleteContactFromBackend(id: string): Promise<void> {
     method: 'DELETE',
   });
 }
+
+export type SmsInvite = { url: string; shareMessage: string; expiresAt: string };
+
+// A fresh single-use link the contact opens in any browser to accept (or
+// decline) emergency text alerts. Issuing one revokes any earlier link.
+export async function createSmsInvite(contactId: string): Promise<SmsInvite> {
+  return apiRequest<SmsInvite>(`/api/contacts/${contactId}/sms-invite`, { method: 'POST' });
+}

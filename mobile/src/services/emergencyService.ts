@@ -26,27 +26,30 @@ export async function updateEmergency(
   });
 }
 
-export async function notifyEmergencyContacts(data: {
-  emergencyId: string;
-  contacts: Contact[];
-  message: string;
-}): Promise<{
+export type NotifyResult = {
+  smsAvailable?: boolean;
+  providerConfigured: boolean;
+  contactCount?: number;
+  eligibleCount?: number;
+  ineligibleCount?: number;
+  queuedCount?: number;
+  failedCount?: number;
   sent: boolean;
   notifiedCount: number;
-  providerConfigured: boolean;
   error?: string;
-}> {
-  return apiRequest<{
-    sent: boolean;
-    notifiedCount: number;
-    providerConfigured: boolean;
-    error?: string;
-  }>(`/api/emergency/${data.emergencyId}/notify`, {
+};
+
+// The server decides who gets an emergency text — only stored contacts who
+// accepted SMS alerts for their current number — so no numbers are sent.
+// `contacts`/`message` stay in the signature for existing callers.
+export async function notifyEmergencyContacts(data: {
+  emergencyId: string;
+  contacts?: Contact[];
+  message?: string;
+}): Promise<NotifyResult> {
+  return apiRequest<NotifyResult>(`/api/emergency/${data.emergencyId}/notify`, {
     method: 'POST',
-    body: JSON.stringify({
-      contacts: data.contacts.map(({ name, phoneNumber }) => ({ name, phoneNumber })),
-      message: data.message,
-    }),
+    body: JSON.stringify({}),
   });
 }
 

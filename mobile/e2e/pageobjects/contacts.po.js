@@ -147,6 +147,20 @@ class ContactsPage {
     await this.nameInput.setValue(name);
     await this.phoneInput.setValue(phone);
     await this.saveBtn.click();
+    await this.dismissSmsInviteOfferIfPresent();
+  }
+
+  // After a contact is saved, the app offers to send them an SMS consent
+  // invite ("Turn on emergency texts?"). Decline it so specs continue on
+  // the Contacts screen; the invite flow itself is covered elsewhere.
+  async dismissSmsInviteOfferIfPresent(timeoutMs = 6000) {
+    const notNow = $('//*[@text="Not now" or @text="NOT NOW"]');
+    try {
+      await notNow.waitForDisplayed({ timeout: timeoutMs });
+      await notNow.click();
+    } catch {
+      // Save failed (e.g. invalid number) — no offer was shown.
+    }
   }
 }
 

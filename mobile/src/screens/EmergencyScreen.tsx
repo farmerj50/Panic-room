@@ -30,6 +30,7 @@ import {
   createRecording,
   updateEmergency,
 } from '../services/emergencyService';
+import { describeSmsResult } from '../utils/smsStatus';
 import { uploadFile } from '../services/uploadService';
 import { clearInProgressEmergency, useAppStateEmergencyGuard } from '../hooks/useAppStateEmergencyGuard';
 import { mapUrl } from '../utils/mapUrl';
@@ -960,13 +961,7 @@ function EmergencyLiveScreen() {
         },
         onNotifyResult: (response) => {
           if (!isCurrentSession()) return;
-          setNotificationStatus(
-            response.sent
-              ? `Trusted contacts notified: ${response.notifiedCount}`
-              : response.error
-                ? `Text failed: ${response.error}`
-                : 'Trusted contact SMS provider is not configured.',
-          );
+          setNotificationStatus(describeSmsResult(response));
         },
       });
       if (!isCurrentSession()) {
