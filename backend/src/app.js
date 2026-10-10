@@ -15,6 +15,8 @@ const accountLinkRoutes = require("./routes/accountLinkRoutes");
 const socialSharingRoutes = require("./routes/socialSharingRoutes");
 const analyticsRoutes = require("./routes/analyticsRoutes");
 const legalRoutes = require("./routes/legalRoutes");
+const { consentRouter, programRouter } = require("./routes/consentRoutes");
+const twilioWebhookRoutes = require("./routes/twilioWebhookRoutes");
 const errorMiddleware = require("./middleware/errorMiddleware");
 
 validateEnv();
@@ -33,6 +35,16 @@ app.use((req, res, next) => {
   res.setHeader("Cache-Control", "no-store");
   next();
 });
+// Server-rendered public pages and Twilio webhooks are mounted BEFORE the
+// CORS check. CORS guards the JSON API used by the web app; these are
+// same-site HTML pages/forms (a browser sends an Origin header on a form
+// POST, which CORS would reject) and server-to-server callbacks. A consent
+// form POST is only meaningful with the secret invite token in its URL.
+app.use("/legal", legalRoutes);
+app.use("/sms-consent", consentRouter);
+app.use("/sms-alerts", programRouter);
+app.use("/api/twilio", twilioWebhookRoutes);
+
 app.use(
   cors({
     origin(origin, callback) {
@@ -59,7 +71,6 @@ app.use("/api/billing", billingRoutes);
 app.use("/api/account-links", accountLinkRoutes);
 app.use("/api/social", socialSharingRoutes);
 app.use("/api/analytics", analyticsRoutes);
-app.use("/legal", legalRoutes);
 
 app.use(errorMiddleware);
 

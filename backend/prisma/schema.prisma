@@ -12,15 +12,15 @@ datasource db {
 }
 
 model EmergencyEvent {
-  id                   String   @id @default(uuid())
-  createdAt            DateTime @default(now())
+  id                   String                  @id @default(uuid())
+  createdAt            DateTime                @default(now())
   userId               String?
-  user                 User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                 User?                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   latitude             Float?
   longitude            Float?
   latitudeEncrypted    String?
   longitudeEncrypted   String?
-  status               String   @default("ACTIVE")
+  status               String                  @default("ACTIVE")
   audioUrl             String?
   // Legacy single-video field. No longer written to by the video-segment
   // flow (camera-flip support splits video into ordered segments below) —
@@ -28,9 +28,11 @@ model EmergencyEvent {
   // their video in Evidence.
   videoUrl             String?
   videoSegments        EmergencyVideoSegment[]
-  contactNotified      Boolean  @default(false)
+  smsAlertStates       SmsAlertState[]
+  smsMessages          SmsMessage[]
+  contactNotified      Boolean                 @default(false)
   notificationError    String?
-  notificationAttempts Int      @default(0)
+  notificationAttempts Int                     @default(0)
 
   @@index([userId])
 }
@@ -65,8 +67,100 @@ model TrustedContact {
   phoneHash   String?
   isPriority  Boolean  @default(false)
 
+  // Emergency SMS consent (see services/smsConsentService.js). Consent is
+  // bound to the exact number it was given for: smsConsentPhoneHash must
+  // equal phoneHash at send time, so a changed number is never texted on the
+  // old number's consent. Calls are NOT gated by this — only SMS.
+  smsConsentStatus    String    @default("pending") // 'pending' | 'accepted' | 'declined' | 'revoked'
+  smsConsentPhoneHash String?
+  smsConsentAt        DateTime?
+  smsConsentVersion   String?
+
+  smsInvites       ContactInvite[]
+  smsConsentEvents SmsConsentEvent[]
+  smsAlertStates   SmsAlertState[]
+  smsMessages      SmsMessage[]
+
   @@index([userId])
   @@index([phoneHash])
+}
+
+// Single-use SMS consent invitation. Only a SHA-256 of the random token is
+// stored; the raw token exists only in the link the user shares.
+model ContactInvite {
+  id             String         @id @default(uuid())
+  createdAt      DateTime       @default(now())
+  contactId      String
+  contact        TrustedContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash      String         @unique
+  phoneHash      String // the contact's number this invite enrolls — bound at issue time
+  consentVersion String
+  expiresAt      DateTime
+  usedAt         DateTime?
+  revokedAt      DateTime?
+
+  @@index([contactId])
+}
+
+// Minimal, retained compliance record of SMS consent changes. Survives the
+// contact/account (contactId -> SetNull) and is purged after the retention
+// window (see SMS_CONSENT_RETENTION_YEARS). No name, raw number or user agent.
+model SmsConsentEvent {
+  id              String          @id @default(uuid())
+  createdAt       DateTime        @default(now())
+  contactId       String?
+  contact         TrustedContact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  phoneHash       String
+  action          String // 'accept' | 'decline' | 'revoke' | 'carrier_stop' | 'carrier_start'
+  consentVersion  String?
+  consentTextHash String?
+  inviteId        String?
+  ipHash          String?
+
+  @@index([phoneHash])
+  @@index([createdAt])
+}
+
+// Mirror of a recipient's carrier-level STOP. The recipient's own choice, so
+// it is not tied to (or deleted with) any Bes account.
+model SmsOptOut {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  phoneHash String   @unique
+  source    String // 'carrier_stop' | 'send_21610'
+}
+
+// Atomic per-(emergency, contact) reservation for emergency alert texts —
+// prevents duplicate sends under concurrent notify requests.
+model SmsAlertState {
+  id             String         @id @default(uuid())
+  emergencyId    String
+  emergency      EmergencyEvent @relation(fields: [emergencyId], references: [id], onDelete: Cascade)
+  contactId      String
+  contact        TrustedContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  lastReservedAt DateTime?
+
+  @@unique([emergencyId, contactId])
+}
+
+// One row per alert-text attempt, created BEFORE calling Twilio.
+model SmsMessage {
+  id              String          @id @default(uuid())
+  createdAt       DateTime        @default(now())
+  emergencyId     String
+  emergency       EmergencyEvent  @relation(fields: [emergencyId], references: [id], onDelete: Cascade)
+  contactId       String?
+  contact         TrustedContact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  toPhoneHash     String
+  bodyHash        String // HMAC of the exact text sent — used to match uncertain sends
+  status          String          @default("reserved") // reserved|queued|sending|sent|delivered|undelivered|failed|opted_out|unconfirmed
+  twilioSid       String?         @unique
+  errorCode       String?
+  statusUpdatedAt DateTime        @default(now())
+
+  @@index([status, createdAt])
 }
 
 model Recording {
@@ -131,6 +225,7 @@ model User {
   linkedAccountLinks AccountLink[] @relation("LinkedAccountLinks")
 
   socialConnections SocialConnection[]
+  smsInvites        ContactInvite[]
 }
 
 // Emergency Social Sharing (Phase A — infrastructure only, see plan). A

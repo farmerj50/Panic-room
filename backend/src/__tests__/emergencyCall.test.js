@@ -14,10 +14,10 @@ jest.mock("../services/smsServices", () => {
     hasVoiceProviderConfig: jest.fn(() => true),
     hasSmsProviderConfig: jest.fn(() => true),
     sendVoiceCall: jest.fn(),
-    sendSms: jest.fn(),
+    sendAlertSms: jest.fn(),
   };
 });
-const { sendVoiceCall, sendSms, TwilioProviderError } = require("../services/smsServices");
+const { sendVoiceCall, sendAlertSms, TwilioProviderError } = require("../services/smsServices");
 
 const CONTACTS = [{ name: "Alex", phoneNumber: "+15551234567" }];
 
@@ -76,7 +76,19 @@ describe("emergency calls and texts report why they failed", () => {
     const { userId, accessToken } = await makeUser();
     userIds.push(userId);
     const event = await prisma.emergencyEvent.create({ data: { userId, status: "ACTIVE" } });
-    sendSms.mockRejectedValue(new TwilioProviderError("SMS provider failed: Authenticate", { status: 401 }));
+    const phoneHash = hashLookup("15551234567");
+    await prisma.trustedContact.create({
+      data: {
+        userId,
+        name: encrypt("Alex"),
+        phoneNumber: encrypt("+15551234567"),
+        phoneHash,
+        smsConsentStatus: "accepted",
+        smsConsentPhoneHash: phoneHash,
+      },
+    });
+    process.env.SMS_ENABLED = "true";
+    sendAlertSms.mockRejectedValue(new TwilioProviderError("SMS provider failed: Authenticate", { status: 401 }));
 
     const res = await request(app)
       .post(`/api/emergency/${event.id}/notify`)
@@ -86,6 +98,7 @@ describe("emergency calls and texts report why they failed", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual(expect.objectContaining({ sent: false, notifiedCount: 0, providerConfigured: true }));
     expect(res.body.error).toBe("PROVIDER_ERROR: SMS provider failed: Authenticate");
+    delete process.env.SMS_ENABLED;
   });
 
   test("Twilio's raw error body (with the account SID) is reduced to a short reason", async () => {

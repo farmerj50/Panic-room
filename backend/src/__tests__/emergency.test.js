@@ -51,10 +51,18 @@ async function registerUserWithContact() {
   const accessToken = reg.body.accessToken;
   const userId = reg.body.user.id;
 
-  await request(app)
+  const contact = await request(app)
     .post("/api/contacts")
     .set("Authorization", `Bearer ${accessToken}`)
     .send({ name: "Trusted One", phoneNumber: "+15551234567" });
+
+  // Emergency texts only go to contacts who accepted SMS for their current
+  // number (see smsEligibilityService) — mark this contact as consented.
+  const stored = await prisma.trustedContact.findUnique({ where: { id: contact.body.id } });
+  await prisma.trustedContact.update({
+    where: { id: stored.id },
+    data: { smsConsentStatus: "accepted", smsConsentPhoneHash: stored.phoneHash },
+  });
 
   return { accessToken, userId };
 }
@@ -68,12 +76,19 @@ async function deleteUser(userId) {
 
 describe("emergency", () => {
   const createdUserIds = [];
+  const savedSmsEnabled = process.env.SMS_ENABLED;
+
+  beforeAll(() => {
+    process.env.SMS_ENABLED = "true";
+  });
 
   afterEach(() => {
     global.fetch = originalFetch;
   });
 
   afterAll(async () => {
+    if (savedSmsEnabled === undefined) delete process.env.SMS_ENABLED;
+    else process.env.SMS_ENABLED = savedSmsEnabled;
     await Promise.all(createdUserIds.map(deleteUser));
     await prisma.$disconnect();
   });
@@ -132,7 +147,7 @@ describe("emergency", () => {
     const { accessToken, userId } = await registerUserWithContact();
     createdUserIds.push(userId);
 
-    // withRetry attempts up to 3 times total (1 + 2 retries) for a 5xx.
+    // The alert sender never retries a 500 (Twilio may have accepted it).
     stubTwilioResponse(async () => ({ ok: false, status: 500, text: async () => "twilio internal error" }));
 
     const created = await request(app)

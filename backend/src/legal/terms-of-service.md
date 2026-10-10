@@ -91,6 +91,16 @@ Recordings and event details you capture are available to you in the
 Evidence section of the app for as long as your account exists, subject to
 Section 5 of the Privacy Policy.
 
+### Emergency Text Alerts
+Bes can text your trusted contacts when you activate an emergency, but only
+contacts who accept an invitation themselves. You may invite only people
+whose phone numbers you are entitled to share and who you believe want to
+be your emergency contact. Contacts can opt out at any time by replying
+**STOP**. Message and data rates may apply to recipients. Text delivery
+depends on carriers and our messaging provider and is never guaranteed, so
+never rely on it as your only way to get help. See
+[Emergency Text Alerts](/sms-alerts).
+
 ## 5. Acceptable Use
 
 You agree not to:

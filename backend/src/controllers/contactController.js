@@ -2,15 +2,29 @@ const prisma = require("../config/db");
 const { decrypt, encrypt, hashLookup } = require("../services/cryptoService");
 const { isValidPhoneNumber, normalizePhoneDigits } = require("../utils/phone");
 const { isUserPremium, FREE_CONTACT_LIMIT } = require("../services/subscriptionService");
+const { smsStatusFor, optedOutHashesFor } = require("../services/smsEligibilityService");
+const {
+  issueInvite,
+  revokeOpenInvites,
+  resetConsentForNumberChange,
+  firstNameOf,
+  publicBaseUrl,
+} = require("../services/smsConsentService");
 
-function serializeContact(contact) {
+// smsStatus: 'accepted' | 'pending' | 'declined' | 'revoked' | 'opted_out' | 'number_changed'
+function serializeContact(contact, optedOutHashes = new Set()) {
   return {
     id: contact.id,
     createdAt: contact.createdAt,
     name: decrypt(contact.name),
     phoneNumber: decrypt(contact.phoneNumber),
     isPriority: contact.isPriority,
+    smsStatus: smsStatusFor(contact, optedOutHashes),
   };
+}
+
+async function serializeOne(contact) {
+  return serializeContact(contact, await optedOutHashesFor([contact]));
 }
 
 exports.createContact = async (req, res, next) => {
@@ -48,7 +62,7 @@ exports.createContact = async (req, res, next) => {
       },
     });
 
-    res.status(201).json(serializeContact(contact));
+    res.status(201).json(await serializeOne(contact));
   } catch (error) {
     next(error);
   }
@@ -61,7 +75,8 @@ exports.getContacts = async (req, res, next) => {
       orderBy: { createdAt: "desc" },
     });
 
-    res.json(contacts.map(serializeContact));
+    const optedOut = await optedOutHashesFor(contacts);
+    res.json(contacts.map((contact) => serializeContact(contact, optedOut)));
   } catch (error) {
     next(error);
   }
@@ -97,7 +112,22 @@ exports.updateContact = async (req, res, next) => {
     });
     if (!existing) return res.status(404).json({ error: "Contact not found" });
 
+    // A different number invalidates SMS consent (it was given for the old
+    // number) and any open invite — atomically with the number change.
+    const numberChanged = data.phoneHash !== undefined && data.phoneHash !== existing.phoneHash;
+    if (numberChanged) {
+      Object.assign(data, {
+        smsConsentStatus: "pending",
+        smsConsentPhoneHash: null,
+        smsConsentAt: null,
+        smsConsentVersion: null,
+      });
+    }
+
     const contact = await prisma.$transaction(async (tx) => {
+      if (numberChanged) {
+        await resetConsentForNumberChange(tx, id, existing.smsConsentStatus, existing.phoneHash);
+      }
       if (data.isPriority === true) {
         await tx.trustedContact.updateMany({
           where: { userId: req.user.id, id: { not: id } },
@@ -111,7 +141,39 @@ exports.updateContact = async (req, res, next) => {
       });
     });
 
-    res.json(serializeContact(contact));
+    res.json(await serializeOne(contact));
+  } catch (error) {
+    next(error);
+  }
+};
+
+// POST /api/contacts/:id/sms-invite — a fresh single-use consent link the
+// user shares from their own messaging app. Revokes any open invite.
+exports.createSmsInvite = async (req, res, next) => {
+  try {
+    const issued = await issueInvite({ userId: req.user.id, contactId: req.params.id });
+    if (!issued) return res.status(404).json({ error: "Contact not found" });
+
+    const url = `${publicBaseUrl(req)}/sms-consent/${issued.token}`;
+    const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { nameEncrypted: true } });
+    const name = firstNameOf(user);
+    const shareMessage =
+      `${name ? `It's ${name} — I've` : "I've"} added you as an emergency contact in Bes. ` +
+      `To get a text if I ever activate an emergency, open this link and tap Accept: ${url}`;
+
+    res.status(201).json({ url, shareMessage, expiresAt: issued.invite.expiresAt });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// DELETE /api/contacts/:id/sms-invite — revokes the open invite, if any.
+exports.revokeSmsInvite = async (req, res, next) => {
+  try {
+    const existing = await prisma.trustedContact.findFirst({ where: { id: req.params.id, userId: req.user.id } });
+    if (!existing) return res.status(404).json({ error: "Contact not found" });
+    const revoked = await revokeOpenInvites({ userId: req.user.id, contactId: req.params.id });
+    res.json({ revoked });
   } catch (error) {
     next(error);
   }

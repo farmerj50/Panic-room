@@ -44,8 +44,16 @@ offer an equivalent for the kind of access Bes holds, so to fully remove
 Bes from Instagram, also remove it in Facebook → Settings & privacy →
 Settings → **Business integrations**.
 
-Nothing is retained after deletion — this is a full removal, not a
-deactivation or soft delete.
+This is a full removal, not a deactivation or soft delete, with two narrow
+exceptions that exist to protect the people you added as trusted contacts:
+
+- **Text-alert consent records.** If a contact accepted Bes emergency text
+  alerts, we keep a minimal record of that consent (a keyed hash of their
+  phone number, the time, and the version of the wording) for up to 4 years,
+  so we can show they opted in. It is not linked to your account after
+  deletion and is then deleted automatically.
+- **Text opt-outs.** If a contact replied STOP, we keep a hashed record of
+  their number so they are never texted again unless they reply START.
 
 ## Requesting deletion without app access
 

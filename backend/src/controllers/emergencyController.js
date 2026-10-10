@@ -1,12 +1,8 @@
 const prisma = require("../config/db");
 const { decrypt, encrypt, safeDecrypt } = require("../services/cryptoService");
-const {
-  hasSmsProviderConfig,
-  hasVoiceProviderConfig,
-  sendSms,
-  sendVoiceCall,
-} = require("../services/smsServices");
+const { hasVoiceProviderConfig, sendVoiceCall } = require("../services/smsServices");
 const { getSignedDownloadUrl } = require("../services/storageService");
+const { dispatchEmergencyAlerts } = require("../services/smsDispatchService");
 
 function getBaseUrl(req) {
   return process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`;
@@ -177,96 +173,56 @@ exports.callEmergencyContacts = async (req, res, next) => {
 exports.notifyEmergencyContacts = async (req, res, next) => {
   try {
     const { id } = req.params;
-    let { contacts = [], message } = req.body;
-
-    if (!Array.isArray(contacts) || contacts.length === 0) {
-      const storedContacts = await prisma.trustedContact.findMany({
-        where: { userId: req.user.id },
-      });
-      contacts = storedContacts.map((contact) => ({
-        name: decrypt(contact.name),
-        phoneNumber: decrypt(contact.phoneNumber),
-      }));
-    }
-
-    if (!Array.isArray(contacts) || contacts.length === 0) {
-      return res.status(400).json({ error: "At least one contact is required" });
-    }
 
     const event = await prisma.emergencyEvent.findFirst({ where: { id, userId: req.user.id } });
     if (!event) return res.status(404).json({ error: "Emergency event not found" });
 
-    if (!hasSmsProviderConfig()) {
-      return res.json({
-        sent: false,
-        notifiedCount: 0,
-        providerConfigured: false,
-        error:
-          "SMS provider is not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER.",
-      });
+    // Recipients are chosen server-side from the user's STORED contacts and
+    // filtered to those who consented to SMS for their current number — any
+    // numbers in the request body are ignored. Calls are unaffected by this.
+    const serializedEvent = serializeEmergencyEvent(event, req);
+    const summary = await dispatchEmergencyAlerts({
+      event: { id: event.id, latitude: serializedEvent.latitude, longitude: serializedEvent.longitude },
+      userId: req.user.id,
+    });
+
+    let notificationError = null;
+    if (!summary.smsAvailable) {
+      notificationError = summary.error;
+    } else if (summary.queuedCount === 0 && summary.failedCount > 0) {
+      notificationError = describeNotificationFailure(summary.error);
+    } else if (summary.queuedCount === 0 && summary.uncertainCount > 0) {
+      notificationError = "TIMEOUT"; // outcome unknown — reconciled later, never re-sent
+    } else if (summary.failedCount > 0) {
+      notificationError = `${summary.failedCount}/${summary.eligibleCount} deliveries failed`;
     }
 
-    const serializedEvent = serializeEmergencyEvent(event, req);
-    const body =
-      message ||
-      `Bes emergency activated. Location: ${
-        serializedEvent.latitude != null && serializedEvent.longitude != null
-          ? `https://maps.google.com/?q=${serializedEvent.latitude},${serializedEvent.longitude}`
-          : "unavailable"
-      }`;
-
-    let notifiedCount = 0;
-    let failedCount = contacts.length;
-    let notificationError = null;
-
-    try {
-      const results = await Promise.allSettled(
-        contacts.map((contact) => sendSms({ to: contact.phoneNumber, body }))
-      );
-      notifiedCount = results.filter((result) => result.status === "fulfilled").length;
-      failedCount = results.length - notifiedCount;
-
-      notificationError =
-        notifiedCount === results.length
-          ? null
-          : notifiedCount === 0
-          ? describeNotificationFailure(results.find((r) => r.status === "rejected")?.reason)
-          : `${failedCount}/${results.length} deliveries failed`;
-
+    if (summary.smsAvailable && summary.eligibleCount > 0) {
       await prisma.emergencyEvent.update({
         where: { id },
         data: {
-          contactNotified: notifiedCount > 0,
+          contactNotified: summary.queuedCount > 0,
           notificationError,
           notificationAttempts: { increment: 1 },
         },
       });
-    } catch (twilioError) {
-      // Thrown outside the per-contact Promise.allSettled (e.g. a bug in the
-      // dispatch loop itself) — still record that notification failed
-      // instead of leaving contactNotified/notificationError stale.
-      await prisma.emergencyEvent
-        .update({
-          where: { id },
-          data: {
-            contactNotified: false,
-            notificationError: describeNotificationFailure(twilioError),
-            notificationAttempts: { increment: 1 },
-          },
-        })
-        .catch(() => {});
-      throw twilioError;
     }
+    if (notificationError && summary.smsAvailable) console.error("Emergency SMS issue:", notificationError);
 
-    if (notificationError) console.error("Emergency SMS failed:", notificationError);
-
-    // `error` says WHY when texts fail (e.g. a Twilio auth/number problem);
-    // without it the app fell back to "SMS provider is not configured."
+    // `queued` means Twilio accepted the request — NOT that it was delivered.
     res.json({
-      sent: notifiedCount > 0,
-      notifiedCount,
-      providerConfigured: true,
-      failedCount,
+      smsAvailable: summary.smsAvailable,
+      providerConfigured: summary.error !== "NOT_CONFIGURED",
+      contactCount: summary.contactCount,
+      eligibleCount: summary.eligibleCount,
+      ineligibleCount: summary.ineligibleCount,
+      queuedCount: summary.queuedCount,
+      failedCount: summary.failedCount,
+      uncertainCount: summary.uncertainCount,
+      skippedDuplicateCount: summary.skippedDuplicateCount,
+      // Back-compat for older app builds.
+      sent: summary.queuedCount > 0,
+      notifiedCount: summary.queuedCount,
       ...(notificationError ? { error: notificationError } : {}),
     });
   } catch (error) {

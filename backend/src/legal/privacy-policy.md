@@ -131,6 +131,19 @@ is active. You may request deletion of your account and associated data at
 any time (see Section 7). [ADD: any specific retention period you intend to
 enforce, e.g. "recordings older than X days are automatically deleted."]
 
+### Emergency text alerts to trusted contacts
+
+If a trusted contact accepts an invitation to receive Bes emergency text
+alerts, we record their consent: a keyed hash of their phone number (not
+the number itself), the time, and the version of the wording they agreed
+to. We keep these consent records for up to **4 years** so we can show that
+each recipient opted in, even after the contact or account is deleted;
+they are then deleted automatically. If a contact replies **STOP**, we keep
+a hashed record of that phone number so it is never texted again unless
+they reply **START**. We send these texts through our messaging provider
+(Twilio) only during an emergency, and we never use them for marketing.
+See [Emergency Text Alerts](/sms-alerts).
+
 ## 6. Your Rights and Choices
 
 - **Access and correction** — you can view and update your name, trusted
