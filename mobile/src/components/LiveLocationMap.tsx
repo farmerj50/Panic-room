@@ -5,6 +5,8 @@ import { Image } from 'expo-image';
 import { TILE_SIZE, project, tileUrl } from '../utils/mapTiles';
 
 interface Props {
+  // Shorter map for short screens, so the emergency actions below it fit.
+  compact?: boolean;
   latitude: number;
   longitude: number;
   zoom?: number;
@@ -13,7 +15,7 @@ interface Props {
 const GRID_SIZE = 3; // 3x3 tiles — covers up to a 512px-wide crop, see note below
 const GRID_OFFSETS = [-1, 0, 1];
 
-export default function LiveLocationMap({ latitude, longitude, zoom = 17 }: Props) {
+export default function LiveLocationMap({ latitude, longitude, zoom = 17, compact = false }: Props) {
   const { width } = useWindowDimensions();
   const [failedTiles, setFailedTiles] = useState<Record<string, boolean>>({});
 
@@ -21,7 +23,7 @@ export default function LiveLocationMap({ latitude, longitude, zoom = 17 }: Prop
   // TILE_SIZE * (GRID_SIZE - 1) = 512px wide — mapWidth is capped well below
   // that. Bump GRID_SIZE to 5 if this cap is ever raised.
   const mapWidth = Math.min(width - 32, 400);
-  const mapHeight = Math.round(mapWidth * 0.5);
+  const mapHeight = Math.round(mapWidth * (compact ? 0.32 : 0.5));
 
   const { tiles, gridOffset } = useMemo(() => {
     const { tileX, tileY } = project(latitude, longitude, zoom);

@@ -199,3 +199,47 @@ describe('EmergencyContext.runCoreActivation mic-permission guard', () => {
     expect(mockRequestMicrophonePermission).not.toHaveBeenCalled();
   });
 });
+
+describe('EmergencyContext emergency call mode', () => {
+  const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+  const KEY = 'panicroom_emergency_settings';
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    mockGetContactsFromBackend.mockResolvedValue([CONTACT]);
+    await AsyncStorage.clear();
+  });
+
+  async function loadedCallMode(stored: object | null) {
+    if (stored) await AsyncStorage.setItem(KEY, JSON.stringify(stored));
+    const { result } = await renderCtx();
+    await waitFor(async () => {
+      if (stored) expect(await AsyncStorage.getItem(KEY)).toContain('"callModeVersion":2');
+    });
+    return result.current.emergencySettings.emergencyCallMode;
+  }
+
+  test('new installs call trusted contacts automatically by default', async () => {
+    expect(await loadedCallMode(null)).toBe('contacts');
+  });
+
+  test('settings saved under the old "ask" default migrate once to automatic calls, and are persisted', async () => {
+    expect(await loadedCallMode({ emergencyCallMode: 'ask', cameraAutoRecord: false })).toBe('contacts');
+    const saved = JSON.parse(await AsyncStorage.getItem(KEY));
+    expect(saved).toEqual(expect.objectContaining({ emergencyCallMode: 'contacts', callModeVersion: 2, cameraAutoRecord: false }));
+  });
+
+  test('the removed auto-dial-911 mode also migrates to automatic contact calls', async () => {
+    expect(await loadedCallMode({ emergencyCallMode: 'emergency' })).toBe('contacts');
+  });
+
+  test('a deliberate choice made after the migration is kept — "ask" stays "ask"', async () => {
+    expect(await loadedCallMode({ emergencyCallMode: 'ask', callModeVersion: 2 })).toBe('ask');
+  });
+
+  test('pre-migration "none" and "priority" choices are kept', async () => {
+    expect(await loadedCallMode({ emergencyCallMode: 'none' })).toBe('none');
+    await AsyncStorage.clear();
+    expect(await loadedCallMode({ emergencyCallMode: 'priority' })).toBe('priority');
+  });
+});

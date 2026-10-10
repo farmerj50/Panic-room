@@ -12,9 +12,24 @@ function getBaseUrl(req) {
   return process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`;
 }
 
+// Short, user-safe reason shown on the emergency screen and stored on the
+// event. Twilio's raw error body (which includes the account SID) is only
+// ever logged server-side, never returned.
 function describeNotificationFailure(error) {
   if (error?.name === "TimeoutError" || error?.name === "AbortError") return "TIMEOUT";
-  if (error?.name === "TwilioProviderError") return `PROVIDER_ERROR: ${error.message}`;
+  if (error?.name === "TwilioProviderError") {
+    const body = String(error.message || "").match(/\{.*\}/s);
+    try {
+      const parsed = body ? JSON.parse(body[0]) : null;
+      if (parsed?.code) {
+        const reason = String(parsed.message || "").replace(/\s+for account AC[0-9a-f]{32}/i, "");
+        return `PROVIDER_ERROR: Twilio error ${parsed.code}${reason ? `: ${reason}` : ""}`;
+      }
+    } catch {
+      // Not JSON — fall through to the plain message.
+    }
+    return `PROVIDER_ERROR: ${String(error.message || "").replace(/AC[0-9a-f]{32}/g, "[account]")}`;
+  }
   return "SEND_ERROR";
 }
 
@@ -143,12 +158,16 @@ exports.callEmergencyContacts = async (req, res, next) => {
       contacts.map((contact) => sendVoiceCall({ to: contact.phoneNumber, message: body }))
     );
     const calledCount = results.filter((result) => result.status === "fulfilled").length;
+    const failedCount = results.length - calledCount;
+    const firstFailure = results.find((result) => result.status === "rejected")?.reason;
+    if (failedCount > 0) console.error("Emergency voice call failed:", firstFailure?.message || firstFailure);
 
     res.json({
       called: calledCount > 0,
       calledCount,
       providerConfigured: true,
-      failedCount: results.length - calledCount,
+      failedCount,
+      ...(calledCount === 0 && firstFailure ? { error: describeNotificationFailure(firstFailure) } : {}),
     });
   } catch (error) {
     next(error);
@@ -198,6 +217,7 @@ exports.notifyEmergencyContacts = async (req, res, next) => {
 
     let notifiedCount = 0;
     let failedCount = contacts.length;
+    let notificationError = null;
 
     try {
       const results = await Promise.allSettled(
@@ -206,7 +226,7 @@ exports.notifyEmergencyContacts = async (req, res, next) => {
       notifiedCount = results.filter((result) => result.status === "fulfilled").length;
       failedCount = results.length - notifiedCount;
 
-      const notificationError =
+      notificationError =
         notifiedCount === results.length
           ? null
           : notifiedCount === 0
@@ -238,11 +258,16 @@ exports.notifyEmergencyContacts = async (req, res, next) => {
       throw twilioError;
     }
 
+    if (notificationError) console.error("Emergency SMS failed:", notificationError);
+
+    // `error` says WHY when texts fail (e.g. a Twilio auth/number problem);
+    // without it the app fell back to "SMS provider is not configured."
     res.json({
       sent: notifiedCount > 0,
       notifiedCount,
       providerConfigured: true,
       failedCount,
+      ...(notificationError ? { error: notificationError } : {}),
     });
   } catch (error) {
     next(error);

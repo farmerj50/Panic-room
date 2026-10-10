@@ -3,6 +3,7 @@ import {
   Alert,
   Linking,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -257,7 +258,12 @@ function isCapturingPhase(phase: EmergencyPhase) {
 
 function EmergencyLiveScreen() {
   const navigation = useNavigation<any>();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
+  // Short phones (e.g. 360x720dp) couldn't fit the whole live layout: the
+  // last rows of actions (Contact, FaceTime, Share) fell off-screen with no
+  // way to scroll to them. Compact sizing makes every action fit on typical
+  // phones; the ScrollView below guarantees they're reachable on any screen.
+  const compact = height < 800;
   const {
     orderedContacts,
     priorityContact,
@@ -291,6 +297,9 @@ function EmergencyLiveScreen() {
   const [locationUnavailable, setLocationUnavailable] = useState(false);
   const [statusMessage, setStatusMessage] = useState('Emergency activation starting.');
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
+  // Voice-call outcome gets its own line: it used to share notificationStatus
+  // with the SMS result, which arrives later and overwrote it.
+  const [callStatus, setCallStatus] = useState<string | null>(null);
   const [countdownEnabled, setCountdownEnabled] = useState(false);
   const [cameraMounted, setCameraMounted] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
@@ -333,7 +342,7 @@ function EmergencyLiveScreen() {
   const cameraReadyPromiseRef = useRef<Promise<void>>(Promise.resolve());
 
   const previewWidth = Math.min(width - 32, 420);
-  const previewHeight = Math.round(previewWidth * 0.56);
+  const previewHeight = Math.round(previewWidth * (compact ? 0.42 : 0.56));
   const callTargetContact = priorityContact ?? orderedContacts[0] ?? null;
 
   useAppStateEmergencyGuard({ emergencyId, phase, elapsed });
@@ -563,6 +572,7 @@ function EmergencyLiveScreen() {
     setLocation(null);
     setLocationUnavailable(false);
     setNotificationStatus(null);
+    setCallStatus(null);
     setEmergencyId(null);
     await stopEmergencyAssets();
     navigation.navigate('Home');
@@ -584,6 +594,7 @@ function EmergencyLiveScreen() {
       setLocationUnavailable(false);
       setEmergencyId(null);
       setNotificationStatus(null);
+      setCallStatus(null);
       setStatusMessage('Emergency activation starting.');
       setCameraActive(false);
       setCameraMounted(false);
@@ -637,14 +648,15 @@ function EmergencyLiveScreen() {
       return true;
     }
 
-    const canOpen = await Linking.canOpenURL(url);
-    if (!canOpen) {
+    // No canOpenURL pre-check: on Android 11+ it reports false for tel:
+    // without a manifest <queries> entry, even though the dialer opens fine.
+    try {
+      await Linking.openURL(url);
+      return true;
+    } catch {
       setStatusMessage(unavailableMessage);
       return false;
     }
-
-    await Linking.openURL(url);
-    return true;
   }, []);
 
   const callEmergencyNumber = useCallback(async () => {
@@ -681,7 +693,7 @@ function EmergencyLiveScreen() {
       });
 
       if (response.called) {
-        setNotificationStatus(
+        setCallStatus(
           response.calledCount === contactsToCall.length
             ? `Voice call started for ${label}.`
             : `Voice calls started for ${response.calledCount}/${contactsToCall.length} contacts.`,
@@ -689,10 +701,10 @@ function EmergencyLiveScreen() {
         return true;
       }
 
-      setNotificationStatus(response.error || 'Voice call provider is not configured.');
+      setCallStatus(response.error ? `Call failed: ${response.error}` : 'Voice call provider is not configured.');
       return false;
     } catch {
-      setNotificationStatus('Could not start a server-side voice call.');
+      setCallStatus('Could not start a server-side voice call.');
       return false;
     }
   }, []);
@@ -951,7 +963,9 @@ function EmergencyLiveScreen() {
           setNotificationStatus(
             response.sent
               ? `Trusted contacts notified: ${response.notifiedCount}`
-              : response.error || 'Trusted contact SMS provider is not configured.',
+              : response.error
+                ? `Text failed: ${response.error}`
+                : 'Trusted contact SMS provider is not configured.',
           );
         },
       });
@@ -1066,160 +1080,173 @@ function EmergencyLiveScreen() {
           </View>
         </View>
       ) : (
-        <View style={styles.liveLayout} testID="emergency-live-screen" accessible accessibilityLabel="emergency-live-screen">
-          <View style={styles.topRow}>
-            <View style={styles.topBar}>
-              <View style={styles.recDot} />
-              <Text style={styles.recLabel} testID="emergency-rec-label" accessibilityLabel="emergency-rec-label">
-                {phase === 'recording' ? `LIVE ${fmt(elapsed)}` : 'ACTIVATING'}
-              </Text>
-            </View>
-            <TouchableOpacity activeOpacity={0.82} style={styles.exitBtn} onPress={returnHome} testID="emergency-exit-btn" accessibilityLabel="emergency-exit-btn">
-              <Text style={styles.exitText}>Exit</Text>
-            </TouchableOpacity>
-          </View>
-
-          {cameraAutoRecord && (
-            <View style={[styles.cameraPanel, { width: previewWidth, height: previewHeight }]} testID="emergency-camera-panel" accessible accessibilityLabel="emergency-camera-panel">
-              {isCapturingPhase(phase) && cameraMounted ? (
-                <>
-                  <CameraView
-                    key={cameraSessionKey}
-                    ref={cameraRef}
-                    active={cameraActive}
-                    style={styles.cameraPreview}
-                    facing={facing}
-                    mode="video"
-                    mute={false}
-                    testID="emergency-camera-view"
-                    accessibilityLabel="emergency-camera-view"
-                    onCameraReady={handleCameraReady}
-                    onMountError={(e) => setStatusMessage(e.message || 'Camera preview could not start.')}
-                  />
-                  <TouchableOpacity
-                    activeOpacity={0.82}
-                    style={styles.flipCameraBtn}
-                    onPress={flipCamera}
-                    disabled={cameraSwitching}
-                    testID="emergency-flip-camera-btn"
-                    accessibilityLabel="emergency-flip-camera-btn"
-                  >
-                    <Text style={styles.flipCameraIcon}>⟲</Text>
-                  </TouchableOpacity>
-                  {cameraSwitching && (
-                    <View
-                      style={styles.switchingOverlay}
-                      testID="emergency-camera-switching"
-                      accessible
-                      accessibilityLabel="emergency-camera-switching"
-                    >
-                      <Text style={styles.switchingText}>Switching camera…</Text>
-                    </View>
-                  )}
-                </>
-              ) : (
-                <View style={styles.cameraFallback} testID="emergency-camera-fallback" accessible accessibilityLabel="emergency-camera-fallback">
-                  <Text style={styles.cameraFallbackText}>
-                    {cameraPermission?.status === 'denied'
-                      ? 'Camera blocked in setup'
-                      : 'Camera not enabled during setup'}
+        <View style={styles.liveRoot}>
+          <ScrollView
+            style={styles.liveScroll}
+            contentContainerStyle={styles.liveScrollContent}
+            testID="emergency-live-scroll"
+          >
+            <View style={[styles.liveLayout, compact && styles.liveLayoutCompact]} testID="emergency-live-screen" accessible accessibilityLabel="emergency-live-screen">
+              <View style={styles.topRow}>
+                <View style={styles.topBar}>
+                  <View style={styles.recDot} />
+                  <Text style={styles.recLabel} testID="emergency-rec-label" accessibilityLabel="emergency-rec-label">
+                    {phase === 'recording' ? `LIVE ${fmt(elapsed)}` : 'ACTIVATING'}
                   </Text>
                 </View>
+                <TouchableOpacity activeOpacity={0.82} style={styles.exitBtn} onPress={returnHome} testID="emergency-exit-btn" accessibilityLabel="emergency-exit-btn">
+                  <Text style={styles.exitText}>Exit</Text>
+                </TouchableOpacity>
+              </View>
+
+              {cameraAutoRecord && (
+                <View style={[styles.cameraPanel, { width: previewWidth, height: previewHeight }]} testID="emergency-camera-panel" accessible accessibilityLabel="emergency-camera-panel">
+                  {isCapturingPhase(phase) && cameraMounted ? (
+                    <>
+                      <CameraView
+                        key={cameraSessionKey}
+                        ref={cameraRef}
+                        active={cameraActive}
+                        style={styles.cameraPreview}
+                        facing={facing}
+                        mode="video"
+                        mute={false}
+                        testID="emergency-camera-view"
+                        accessibilityLabel="emergency-camera-view"
+                        onCameraReady={handleCameraReady}
+                        onMountError={(e) => setStatusMessage(e.message || 'Camera preview could not start.')}
+                      />
+                      <TouchableOpacity
+                        activeOpacity={0.82}
+                        style={styles.flipCameraBtn}
+                        onPress={flipCamera}
+                        disabled={cameraSwitching}
+                        testID="emergency-flip-camera-btn"
+                        accessibilityLabel="emergency-flip-camera-btn"
+                      >
+                        <Text style={styles.flipCameraIcon}>⟲</Text>
+                      </TouchableOpacity>
+                      {cameraSwitching && (
+                        <View
+                          style={styles.switchingOverlay}
+                          testID="emergency-camera-switching"
+                          accessible
+                          accessibilityLabel="emergency-camera-switching"
+                        >
+                          <Text style={styles.switchingText}>Switching camera…</Text>
+                        </View>
+                      )}
+                    </>
+                  ) : (
+                    <View style={styles.cameraFallback} testID="emergency-camera-fallback" accessible accessibilityLabel="emergency-camera-fallback">
+                      <Text style={styles.cameraFallbackText}>
+                        {cameraPermission?.status === 'denied'
+                          ? 'Camera blocked in setup'
+                          : 'Camera not enabled during setup'}
+                      </Text>
+                    </View>
+                  )}
+                </View>
               )}
+
+              <View style={styles.statusPanel}>
+                <Text style={styles.statusText} testID="emergency-status-text" accessibilityLabel="emergency-status-text">{statusMessage}</Text>
+                {notificationStatus && <Text style={styles.notificationText}>{notificationStatus}</Text>}
+                {callStatus && (
+                  <Text style={styles.notificationText} testID="emergency-call-status-text" accessibilityLabel="emergency-call-status-text">
+                    {callStatus}
+                  </Text>
+                )}
+                {sharedTo.length > 0 && (
+                  <Text style={styles.sharedText} testID="emergency-shared-text" accessibilityLabel="emergency-shared-text">
+                    ✓ Shared to {sharedTo.map((p) => SOCIAL_PROVIDER_LABELS[p]).join(' and ')}
+                  </Text>
+                )}
+                {location ? (
+                  <Text style={styles.locationText} testID="emergency-gps-text" accessibilityLabel="emergency-gps-text">
+                    GPS {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
+                  </Text>
+                ) : locationUnavailable ? (
+                  <Text style={styles.locationUnavailableText} testID="emergency-gps-unavailable-text" accessibilityLabel="emergency-gps-unavailable-text">
+                    GPS unavailable
+                  </Text>
+                ) : null}
+              </View>
+
+              {location ? (
+                <LiveLocationMap latitude={location.latitude} longitude={location.longitude} compact={compact} />
+              ) : locationUnavailable ? (
+                <View style={styles.mapFallback} testID="emergency-map-fallback" accessible accessibilityLabel="emergency-map-fallback">
+                  <Text style={styles.mapFallbackText}>
+                    Location unavailable — your emergency contacts were still alerted.
+                  </Text>
+                  <TouchableOpacity
+                    activeOpacity={0.82}
+                    style={styles.mapFallbackBtn}
+                    onPress={() => {
+                      Alert.alert(
+                        'Location Access Required',
+                        'Bes needs location access to share your position. Open Settings to enable it.',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+                        ],
+                      );
+                    }}
+                    testID="emergency-map-fallback-settings-btn"
+                    accessibilityLabel="emergency-map-fallback-settings-btn"
+                  >
+                    <Text style={styles.mapFallbackBtnText}>Open Settings</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+
+              <View style={styles.controls}>
+                <TouchableOpacity activeOpacity={0.82} style={[styles.actionBtn, compact && styles.actionBtnCompact]} onPress={confirmCallEmergencyNumber} testID="emergency-call911-btn" accessibilityLabel="emergency-call911-btn">
+                  <Text style={styles.actionIcon}>!</Text>
+                  <Text style={styles.actionLabel}>Call {EMERGENCY_NUMBER}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity activeOpacity={0.82} style={[styles.actionBtn, styles.stopBtn, compact && styles.actionBtnCompact]} onPress={returnHome} testID="emergency-stop-btn" accessibilityLabel="emergency-stop-btn">
+                  <View style={styles.stopSquare} />
+                  <Text style={styles.actionLabel}>Stop</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity activeOpacity={0.82} style={[styles.actionBtn, styles.contactBtn, compact && styles.actionBtnCompact]} onPress={callPriorityContact}>
+                  <Text style={styles.actionIcon}>C</Text>
+                  <Text style={styles.actionLabel}>{callTargetContact ? callTargetContact.name : 'Contact'}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity activeOpacity={0.82} style={[styles.actionBtn, styles.allContactsBtn, compact && styles.actionBtnCompact]} onPress={callAllContacts}>
+                  <Text style={styles.actionIcon}>A</Text>
+                  <Text style={styles.actionLabel}>All Contacts</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity activeOpacity={0.82} style={[styles.actionBtn, styles.videoBtn, compact && styles.actionBtnCompact]} onPress={facetimePriorityContact}>
+                  <Text style={styles.actionIcon}>F</Text>
+                  <Text style={styles.actionLabel}>FaceTime</Text>
+                </TouchableOpacity>
+
+                {/* Only exists once a real emergencyId exists — i.e. only after
+                    activation has happened. This is what makes the "share is an
+                    independent, post-activation action" rule structural rather
+                    than just a convention: the button literally cannot be
+                    tapped before there's an emergency to share. */}
+                {emergencyId ? (
+                  <TouchableOpacity
+                    activeOpacity={0.82}
+                    style={[styles.actionBtn, styles.shareBtn, compact && styles.actionBtnCompact]}
+                    onPress={shareToSocial}
+                    testID="emergency-share-btn"
+                    accessibilityLabel="emergency-share-btn"
+                  >
+                    <Text style={styles.actionIcon}>S</Text>
+                    <Text style={styles.actionLabel}>Share</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
             </View>
-          )}
-
-          <View style={styles.statusPanel}>
-            <Text style={styles.statusText} testID="emergency-status-text" accessibilityLabel="emergency-status-text">{statusMessage}</Text>
-            {notificationStatus && <Text style={styles.notificationText}>{notificationStatus}</Text>}
-            {sharedTo.length > 0 && (
-              <Text style={styles.sharedText} testID="emergency-shared-text" accessibilityLabel="emergency-shared-text">
-                ✓ Shared to {sharedTo.map((p) => SOCIAL_PROVIDER_LABELS[p]).join(' and ')}
-              </Text>
-            )}
-            {location ? (
-              <Text style={styles.locationText} testID="emergency-gps-text" accessibilityLabel="emergency-gps-text">
-                GPS {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
-              </Text>
-            ) : locationUnavailable ? (
-              <Text style={styles.locationUnavailableText} testID="emergency-gps-unavailable-text" accessibilityLabel="emergency-gps-unavailable-text">
-                GPS unavailable
-              </Text>
-            ) : null}
-          </View>
-
-          {location ? (
-            <LiveLocationMap latitude={location.latitude} longitude={location.longitude} />
-          ) : locationUnavailable ? (
-            <View style={styles.mapFallback} testID="emergency-map-fallback" accessible accessibilityLabel="emergency-map-fallback">
-              <Text style={styles.mapFallbackText}>
-                Location unavailable — your emergency contacts were still alerted.
-              </Text>
-              <TouchableOpacity
-                activeOpacity={0.82}
-                style={styles.mapFallbackBtn}
-                onPress={() => {
-                  Alert.alert(
-                    'Location Access Required',
-                    'Bes needs location access to share your position. Open Settings to enable it.',
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Open Settings', onPress: () => Linking.openSettings() },
-                    ],
-                  );
-                }}
-                testID="emergency-map-fallback-settings-btn"
-                accessibilityLabel="emergency-map-fallback-settings-btn"
-              >
-                <Text style={styles.mapFallbackBtnText}>Open Settings</Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
-
-          <View style={styles.controls}>
-            <TouchableOpacity activeOpacity={0.82} style={styles.actionBtn} onPress={confirmCallEmergencyNumber} testID="emergency-call911-btn" accessibilityLabel="emergency-call911-btn">
-              <Text style={styles.actionIcon}>!</Text>
-              <Text style={styles.actionLabel}>Call {EMERGENCY_NUMBER}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity activeOpacity={0.82} style={[styles.actionBtn, styles.stopBtn]} onPress={returnHome} testID="emergency-stop-btn" accessibilityLabel="emergency-stop-btn">
-              <View style={styles.stopSquare} />
-              <Text style={styles.actionLabel}>Stop</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity activeOpacity={0.82} style={[styles.actionBtn, styles.contactBtn]} onPress={callPriorityContact}>
-              <Text style={styles.actionIcon}>C</Text>
-              <Text style={styles.actionLabel}>{callTargetContact ? callTargetContact.name : 'Contact'}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity activeOpacity={0.82} style={[styles.actionBtn, styles.allContactsBtn]} onPress={callAllContacts}>
-              <Text style={styles.actionIcon}>A</Text>
-              <Text style={styles.actionLabel}>All Contacts</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity activeOpacity={0.82} style={[styles.actionBtn, styles.videoBtn]} onPress={facetimePriorityContact}>
-              <Text style={styles.actionIcon}>F</Text>
-              <Text style={styles.actionLabel}>FaceTime</Text>
-            </TouchableOpacity>
-
-            {/* Only exists once a real emergencyId exists — i.e. only after
-                activation has happened. This is what makes the "share is an
-                independent, post-activation action" rule structural rather
-                than just a convention: the button literally cannot be
-                tapped before there's an emergency to share. */}
-            {emergencyId ? (
-              <TouchableOpacity
-                activeOpacity={0.82}
-                style={[styles.actionBtn, styles.shareBtn]}
-                onPress={shareToSocial}
-                testID="emergency-share-btn"
-                accessibilityLabel="emergency-share-btn"
-              >
-                <Text style={styles.actionIcon}>S</Text>
-                <Text style={styles.actionLabel}>Share</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
+          </ScrollView>
 
           {/* Keyed per emergency so the one-shot auto prompt resets with
               each new activation. Same emergencyId gate as the Share button. */}
@@ -1264,7 +1291,11 @@ const styles = StyleSheet.create({
   countdownText: { color: '#d8d3e8', fontSize: 14, lineHeight: 21, marginBottom: 22, textAlign: 'center' },
   cancelBtn: { alignItems: 'center', backgroundColor: '#282c43', borderRadius: 24, paddingHorizontal: 34, paddingVertical: 13 },
   cancelText: { color: '#fff', fontSize: 14, fontWeight: '900' },
+  liveRoot: { flex: 1 },
+  liveScroll: { flex: 1 },
+  liveScrollContent: { flexGrow: 1 },
   liveLayout: { alignItems: 'center', flex: 1, gap: 16, padding: 16 },
+  liveLayoutCompact: { gap: 10, paddingVertical: 10 },
   topRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', maxWidth: 720, width: '100%', zIndex: 5 },
   topBar: { alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.66)', borderRadius: 20, flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingVertical: 8 },
   recDot: { backgroundColor: '#ef445b', borderRadius: 5, height: 10, width: 10 },
@@ -1322,6 +1353,7 @@ const styles = StyleSheet.create({
   mapFallbackBtnText: { color: '#fff', fontSize: 13, fontWeight: '800' },
   controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center', maxWidth: 620, width: '100%', zIndex: 5 },
   actionBtn: { alignItems: 'center', backgroundColor: 'rgba(239,68,91,0.18)', borderColor: '#ef445b', borderRadius: 14, borderWidth: 1.5, gap: 4, justifyContent: 'center', minHeight: 58, minWidth: 132, paddingHorizontal: 16, paddingVertical: 10 },
+  actionBtnCompact: { minHeight: 50, paddingVertical: 7 },
   stopBtn: { backgroundColor: 'rgba(100,100,100,0.28)', borderColor: '#777' },
   contactBtn: { backgroundColor: 'rgba(245,158,11,0.18)', borderColor: '#f59e0b' },
   allContactsBtn: { backgroundColor: 'rgba(78,225,213,0.14)', borderColor: '#4ee1d5' },

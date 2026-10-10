@@ -26,7 +26,9 @@ export const API_URL =
 export const EMERGENCY_NUMBER = '911';
 export const COUNTDOWN_SECONDS = 5;
 
-// Set to true only when ready for production testing.
-// Keeps the 911 dialer disabled during development so accidental activations
-// don't place real emergency calls.
-export const ENABLE_EMERGENCY_DIALER = false;
+// Real dialing (Call 911, Contact, FaceTime) is on in every release build
+// and off in development builds (__DEV__), so a dev-time activation can never
+// open a real emergency call. This used to be a hardcoded `false` that
+// shipped to production, where those buttons only showed a "[TEST MODE]"
+// message. Calling 911 still always needs a manual tap plus confirmation.
+export const ENABLE_EMERGENCY_DIALER = !__DEV__;

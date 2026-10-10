@@ -40,14 +40,21 @@ export type EmergencySettings = {
    * dialog (see confirmCallEmergencyNumber in EmergencyScreen.tsx).
    */
   emergencyCallMode: 'priority' | 'contacts' | 'ask' | 'none';
+  // Bumped when a call-mode default changes, so a migration runs once and a
+  // later deliberate choice is never overwritten.
+  callModeVersion?: number;
 };
+
+// v2: trusted contacts are called automatically by default ('contacts').
+const CALL_MODE_VERSION = 2;
 
 const DEFAULT_SETTINGS: EmergencySettings = {
   lockScreenEnabled: false,
   backgroundLocationEnabled: false,
   cameraAutoRecord: true,
   audioAutoRecord: true,
-  emergencyCallMode: 'ask',
+  emergencyCallMode: 'contacts',
+  callModeVersion: CALL_MODE_VERSION,
 };
 
 const SETTINGS_KEY = 'panicroom_emergency_settings';
@@ -144,14 +151,22 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
       .then((raw) => {
         if (raw) {
           const parsed = JSON.parse(raw);
-          setEmergencySettings({
+          let emergencyCallMode = parsed.emergencyCallMode ?? DEFAULT_SETTINGS.emergencyCallMode;
+          const needsMigration = parsed.callModeVersion !== CALL_MODE_VERSION;
+          if (needsMigration) {
+            // One-time: settings saved under the old "ask" default (and the
+            // removed auto-dial-911 'emergency' mode) move to automatic
+            // trusted-contact calls. 'none'/'priority'/'contacts' are kept.
+            if (emergencyCallMode === 'ask' || emergencyCallMode === 'emergency') emergencyCallMode = 'contacts';
+          }
+          const next: EmergencySettings = {
             ...DEFAULT_SETTINGS,
             ...parsed,
-            // Migrate accounts that still have the removed auto-dial-911
-            // mode persisted from before this device's settings sync.
-            emergencyCallMode:
-              parsed.emergencyCallMode === 'emergency' ? 'ask' : parsed.emergencyCallMode ?? 'ask',
-          });
+            emergencyCallMode,
+            callModeVersion: CALL_MODE_VERSION,
+          };
+          setEmergencySettings(next);
+          if (needsMigration) AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(next)).catch(() => {});
         }
       })
       .catch(() => {});
