@@ -17,6 +17,7 @@ const analyticsRoutes = require("./routes/analyticsRoutes");
 const legalRoutes = require("./routes/legalRoutes");
 const { consentRouter, programRouter } = require("./routes/consentRoutes");
 const twilioWebhookRoutes = require("./routes/twilioWebhookRoutes");
+const liveViewRoutes = require("./routes/liveViewRoutes");
 const errorMiddleware = require("./middleware/errorMiddleware");
 
 validateEnv();
@@ -44,6 +45,7 @@ app.use("/legal", legalRoutes);
 app.use("/sms-consent", consentRouter);
 app.use("/sms-alerts", programRouter);
 app.use("/api/twilio", twilioWebhookRoutes);
+app.use("/live", liveViewRoutes);
 
 app.use(
   cors({

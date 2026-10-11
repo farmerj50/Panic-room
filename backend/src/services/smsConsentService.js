@@ -14,10 +14,12 @@ const SMS_CONSENT_RETENTION_YEARS = 4;
 
 // Versioned consent wording. Shown verbatim on the consent page and on the
 // public /sms-alerts program page; its hash is stored with every event.
-const CONSENT_VERSION = "2026-10-10.v1";
+// v2 (2026-10-10): alerts may include a private Live View link. Consents
+// given under v1 stay valid — same program, same emergency-only frequency.
+const CONSENT_VERSION = "2026-10-10.v2";
 const CONSENT_TEXT =
   "By tapping Accept, you agree to receive emergency text alerts from Bes about {name} at this phone number. " +
-  "Texts are sent only when {name} activates an emergency in the Bes app. Message frequency varies. " +
+  "Texts are sent only when {name} activates an emergency in the Bes app and may include a map link and a private link to view the emergency's live video and location. Message frequency varies. " +
   "Msg & data rates may apply. Reply STOP to opt out, HELP for help. Consent is not a condition of any purchase.";
 const CONSENT_TEXT_HASH = crypto.createHash("sha256").update(`${CONSENT_VERSION}\n${CONSENT_TEXT}`).digest("hex");
 

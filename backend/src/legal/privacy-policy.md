@@ -57,9 +57,14 @@ an emergency.
   is triggered. This is used only to provide that safety feature, is never
   used for advertising, and can be turned off at any time in Emergency
   Settings.
-- **Audio and video recordings** captured during an emergency, uploaded to
-  our storage and retrievable only via short-lived, single-purpose links
-  generated for your account.
+- **Location history during an emergency** — while an emergency is active,
+  Bes uploads your GPS location about every 15 seconds, stored encrypted. If
+  you lose signal, the app keeps those points on your phone (encrypted) and
+  uploads them when the connection returns.
+- **Audio and video recordings** captured during an emergency, uploaded in
+  short clips while it is happening and retrievable only via short-lived,
+  single-purpose links. Clips that can't be uploaded yet stay on your phone
+  until they are, and are never deleted automatically before upload.
 - **Notification status** — whether we attempted to alert your trusted
   contacts, and whether that attempt succeeded, partially succeeded, or
   failed.
@@ -143,6 +148,18 @@ a hashed record of that phone number so it is never texted again unless
 they reply **START**. We send these texts through our messaging provider
 (Twilio) only during an emergency, and we never use them for marketing.
 See [Emergency Text Alerts](/sms-alerts).
+
+### Live view links for trusted contacts
+
+When Live View is available, each of your trusted contacts gets a private
+link for each emergency. Anyone who has a contact's link can open it in a
+web browser, without the Bes app, and see your first name, the video clips
+and audio recorded during that emergency, and your location history from
+it. A link shows only that one emergency. It stops working 24 hours after
+the emergency ends (and never more than 72 hours after it started), when you
+turn it off in the app, or when that contact's phone number changes. We
+record when a link was last opened and how many times, and show this only to
+you. Expired link records are deleted after 30 days.
 
 ## 6. Your Rights and Choices
 

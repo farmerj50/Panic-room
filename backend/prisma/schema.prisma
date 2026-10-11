@@ -20,7 +20,10 @@ model EmergencyEvent {
   longitude            Float?
   latitudeEncrypted    String?
   longitudeEncrypted   String?
-  status               String                  @default("ACTIVE")
+  status               String                  @default("ACTIVE") // 'ACTIVE' | 'RESOLVED'
+  // Set the first time the emergency is RESOLVED. Live View links expire
+  // 24h after this (and never later than 72h after activation).
+  endedAt              DateTime?
   audioUrl             String?
   // Legacy single-video field. No longer written to by the video-segment
   // flow (camera-flip support splits video into ordered segments below) —
@@ -30,6 +33,11 @@ model EmergencyEvent {
   videoSegments        EmergencyVideoSegment[]
   smsAlertStates       SmsAlertState[]
   smsMessages          SmsMessage[]
+  locations            EmergencyLocation[]
+  liveViewLinks        LiveViewLink[]
+  // GPS points the phone thinned out of its bounded offline queue before
+  // they could be uploaded (reported so gaps in the history are explained).
+  locationsThinned     Int                     @default(0)
   contactNotified      Boolean                 @default(false)
   notificationError    String?
   notificationAttempts Int                     @default(0)
@@ -52,6 +60,51 @@ model EmergencyVideoSegment {
 
   @@unique([emergencyId, sequence])
   @@index([emergencyId])
+}
+
+// GPS history recorded during an emergency (live points and points backfilled
+// from the phone's offline queue). Coordinates are encrypted like the
+// emergency's starting location. recordedAt is the phone's fix time; the
+// unique index makes offline-queue retries idempotent.
+model EmergencyLocation {
+  id                 String         @id @default(uuid())
+  emergencyId        String
+  emergency          EmergencyEvent @relation(fields: [emergencyId], references: [id], onDelete: Cascade)
+  latitudeEncrypted  String
+  longitudeEncrypted String
+  accuracy           Float?
+  recordedAt         DateTime
+  createdAt          DateTime       @default(now())
+
+  @@unique([emergencyId, recordedAt])
+}
+
+// Private browser link that lets one trusted contact watch one emergency's
+// clips and location (see services/liveViewService.js). tokenHash is for
+// lookup; tokenEncrypted lets the owner re-share the SAME link without
+// disconnecting anyone. generation is bumped on rotate/revoke and is part of
+// every signed media URL, so old media URLs die immediately.
+model LiveViewLink {
+  id             String         @id @default(uuid())
+  emergencyId    String
+  emergency      EmergencyEvent @relation(fields: [emergencyId], references: [id], onDelete: Cascade)
+  contactId      String
+  contact        TrustedContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash      String         @unique
+  tokenEncrypted String
+  phoneHash      String?
+  generation     Int            @default(0)
+  hardExpiresAt  DateTime
+  revokedAt      DateTime?
+  rotatedAt      DateTime?
+  lastViewedAt   DateTime?
+  viewCount      Int            @default(0)
+  createdAt      DateTime       @default(now())
+
+  @@unique([emergencyId, contactId])
+  @@index([userId])
 }
 
 model TrustedContact {
@@ -80,6 +133,7 @@ model TrustedContact {
   smsConsentEvents SmsConsentEvent[]
   smsAlertStates   SmsAlertState[]
   smsMessages      SmsMessage[]
+  liveViewLinks    LiveViewLink[]
 
   @@index([userId])
   @@index([phoneHash])
@@ -184,6 +238,7 @@ model User {
   passwordHash        String
   contacts            TrustedContact[]
   emergencies         EmergencyEvent[]
+  liveViewLinks       LiveViewLink[]
   recordings          Recording[]
   privateData         PrivateData[]
   refreshTokens       RefreshToken[]

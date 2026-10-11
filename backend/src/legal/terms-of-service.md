@@ -101,6 +101,15 @@ depends on carriers and our messaging provider and is never guaranteed, so
 never rely on it as your only way to get help. See
 [Emergency Text Alerts](/sms-alerts).
 
+### Live View Links
+When available, Bes creates a private browser link for each trusted contact
+that shows the video, audio and location recorded during your emergency.
+You choose whether to send it, and you can turn it off at any time. Anyone
+who has the link can see that emergency until it expires, so send it only
+to people you trust. Live view shows recorded clips that may be a short
+time behind real events, depends on your connection, and is never a
+replacement for calling emergency services.
+
 ## 5. Acceptable Use
 
 You agree not to:

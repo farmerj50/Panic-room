@@ -20,9 +20,9 @@ We record your choice, the date and time, and the version of the wording you agr
 
 ## What messages look like
 
-> Bes Safety Alert: [Name] activated an emergency. Location: [map link]. Reply STOP to opt out, HELP for help.
+> Bes Safety Alert: [Name] activated an emergency. Location: [map link] Live view: [private link] Reply STOP to opt out, HELP for help.
 
-The location link is included only when a location is available.
+The location link is included only when a location is available. The live view link is a private page, made for each contact, that shows the video clips and location recorded during that emergency. It works without the Bes app, stops working 24 hours after the emergency ends, and the Bes user can turn it off at any time.
 
 ## Message frequency
 

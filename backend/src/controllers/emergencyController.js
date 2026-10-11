@@ -3,6 +3,10 @@ const { decrypt, encrypt, safeDecrypt } = require("../services/cryptoService");
 const { hasVoiceProviderConfig, sendVoiceCall } = require("../services/smsServices");
 const { getSignedDownloadUrl } = require("../services/storageService");
 const { dispatchEmergencyAlerts } = require("../services/smsDispatchService");
+const { firstNameOf } = require("../services/smsConsentService");
+const liveView = require("../services/liveViewService");
+
+const VALID_STATUSES = new Set(["ACTIVE", "RESOLVED"]);
 
 function getBaseUrl(req) {
   return process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`;
@@ -65,6 +69,7 @@ function serializeEmergencyEvent(event, req) {
     latitude: encryptedNumberToFloat(event.latitudeEncrypted) ?? event.latitude ?? undefined,
     longitude: encryptedNumberToFloat(event.longitudeEncrypted) ?? event.longitude ?? undefined,
     status: event.status,
+    endedAt: event.endedAt ?? undefined,
     audioUrl: keyToSignedUrl(event.audioUrl, req),
     // Legacy single-video field — no longer written to (see schema comment),
     // kept so pre-video-segments emergencies still show their video.
@@ -81,6 +86,9 @@ exports.createEmergencyEvent = async (req, res, next) => {
     const { latitude, longitude, status, audioUrl, videoUrl, contactNotified } = req.body;
     const parsedLatitude = toNullableNumber(latitude);
     const parsedLongitude = toNullableNumber(longitude);
+    if (status !== undefined && !VALID_STATUSES.has(status)) {
+      return res.status(400).json({ error: "status must be 'ACTIVE' or 'RESOLVED'" });
+    }
 
     const event = await prisma.emergencyEvent.create({
       data: {
@@ -90,12 +98,20 @@ exports.createEmergencyEvent = async (req, res, next) => {
         latitudeEncrypted: parsedLatitude === null ? null : encrypt(parsedLatitude),
         longitudeEncrypted: parsedLongitude === null ? null : encrypt(parsedLongitude),
         status: status || "ACTIVE",
+        endedAt: status === "RESOLVED" ? new Date() : null,
         audioUrl: audioUrl ? encrypt(audioUrl) : null,
         videoUrl: videoUrl ? encrypt(videoUrl) : null,
         contactNotified: contactNotified || false,
       },
       include: { videoSegments: { orderBy: { sequence: "asc" } } },
     });
+
+    // Live View links are best-effort: activation never fails because of them.
+    if (liveView.isLiveViewEnabled()) {
+      await liveView
+        .ensureLinks(event)
+        .catch((error) => console.error("Live View link issue failed:", error?.message || error));
+    }
 
     res.status(201).json(serializeEmergencyEvent(event, req));
   } catch (error) {
@@ -114,7 +130,17 @@ exports.updateEmergencyEvent = async (req, res, next) => {
     const data = {};
     if (audioUrl !== undefined) data.audioUrl = audioUrl ? encrypt(audioUrl) : null;
     if (videoUrl !== undefined) data.videoUrl = videoUrl ? encrypt(videoUrl) : null;
-    if (status !== undefined) data.status = status;
+    if (status !== undefined) {
+      if (!VALID_STATUSES.has(status)) {
+        return res.status(400).json({ error: "status must be 'ACTIVE' or 'RESOLVED'" });
+      }
+      if (status === "ACTIVE" && event.status === "RESOLVED") {
+        return res.status(409).json({ error: "A resolved emergency can't be reopened" });
+      }
+      data.status = status;
+      // First resolution only — Live View expiry counts from here.
+      if (status === "RESOLVED" && !event.endedAt) data.endedAt = new Date();
+    }
 
     const updated = await prisma.emergencyEvent.update({
       where: { id },
@@ -261,6 +287,11 @@ exports.addVideoSegment = async (req, res, next) => {
     if (typeof fileUrl !== "string" || !fileUrl) {
       return res.status(400).json({ error: "fileUrl is required" });
     }
+    // Segments are served to trusted contacts — only the owner's own
+    // uploads may be attached.
+    if (!fileUrl.startsWith(`${req.user.id}/`) || fileUrl.includes("..") || fileUrl.includes("\\")) {
+      return res.status(400).json({ error: "fileUrl must be one of your uploads" });
+    }
     if (!VALID_FACINGS.has(facing)) {
       return res.status(400).json({ error: "facing must be 'front' or 'back'" });
     }
@@ -343,6 +374,166 @@ exports.addVideoSegment = async (req, res, next) => {
       } catch {}
       return res.status(409).json({ error: "A segment already exists for this sequence" });
     }
+    next(error);
+  }
+};
+
+// ── GPS history ───────────────────────────────────────────────────────────
+// POST /api/emergency/:id/locations
+//   live:  { latitude, longitude, accuracy?, recordedAt }
+//   batch: { points: [{ latitude, longitude, accuracy?, recordedAt }], thinned? }
+// Batches come from the phone's offline queue and may arrive after the
+// emergency ended; they're accepted only inside its own time window.
+const MAX_LOCATION_BATCH = 200;
+const LIVE_POINT_MIN_GAP_MS = 10 * 1000;
+const BACKFILL_GRACE_MS = 5 * 60 * 1000;
+const CLOCK_SKEW_MS = 5 * 60 * 1000;
+
+function parsePoint(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const latitude = toNullableNumber(raw.latitude);
+  const longitude = toNullableNumber(raw.longitude);
+  const recordedAt = new Date(raw.recordedAt);
+  if (latitude === null || latitude < -90 || latitude > 90) return null;
+  if (longitude === null || longitude < -180 || longitude > 180) return null;
+  if (raw.recordedAt === undefined || Number.isNaN(recordedAt.getTime())) return null;
+  const accuracy = toNullableNumber(raw.accuracy);
+  return { latitude, longitude, recordedAt, accuracy: accuracy !== null && accuracy >= 0 ? accuracy : null };
+}
+
+exports.addLocations = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const isBatch = Array.isArray(req.body?.points);
+    const rawPoints = isBatch ? req.body.points : [req.body];
+    if (rawPoints.length === 0) return res.status(400).json({ error: "points must not be empty" });
+    if (rawPoints.length > MAX_LOCATION_BATCH) {
+      return res.status(400).json({ error: `At most ${MAX_LOCATION_BATCH} points per request` });
+    }
+    const points = rawPoints.map(parsePoint);
+    if (points.some((point) => !point)) {
+      return res.status(400).json({ error: "Each point needs a valid latitude, longitude and recordedAt" });
+    }
+
+    const emergency = await prisma.emergencyEvent.findFirst({ where: { id, userId: req.user.id } });
+    if (!emergency) return res.status(404).json({ error: "Emergency event not found" });
+
+    const windowStart = new Date(emergency.createdAt).getTime() - CLOCK_SKEW_MS;
+    let windowEnd = Date.now() + CLOCK_SKEW_MS;
+    if (emergency.status === "RESOLVED") {
+      if (!isBatch || !emergency.endedAt) return res.status(409).json({ error: "Emergency has ended" });
+      windowEnd = new Date(emergency.endedAt).getTime() + BACKFILL_GRACE_MS;
+    }
+    const inWindow = points.filter((point) => {
+      const t = point.recordedAt.getTime();
+      return t >= windowStart && t <= windowEnd;
+    });
+    if (inWindow.length === 0) {
+      return res.status(409).json({ error: "Points are outside this emergency's time window" });
+    }
+
+    // Live single points: at most one per 10s. Extra fixes are acknowledged
+    // (202) but not stored, so the phone doesn't keep retrying them.
+    if (!isBatch) {
+      const latest = await prisma.emergencyLocation.findFirst({
+        where: { emergencyId: id },
+        orderBy: { recordedAt: "desc" },
+      });
+      const gap = latest ? inWindow[0].recordedAt.getTime() - new Date(latest.recordedAt).getTime() : Infinity;
+      if (gap >= 0 && gap < LIVE_POINT_MIN_GAP_MS) {
+        return res.status(202).json({ accepted: 0, ignored: 1 });
+      }
+    }
+
+    const created = await prisma.emergencyLocation.createMany({
+      data: inWindow.map((point) => ({
+        emergencyId: id,
+        latitudeEncrypted: encrypt(point.latitude),
+        longitudeEncrypted: encrypt(point.longitude),
+        accuracy: point.accuracy,
+        recordedAt: point.recordedAt,
+      })),
+      skipDuplicates: true, // offline-queue retries are idempotent on recordedAt
+    });
+    const thinned = Number(req.body?.thinned);
+    if (isBatch && Number.isInteger(thinned) && thinned > 0 && thinned < 1000000) {
+      await prisma.emergencyEvent.update({ where: { id }, data: { locationsThinned: { increment: thinned } } });
+    }
+
+    res.status(201).json({ accepted: created.count, ignored: points.length - created.count });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ── Live View (owner side) ────────────────────────────────────────────────
+async function shareMessageFor(req, url) {
+  const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { nameEncrypted: true } });
+  const name = firstNameOf(user);
+  return `${name ? `${name} activated` : "I activated"} a Bes emergency. Watch live video and location: ${url}`;
+}
+
+async function sendLinkResult(req, res, result) {
+  if (result.error === "not_found") return res.status(404).json({ error: "Emergency or contact not found" });
+  if (result.error === "expired") return res.status(410).json({ error: "Live View for this emergency has expired" });
+  res.json({ url: result.url, expiresAt: result.expiresAt, shareMessage: await shareMessageFor(req, result.url) });
+}
+
+exports.getLiveViewStatus = async (req, res, next) => {
+  try {
+    if (!liveView.isLiveViewEnabled()) return res.json({ enabled: false, links: [] });
+    const emergency = await prisma.emergencyEvent.findFirst({ where: { id: req.params.id, userId: req.user.id } });
+    if (!emergency) return res.status(404).json({ error: "Emergency event not found" });
+    res.json({ enabled: true, links: await liveView.ownerStatus({ userId: req.user.id, emergencyId: emergency.id }) });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Returns the SAME link every time — sharing again never disconnects anyone.
+exports.shareLiveView = async (req, res, next) => {
+  try {
+    if (!liveView.isLiveViewEnabled()) return res.status(404).json({ enabled: false, error: "Live View is not enabled" });
+    const result = await liveView.getShareLink({
+      userId: req.user.id,
+      emergencyId: req.params.id,
+      contactId: req.params.contactId,
+      baseUrl: getBaseUrl(req),
+    });
+    await sendLinkResult(req, res, result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Explicit reset: the previous link and its media URLs stop working.
+exports.rotateLiveView = async (req, res, next) => {
+  try {
+    if (!liveView.isLiveViewEnabled()) return res.status(404).json({ enabled: false, error: "Live View is not enabled" });
+    const result = await liveView.rotateLink({
+      userId: req.user.id,
+      emergencyId: req.params.id,
+      contactId: req.params.contactId,
+      baseUrl: getBaseUrl(req),
+    });
+    await sendLinkResult(req, res, result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Works even with the feature switched off, so access can always be withdrawn.
+exports.revokeLiveView = async (req, res, next) => {
+  try {
+    const emergency = await prisma.emergencyEvent.findFirst({ where: { id: req.params.id, userId: req.user.id } });
+    if (!emergency) return res.status(404).json({ error: "Emergency event not found" });
+    const revoked = await liveView.revokeLinks({
+      userId: req.user.id,
+      emergencyId: emergency.id,
+      contactId: req.params.contactId,
+    });
+    res.json({ revoked });
+  } catch (error) {
     next(error);
   }
 };

@@ -10,6 +10,7 @@ const {
   firstNameOf,
   publicBaseUrl,
 } = require("../services/smsConsentService");
+const { revokeForContact } = require("../services/liveViewService");
 
 // smsStatus: 'accepted' | 'pending' | 'declined' | 'revoked' | 'opted_out' | 'number_changed'
 function serializeContact(contact, optedOutHashes = new Set()) {
@@ -127,6 +128,8 @@ exports.updateContact = async (req, res, next) => {
     const contact = await prisma.$transaction(async (tx) => {
       if (numberChanged) {
         await resetConsentForNumberChange(tx, id, existing.smsConsentStatus, existing.phoneHash);
+        // Live View links were shared to the old number — end them too.
+        await revokeForContact(tx, id);
       }
       if (data.isPriority === true) {
         await tx.trustedContact.updateMany({

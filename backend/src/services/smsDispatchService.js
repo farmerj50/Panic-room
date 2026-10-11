@@ -6,6 +6,7 @@ const { decrypt, hashLookup } = require("./cryptoService");
 const smsServices = require("./smsServices");
 const { isSmsEnabled, evaluateContacts } = require("./smsEligibilityService");
 const { firstNameOf, phoneHashFor } = require("./smsConsentService");
+const liveView = require("./liveViewService");
 
 const ALERT_WINDOW_MS = 2 * 60 * 1000;
 const STALE_RESERVATION_MS = 10 * 60 * 1000;
@@ -19,11 +20,24 @@ function bodyHashOf(body) {
   return hashLookup(`sms-body:${body}`);
 }
 
-function buildAlertBody({ senderName, latitude, longitude }) {
+function buildAlertBody({ senderName, latitude, longitude, liveViewUrl }) {
   const who = senderName || "Your trusted contact";
   const location =
     latitude != null && longitude != null ? ` Location: https://maps.google.com/?q=${latitude},${longitude}` : "";
-  return `Bes Safety Alert: ${who} activated an emergency.${location} Reply STOP to opt out, HELP for help.`;
+  const live = liveViewUrl ? ` Live view: ${liveViewUrl}` : "";
+  return `Bes Safety Alert: ${who} activated an emergency.${location}${live} Reply STOP to opt out, HELP for help.`;
+}
+
+// Each recipient's own Live View link (never rotated or re-issued here), or
+// null. Only when Live View is on and links can be absolute URLs.
+async function liveViewUrlFor(emergency, contact) {
+  if (!emergency || !liveView.isLiveViewEnabled() || !process.env.PUBLIC_BASE_URL) return null;
+  try {
+    return await liveView.existingLinkUrl({ emergency, contact, baseUrl: process.env.PUBLIC_BASE_URL });
+  } catch (error) {
+    console.warn("Live View link lookup failed:", error?.message || error);
+    return null;
+  }
 }
 
 function statusCallbackUrl() {
@@ -138,12 +152,10 @@ async function dispatchEmergencyAlerts({ event, userId }) {
   await sweepStaleReservations().catch((error) => console.warn("SMS sweep failed:", error?.message || error));
 
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { nameEncrypted: true } });
-  const body = buildAlertBody({
-    senderName: firstNameOf(user),
-    latitude: event.latitude ?? null,
-    longitude: event.longitude ?? null,
-  });
-  const bodyHash = bodyHashOf(body);
+  const senderName = firstNameOf(user);
+  const emergency = liveView.isLiveViewEnabled()
+    ? await prisma.emergencyEvent.findUnique({ where: { id: event.id } })
+    : null;
 
   for (const { contact } of eligible) {
     if (!(await reserveAlert(event.id, contact.id))) {
@@ -152,6 +164,14 @@ async function dispatchEmergencyAlerts({ event, userId }) {
     }
     const to = decrypt(contact.phoneNumber);
     const toPhoneHash = phoneHashFor(to);
+    // Built per recipient: each contact gets only their own Live View link.
+    const body = buildAlertBody({
+      senderName,
+      latitude: event.latitude ?? null,
+      longitude: event.longitude ?? null,
+      liveViewUrl: await liveViewUrlFor(emergency, contact),
+    });
+    const bodyHash = bodyHashOf(body);
     const message = await prisma.smsMessage.create({
       data: { emergencyId: event.id, contactId: contact.id, toPhoneHash, bodyHash, status: "reserved" },
     });

@@ -254,6 +254,10 @@ describe("emergency", () => {
   });
 
   describe("video segments (camera flip)", () => {
+    beforeEach(() => {
+      ownerId = "user1";
+    });
+
     async function createEmergency(accessToken) {
       const created = await request(app)
         .post("/api/emergency")
@@ -262,9 +266,11 @@ describe("emergency", () => {
       return created.body.id;
     }
 
+    // Upload keys are always "<uploader userId>/<file>" (storageService.saveFile).
+    let ownerId = "user1";
     function segmentPayload(overrides = {}) {
       return {
-        fileUrl: "user1/clip-1.mp4",
+        fileUrl: `${ownerId}/clip-1.mp4`,
         facing: "back",
         sequence: 1,
         startedAt: new Date().toISOString(),
@@ -275,12 +281,13 @@ describe("emergency", () => {
     test("creates a segment and returns it ordered on GET /api/emergency", async () => {
       const { accessToken, userId } = await registerUserWithContact();
       createdUserIds.push(userId);
+      ownerId = userId;
       const emergencyId = await createEmergency(accessToken);
 
       const first = await request(app)
         .post(`/api/emergency/${emergencyId}/video-segments`)
         .set("Authorization", `Bearer ${accessToken}`)
-        .send(segmentPayload({ sequence: 1, facing: "back", fileUrl: "user1/clip-1.mp4" }));
+        .send(segmentPayload({ sequence: 1, facing: "back", fileUrl: `${ownerId}/clip-1.mp4` }));
       expect(first.status).toBe(201);
       expect(first.body.facing).toBe("back");
       expect(first.body.sequence).toBe(1);
@@ -289,7 +296,7 @@ describe("emergency", () => {
       const second = await request(app)
         .post(`/api/emergency/${emergencyId}/video-segments`)
         .set("Authorization", `Bearer ${accessToken}`)
-        .send(segmentPayload({ sequence: 2, facing: "front", fileUrl: "user1/clip-2.mp4" }));
+        .send(segmentPayload({ sequence: 2, facing: "front", fileUrl: `${ownerId}/clip-2.mp4` }));
       expect(second.status).toBe(201);
 
       const events = await request(app)
@@ -304,6 +311,7 @@ describe("emergency", () => {
     test("rejects an invalid facing, sequence, and endedAt before startedAt", async () => {
       const { accessToken, userId } = await registerUserWithContact();
       createdUserIds.push(userId);
+      ownerId = userId;
       const emergencyId = await createEmergency(accessToken);
 
       const badFacing = await request(app)
@@ -335,6 +343,7 @@ describe("emergency", () => {
       const attacker = await registerUserWithContact();
       createdUserIds.push(owner.userId, attacker.userId);
       const emergencyId = await createEmergency(owner.accessToken);
+      ownerId = attacker.userId;
 
       const res = await request(app)
         .post(`/api/emergency/${emergencyId}/video-segments`)
@@ -343,9 +352,25 @@ describe("emergency", () => {
       expect(res.status).toBe(404);
     });
 
+    test("rejects a storage key outside the uploader's own folder (segments are shown to contacts)", async () => {
+      const owner = await registerUserWithContact();
+      const other = await registerUserWithContact();
+      createdUserIds.push(owner.userId, other.userId);
+      const emergencyId = await createEmergency(owner.accessToken);
+
+      for (const fileUrl of [`${other.userId}/clip.mp4`, `${owner.userId}/../${other.userId}/clip.mp4`, "clip.mp4"]) {
+        const res = await request(app)
+          .post(`/api/emergency/${emergencyId}/video-segments`)
+          .set("Authorization", `Bearer ${owner.accessToken}`)
+          .send({ ...segmentPayload(), fileUrl });
+        expect(res.status).toBe(400);
+      }
+    });
+
     test("retrying the identical payload for an existing sequence returns the existing row, not an error", async () => {
       const { accessToken, userId } = await registerUserWithContact();
       createdUserIds.push(userId);
+      ownerId = userId;
       const emergencyId = await createEmergency(accessToken);
       const payload = segmentPayload();
 
@@ -373,18 +398,19 @@ describe("emergency", () => {
     test("a different payload for an already-used sequence is a 409 conflict, not a silent overwrite", async () => {
       const { accessToken, userId } = await registerUserWithContact();
       createdUserIds.push(userId);
+      ownerId = userId;
       const emergencyId = await createEmergency(accessToken);
 
       const first = await request(app)
         .post(`/api/emergency/${emergencyId}/video-segments`)
         .set("Authorization", `Bearer ${accessToken}`)
-        .send(segmentPayload({ facing: "back", fileUrl: "user1/clip-1.mp4" }));
+        .send(segmentPayload({ facing: "back", fileUrl: `${ownerId}/clip-1.mp4` }));
       expect(first.status).toBe(201);
 
       const conflict = await request(app)
         .post(`/api/emergency/${emergencyId}/video-segments`)
         .set("Authorization", `Bearer ${accessToken}`)
-        .send(segmentPayload({ facing: "front", fileUrl: "user1/clip-1-different.mp4" }));
+        .send(segmentPayload({ facing: "front", fileUrl: `${ownerId}/clip-1-different.mp4` }));
       expect(conflict.status).toBe(409);
 
       const events = await request(app)

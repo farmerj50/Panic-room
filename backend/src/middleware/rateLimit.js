@@ -1,9 +1,11 @@
 const buckets = new Map();
 
-function rateLimit({ windowMs = 15 * 60 * 1000, max = 20 } = {}) {
+// keyGenerator lets token-bearing routes bucket by IP alone, so an attacker
+// can't get a fresh allowance for every guessed token path.
+function rateLimit({ windowMs = 15 * 60 * 1000, max = 20, keyGenerator } = {}) {
   return (req, res, next) => {
     const now = Date.now();
-    const key = `${req.ip}:${req.path}`;
+    const key = keyGenerator ? keyGenerator(req) : `${req.ip}:${req.path}`;
     const bucket = buckets.get(key);
 
     if (!bucket || bucket.resetAt <= now) {

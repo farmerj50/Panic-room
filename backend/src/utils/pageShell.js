@@ -82,7 +82,8 @@ function markdownToHtml(markdown) {
   return htmlParts.join("\n");
 }
 
-function renderPageHtml(title, bodyHtml) {
+// `head` is extra trusted markup for <head> (page-specific styles/scripts).
+function renderPageHtml(title, bodyHtml, { head = "" } = {}) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -104,6 +105,7 @@ function renderPageHtml(title, bodyHtml) {
   .primary { background: #ef445b; color: #fff; border: 0; }
   .secondary { background: #fff; color: #1a1a1a; border: 1px solid #bbb; }
 </style>
+${head}
 </head>
 <body>
 ${bodyHtml}

@@ -30,7 +30,9 @@ Deleting your account permanently removes:
 
 - Your account and profile information (email, name, phone number).
 - All trusted contacts you added.
-- Your emergency event history, including captured location data.
+- Your emergency event history, including captured location data and
+  location history.
+- All Live View links you created — they stop working immediately.
 - All audio/video recordings and their files in storage.
 - All Covert Messages you sent or received, and your encryption key record.
 - Any connected TikTok or Instagram accounts, including the access tokens

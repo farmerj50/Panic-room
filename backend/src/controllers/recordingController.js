@@ -3,7 +3,7 @@ const path = require("path");
 const prisma = require("../config/db");
 const { encrypt, safeDecrypt } = require("../services/cryptoService");
 const {
-  getFileStream,
+  streamFile,
   getSignedDownloadUrl,
   hasStorageConfigured,
   saveFile,
@@ -106,20 +106,10 @@ exports.downloadRecordingFile = async (req, res) => {
     return res.status(403).json({ error: "Invalid or expired download link." });
   }
 
-  let stream;
   try {
-    stream = getFileStream(key);
+    // Range-aware so <video> can seek and iOS can play.
+    if (!streamFile(key, req, res)) return res.status(404).json({ error: "File not found." });
   } catch {
-    return res.status(400).json({ error: "Invalid download link." });
+    if (!res.headersSent) return res.status(400).json({ error: "Invalid download link." });
   }
-
-  const ext = path.extname(key);
-  if (ext) res.type(ext);
-
-  if (!stream) {
-    return res.status(404).json({ error: "File not found." });
-  }
-
-  stream.on("error", () => res.status(500).end());
-  stream.pipe(res);
 };
