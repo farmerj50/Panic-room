@@ -101,3 +101,33 @@ export async function addVideoSegment(
     body: JSON.stringify(data),
   });
 }
+
+// ── Live View (private browser links for trusted contacts) ─────────────────
+export type LiveViewLinkStatus = {
+  contactId: string;
+  active: boolean;
+  lastViewedAt: string | null;
+  viewCount: number;
+};
+
+export type LiveViewShare = { url: string; expiresAt: string; shareMessage: string };
+
+export async function getLiveViewStatus(
+  emergencyId: string,
+): Promise<{ enabled: boolean; links: LiveViewLinkStatus[] }> {
+  return apiRequest(`/api/emergency/${emergencyId}/live-view`);
+}
+
+// The same link every time — sharing again never disconnects anyone.
+export async function shareLiveView(emergencyId: string, contactId: string): Promise<LiveViewShare> {
+  return apiRequest(`/api/emergency/${emergencyId}/live-view/${contactId}/share`, { method: 'POST' });
+}
+
+// Explicit reset: anyone with the previous link loses access.
+export async function rotateLiveView(emergencyId: string, contactId: string): Promise<LiveViewShare> {
+  return apiRequest(`/api/emergency/${emergencyId}/live-view/${contactId}/rotate`, { method: 'POST' });
+}
+
+export async function revokeLiveView(emergencyId: string, contactId?: string): Promise<{ revoked: number }> {
+  return apiRequest(`/api/emergency/${emergencyId}/live-view${contactId ? `/${contactId}` : ''}`, { method: 'DELETE' });
+}

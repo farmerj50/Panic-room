@@ -40,6 +40,7 @@ import DeleteAccountScreen from '../screens/DeleteAccountScreen';
 import CovertMessageDemoScreen from '../screens/CovertMessageDemoScreen';
 import SocialSharingScreen from '../screens/SocialSharingScreen';
 import OnboardingNavigator from './OnboardingNavigator';
+import { useEvidenceQueues } from '../hooks/useEvidenceQueues';
 
 // expo-notifications loads at runtime so the app still boots before `npm install`.
 // Once installed, the module resolves normally; until then every call is a no-op.
@@ -301,6 +302,7 @@ function AuthenticatedNavigatorInner({
   const { maybeOffer } = useTour();
   const [navReady, setNavReady] = useState(false);
   const pendingRoute = useRef<keyof RootStackParamList | null>(null);
+  useEvidenceQueues();
 
   const goEmergency = useCallback(() => {
     if (navReady && navigationRef.isReady()) {

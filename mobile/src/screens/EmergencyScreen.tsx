@@ -4,6 +4,7 @@ import {
   Linking,
   Platform,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -25,13 +26,25 @@ import {
 import { getExistingOnboardingVariant } from '../services/experiments';
 import { COUNTDOWN_SECONDS, EMERGENCY_NUMBER, ENABLE_EMERGENCY_DIALER } from '../config/emergencyConfig';
 import {
-  addVideoSegment,
   callEmergencyContacts,
-  createRecording,
+  getLiveViewStatus,
+  revokeLiveView,
+  rotateLiveView,
+  shareLiveView,
   updateEmergency,
+  type LiveViewLinkStatus,
 } from '../services/emergencyService';
 import { describeSmsResult } from '../utils/smsStatus';
-import { uploadFile } from '../services/uploadService';
+import {
+  enqueueClip,
+  releaseRetainedClips,
+  resumeClipQueue,
+  retainClipsFor,
+  runClipQueue,
+  waitForClipAttempt,
+  type ClipOutcome,
+} from '../services/segmentQueue';
+import { formatMegabytes, getFreeBytes, shouldRecordVideo, storageLevel } from '../services/storageMonitor';
 import { clearInProgressEmergency, useAppStateEmergencyGuard } from '../hooks/useAppStateEmergencyGuard';
 import { mapUrl } from '../utils/mapUrl';
 import type { Contact } from '../types/contact';
@@ -46,22 +59,6 @@ import SocialShareOverlay from '../components/SocialShareOverlay';
 
 const SOCIAL_PROVIDER_LABELS: Record<SocialProvider, string> = { tiktok: 'TikTok', instagram: 'Instagram' };
 
-// Best-effort, fire-and-forget — no offline queue in v1. A failure here just
-// means EvidenceScreen shows nothing for that asset; it never blocks the UI.
-// Used for audio only — video goes through uploadVideoSegmentEntry below,
-// since camera-flip splits video into ordered segments per emergency.
-async function uploadEmergencyAsset(emergencyId: string, localUri: string, kind: 'audio' | 'video') {
-  try {
-    const { key } = await uploadFile({ localUri, kind });
-    await Promise.allSettled([
-      updateEmergency(emergencyId, kind === 'audio' ? { audioUrl: key } : { videoUrl: key }),
-      createRecording({ fileUrl: key, type: kind }),
-    ]);
-  } catch (error) {
-    console.warn(`Failed to upload emergency ${kind}`, error);
-  }
-}
-
 type CameraFacing = 'front' | 'back';
 
 type VideoSegmentInfo = {
@@ -69,40 +66,86 @@ type VideoSegmentInfo = {
   sequence: number;
   startedAt: string;
   finalized: boolean;
+  // recordAsync attempts for this segment (a start can fail right after a
+  // camera remount — see beginSegmentRecording).
+  startAttempts?: number;
 };
 
+// Starting a recording right after a remount can fail natively ("could not
+// create video file") even after onCameraReady. Retry on the same camera
+// this many times before falling back to a full restart.
+const MAX_START_ATTEMPTS = 3;
+const START_RETRY_MS = 750;
+
+// In-session view of a finished segment (the social-share resolver reads
+// these). The durable upload itself is owned by segmentQueue.ts: the clip is
+// stored safely on the device, uploaded in the background with retries
+// (including after a restart), and its local file kept until the server
+// confirms it. `status` mirrors the most recent upload attempt.
 type PendingSegmentUpload = {
   segment: VideoSegmentInfo;
   localUri: string;
   endedAt: string;
-  storageKey?: string;
+  clipId?: string;
   status: 'pending' | 'done' | 'failed';
   promise?: Promise<void>;
 };
 
-// Uploads the local video file (once — the storage key is retained on the
-// entry so a retry after a metadata-POST failure never re-uploads the
-// file, only re-POSTs the metadata), then attaches it to the emergency as
-// an ordered segment. The backend endpoint is itself idempotent on
-// (emergencyId, sequence), so a retry after a lost response is safe too.
-async function uploadVideoSegmentEntry(emergencyId: string, entry: PendingSegmentUpload) {
-  try {
-    if (!entry.storageKey) {
-      const { key } = await uploadFile({ localUri: entry.localUri, kind: 'video' });
-      entry.storageKey = key;
-    }
-    await addVideoSegment(emergencyId, {
-      fileUrl: entry.storageKey,
-      facing: entry.segment.facing,
+// Video is cut into clips so evidence reaches the server DURING the
+// emergency: every 30s when Live View is on (near-live for contacts),
+// otherwise every 120s. Always on — not gated by Live View.
+const LIVE_VIEW_SEGMENT_MS = 30_000;
+const DEFAULT_SEGMENT_MS = 120_000;
+// expo-camera's hard cap per recording. If it's ever reached, recording
+// restarts automatically (it used to silently stop at 5 minutes).
+const MAX_SEGMENT_SECONDS = 300;
+const SEGMENT_CHECK_MS = 5_000;
+const LIVE_VIEW_POLL_MS = 20_000;
+
+function trackAttempt(entry: PendingSegmentUpload) {
+  let settle: () => void = () => {};
+  entry.status = 'pending';
+  entry.promise = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+  return (outcome: ClipOutcome) => {
+    entry.status = outcome === 'confirmed' ? 'done' : 'failed';
+    settle();
+  };
+}
+
+function queueSegmentEntry(emergencyId: string, entry: PendingSegmentUpload) {
+  const onOutcome = trackAttempt(entry);
+  enqueueClip(
+    {
+      kind: 'video',
+      emergencyId,
       sequence: entry.segment.sequence,
+      facing: entry.segment.facing,
       startedAt: entry.segment.startedAt,
       endedAt: entry.endedAt,
+      sourceUri: entry.localUri,
+    },
+    onOutcome,
+  )
+    .then((record) => {
+      entry.clipId = record.id;
+      entry.localUri = record.localUri;
+    })
+    .catch((error) => {
+      console.warn('Could not queue video segment', error);
+      onOutcome('failed');
     });
-    entry.status = 'done';
-  } catch (error) {
-    entry.status = 'failed';
-    console.warn('Failed to upload video segment', error);
-  }
+}
+
+// Retry requested by the share resolver: wake the queue now and report the
+// outcome of the next attempt.
+function retrySegmentEntry(entry: PendingSegmentUpload) {
+  if (!entry.clipId) return Promise.resolve();
+  const onOutcome = trackAttempt(entry);
+  void waitForClipAttempt(entry.clipId).then(onOutcome);
+  void resumeClipQueue();
+  return entry.promise!;
 }
 
 // NOTE: This screen's layout (countdown/activating/recording/error states) was
@@ -307,6 +350,11 @@ function EmergencyLiveScreen() {
   const [cameraSessionKey, setCameraSessionKey] = useState(0);
   const [facing, setFacing] = useState<CameraFacing>(DEFAULT_CAMERA_FACING);
   const [cameraSwitching, setCameraSwitching] = useState(false);
+  const [reducedVideoQuality, setReducedVideoQuality] = useState(false);
+  const [storageNotice, setStorageNotice] = useState<string | null>(null);
+  const [liveViewEnabled, setLiveViewEnabled] = useState(false);
+  const [liveViewLinks, setLiveViewLinks] = useState<LiveViewLinkStatus[]>([]);
+  const [liveViewBusy, setLiveViewBusy] = useState(false);
 
   const activationStarted = useRef(false);
   const sessionRef = useRef(0);
@@ -341,6 +389,15 @@ function EmergencyLiveScreen() {
   // (with a bounded timeout) before ever calling recordAsync.
   const cameraReadyResolverRef = useRef<(() => void) | null>(null);
   const cameraReadyPromiseRef = useRef<Promise<void>>(Promise.resolve());
+  // Continuous recording: periodic segment cuts, the maxDuration restart,
+  // and the low-storage pause/resume (see runSegmentCheck).
+  const segmentIntervalMsRef = useRef(DEFAULT_SEGMENT_MS);
+  const segmentCheckTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const segmentCheckBusyRef = useRef(false);
+  const videoPausedForStorageRef = useRef(false);
+  const activationStartedAtRef = useRef<string>(new Date().toISOString());
+  const facingRef = useRef<CameraFacing>(DEFAULT_CAMERA_FACING);
+  facingRef.current = facing;
 
   const previewWidth = Math.min(width - 32, 420);
   const previewHeight = Math.round(previewWidth * (compact ? 0.42 : 0.56));
@@ -435,6 +492,24 @@ function EmergencyLiveScreen() {
     [resetCameraReadyGate, waitForCameraReady],
   );
 
+  // Every finished segment goes to the durable queue — whether we cut it
+  // (flip, timer, share, exit) or the camera stopped on its own.
+  const queueFinishedSegment = (segment: VideoSegmentInfo, uri: string) => {
+    const emergencyId = activeEmergencyIdRef.current;
+    const entry: PendingSegmentUpload = {
+      segment,
+      localUri: uri,
+      endedAt: new Date().toISOString(),
+      status: 'pending',
+    };
+    pendingSegmentUploadsRef.current.push(entry);
+    if (emergencyId) {
+      queueSegmentEntry(emergencyId, entry);
+    } else {
+      entry.status = 'failed';
+    }
+  };
+
   // Shared by flipCamera() and stopEmergencyAssets() — both need to "stop
   // whatever's currently recording and queue its upload." The synchronous
   // check-and-set of `finalized` (before any await) is what makes this
@@ -465,19 +540,7 @@ function EmergencyLiveScreen() {
       console.warn(`Segment ${segment.sequence} (${segment.facing}) produced no video URI — dropped.`);
       return;
     }
-    const emergencyId = activeEmergencyIdRef.current;
-    const entry: PendingSegmentUpload = {
-      segment,
-      localUri: uri,
-      endedAt: new Date().toISOString(),
-      status: 'pending',
-    };
-    pendingSegmentUploadsRef.current.push(entry);
-    if (emergencyId) {
-      entry.promise = uploadVideoSegmentEntry(emergencyId, entry).catch(() => {});
-    } else {
-      entry.status = 'failed';
-    }
+    queueFinishedSegment(segment, uri);
   }, []);
 
   const stopEmergencyAssets = useCallback(async () => {
@@ -510,6 +573,10 @@ function EmergencyLiveScreen() {
         clearInterval(recordingTimerRef.current);
         recordingTimerRef.current = null;
       }
+      if (segmentCheckTimerRef.current) {
+        clearInterval(segmentCheckTimerRef.current);
+        segmentCheckTimerRef.current = null;
+      }
 
       stopLocationWatch();
 
@@ -538,24 +605,23 @@ function EmergencyLiveScreen() {
       updateEmergency(emergencyIdForUpload, { status: 'RESOLVED' }).catch(() => {});
     }
     if (emergencyIdForUpload && audioUri) {
-      uploadEmergencyAsset(emergencyIdForUpload, audioUri, 'audio');
+      // Same durable queue as video: kept on the device until uploaded.
+      enqueueClip({
+        kind: 'audio',
+        emergencyId: emergencyIdForUpload,
+        startedAt: activationStartedAtRef.current,
+        endedAt: new Date().toISOString(),
+        sourceUri: audioUri,
+      }).catch((error) => console.warn('Could not queue emergency audio', error));
     }
 
-    // Sweep video-segment uploads: give in-flight ones a bounded chance to
-    // finish, then retry anything that already failed exactly once. This
-    // is in-session only — no durable queue across an app restart.
-    const pending = pendingSegmentUploadsRef.current;
-    if (emergencyIdForUpload && pending.length > 0) {
-      await Promise.race([
-        Promise.allSettled(pending.map((entry) => entry.promise ?? Promise.resolve())),
-        wait(5000),
-      ]);
-      const stillFailed = pending.filter((entry) => entry.status === 'failed');
-      await Promise.allSettled(
-        stillFailed.map((entry) => uploadVideoSegmentEntry(emergencyIdForUpload, entry)),
-      );
-    }
+    // Exit never waits on the network: queued clips keep uploading in the
+    // background (and after a restart). Clips the server already confirmed
+    // are no longer needed on the device.
     pendingSegmentUploadsRef.current = [];
+    videoPausedForStorageRef.current = false;
+    if (emergencyIdForUpload) void releaseRetainedClips(emergencyIdForUpload);
+    void runClipQueue();
   }, [finalizeCurrentSegment, resolveEmergency, stopAudioCapture, stopLocationWatch]);
 
   const returnHome = useCallback(async () => {
@@ -574,6 +640,9 @@ function EmergencyLiveScreen() {
     setLocationUnavailable(false);
     setNotificationStatus(null);
     setCallStatus(null);
+    setStorageNotice(null);
+    setLiveViewEnabled(false);
+    setLiveViewLinks([]);
     setEmergencyId(null);
     await stopEmergencyAssets();
     navigation.navigate('Home');
@@ -800,50 +869,157 @@ function EmergencyLiveScreen() {
   // cutToNewSegment is that whole sequence; flipCamera passes the opposite
   // facing, requestShareSegmentCut passes the same facing (a forced cut
   // with no visible flip — still the same brief recording gap).
-  const cutToNewSegment = useCallback(async (newFacing: CameraFacing) => {
+  // inPlace: a routine same-camera cut (timer / maxDuration). The next
+  // recording starts on the SAME camera instance — remounting re-binds the
+  // camera, and a recording started during that re-bind can silently produce
+  // no data. Flips and recovery still remount.
+  const cutToNewSegment = useCallback(async (newFacing: CameraFacing, { inPlace = false }: { inPlace?: boolean } = {}) => {
     if (!cameraMounted || flippingRef.current || emergencyStoppingRef.current) return;
     flippingRef.current = true;
     const generation = captureGenerationRef.current;
-    setCameraSwitching(true);
+    const remount = !inPlace || newFacing !== facingRef.current;
+    if (remount) setCameraSwitching(true);
 
     try {
       // 1-2: finalize whatever's currently recording, queue its upload.
       await finalizeCurrentSegment();
       if (emergencyStoppingRef.current || generation !== captureGenerationRef.current) return;
 
-      // 3: set facing (unchanged for a share cut).
-      setFacing(newFacing);
+      if (remount) {
+        // 3: set facing (unchanged for a share cut).
+        setFacing(newFacing);
 
-      // 4: remount and wait for ready (bounded, retried once on timeout —
-      // see remountCameraAndWaitReady's comment).
-      let ready = await remountCameraAndWaitReady();
-      if (emergencyStoppingRef.current || generation !== captureGenerationRef.current) return;
-      if (!ready) {
-        ready = await remountCameraAndWaitReady();
+        // 4: remount and wait for ready (bounded, retried once on timeout —
+        // see remountCameraAndWaitReady's comment).
+        let ready = await remountCameraAndWaitReady();
         if (emergencyStoppingRef.current || generation !== captureGenerationRef.current) return;
-      }
-      if (!ready) {
-        setStatusMessage('Camera restart failed — continuing without video for this segment.');
-        return;
+        if (!ready) {
+          ready = await remountCameraAndWaitReady();
+          if (emergencyStoppingRef.current || generation !== captureGenerationRef.current) return;
+        }
+        if (!ready) {
+          setStatusMessage('Camera restart failed — continuing without video for this segment.');
+          return;
+        }
       }
 
       // 5: start the next segment's recording.
       const sequence = sequenceCounterRef.current + 1;
       sequenceCounterRef.current = sequence;
-      currentSegmentRef.current = {
+      beginSegmentRecordingRef.current({
         facing: newFacing,
         sequence,
         startedAt: new Date().toISOString(),
         finalized: false,
-      };
-      const recordingPromise = cameraRef.current?.recordAsync({ maxDuration: 300 });
-      videoRecordingPromiseRef.current = recordingPromise ?? null;
-      recordingPromise?.catch(() => {});
+      });
     } finally {
       flippingRef.current = false;
-      setCameraSwitching(false);
+      if (remount) setCameraSwitching(false);
     }
   }, [cameraMounted, finalizeCurrentSegment, remountCameraAndWaitReady]);
+
+  // Starts recording one segment. If the camera ends it by itself
+  // (maxDuration, or the OS stopping it) — i.e. nobody finalized it — the clip
+  // is queued and recording continues in a new segment.
+  const beginSegmentRecording = (segment: VideoSegmentInfo) => {
+    currentSegmentRef.current = segment;
+    segment.startAttempts = (segment.startAttempts ?? 0) + 1;
+    const recordingPromise = cameraRef.current?.recordAsync({ maxDuration: MAX_SEGMENT_SECONDS });
+    videoRecordingPromiseRef.current = recordingPromise ?? null;
+    const isCurrent = () => !segment.finalized && currentSegmentRef.current === segment && !emergencyStoppingRef.current;
+    const retryStart = () => {
+      // Recording failed to start (or died) — never sit idle until the next
+      // scheduled cut. Retry on this camera, then fall back to a full restart.
+      if (!isCurrent()) return;
+      if ((segment.startAttempts ?? 0) < MAX_START_ATTEMPTS) {
+        setTimeout(() => {
+          if (isCurrent()) beginSegmentRecordingRef.current({ ...segment, startedAt: new Date().toISOString() });
+        }, START_RETRY_MS);
+        return;
+      }
+      segment.finalized = true;
+      videoRecordingPromiseRef.current = null;
+      void cutToNewSegmentRef.current(facingRef.current);
+    };
+    if (!recordingPromise) {
+      retryStart();
+      return;
+    }
+    recordingPromise.then(
+      (result) => {
+        if (!isCurrent()) return;
+        if (!result?.uri) {
+          retryStart();
+          return;
+        }
+        // Ended by itself (maxDuration or the OS) — queue it, keep recording.
+        segment.finalized = true;
+        videoRecordingPromiseRef.current = null;
+        queueFinishedSegment(segment, result.uri);
+        void cutToNewSegmentRef.current(facingRef.current, { inPlace: true });
+      },
+      (error) => {
+        console.warn(`Segment ${segment.sequence} recording failed to start — retrying`, error);
+        retryStart();
+      },
+    );
+  };
+  const beginSegmentRecordingRef = useRef(beginSegmentRecording);
+  beginSegmentRecordingRef.current = beginSegmentRecording;
+  const cutToNewSegmentRef = useRef(cutToNewSegment);
+  cutToNewSegmentRef.current = cutToNewSegment;
+
+  const describeStorage = (free: number | null) => {
+    const level = storageLevel(free);
+    if (level === 'ok' || free === null) return null;
+    if (level === 'critical') return `Storage almost full (${formatMegabytes(free)} left) — video paused. Audio and GPS continue. Free up space to resume.`;
+    if (level === 'reduced') return `Storage low (${formatMegabytes(free)} left) — recording video at lower quality.`;
+    return `Storage low (${formatMegabytes(free)} left). Recordings are kept until they upload — connect to Wi-Fi or free up space.`;
+  };
+
+  // Runs every few seconds while the camera session is live: cuts a new
+  // segment on schedule, applies the low-storage policy (never deleting
+  // evidence), and resumes video automatically once space is back.
+  const runSegmentCheck = async () => {
+    if (segmentCheckBusyRef.current || emergencyStoppingRef.current || flippingRef.current) return;
+    segmentCheckBusyRef.current = true;
+    try {
+      const free = getFreeBytes();
+      setStorageNotice(describeStorage(free));
+      const segment = currentSegmentRef.current;
+      const recording = Boolean(segment && !segment.finalized);
+
+      if (!shouldRecordVideo(free, videoPausedForStorageRef.current)) {
+        if (recording) {
+          videoPausedForStorageRef.current = true;
+          await finalizeCurrentSegment();
+          setStatusMessage('Storage almost full — video paused. Audio and GPS continue.');
+        }
+        return;
+      }
+      if (videoPausedForStorageRef.current) {
+        videoPausedForStorageRef.current = false;
+        setReducedVideoQuality(storageLevel(free) !== 'ok' && storageLevel(free) !== 'low');
+        await cutToNewSegment(facingRef.current);
+        setStatusMessage('Recording resumed.');
+        return;
+      }
+      setReducedVideoQuality(storageLevel(free) === 'reduced');
+      // Self-heal: video should be recording but isn't (a start that kept
+      // failing, or the camera dropped it) — restart now.
+      if (!recording) {
+        await cutToNewSegment(facingRef.current);
+        return;
+      }
+      if (segment && Date.now() - Date.parse(segment.startedAt) >= segmentIntervalMsRef.current) {
+        await cutToNewSegment(facingRef.current, { inPlace: true });
+      }
+    } finally {
+      segmentCheckBusyRef.current = false;
+    }
+  };
+  const runSegmentCheckRef = useRef(runSegmentCheck);
+  runSegmentCheckRef.current = runSegmentCheck;
 
   const flipCamera = useCallback(
     () => cutToNewSegment(facing === 'back' ? 'front' : 'back'),
@@ -872,15 +1048,7 @@ function EmergencyLiveScreen() {
         getEntries: () => pendingSegmentUploadsRef.current,
         isStopping: () => emergencyStoppingRef.current,
         requestCut: () => requestShareSegmentCutRef.current(),
-        retryUpload: (entry) => {
-          const id = activeEmergencyIdRef.current;
-          if (!id) return Promise.resolve();
-          // Exposed as entry.promise so stopEmergencyAssets' sweep awaits
-          // this retry instead of racing a second one against it.
-          entry.status = 'pending';
-          entry.promise = uploadVideoSegmentEntry(id, entry).catch(() => {});
-          return entry.promise;
-        },
+        retryUpload: (entry) => retrySegmentEntry(entry),
       }),
     [],
   );
@@ -903,6 +1071,13 @@ function EmergencyLiveScreen() {
     currentSegmentRef.current = null;
     pendingSegmentUploadsRef.current = [];
     flippingRef.current = false;
+    segmentIntervalMsRef.current = DEFAULT_SEGMENT_MS;
+    videoPausedForStorageRef.current = false;
+    activationStartedAtRef.current = new Date().toISOString();
+    setReducedVideoQuality(false);
+    setStorageNotice(null);
+    setLiveViewEnabled(false);
+    setLiveViewLinks([]);
     setFacing(DEFAULT_CAMERA_FACING);
     setSharedTo([]);
 
@@ -974,6 +1149,18 @@ function EmergencyLiveScreen() {
 
       if (result.ok) {
         activeEmergencyIdRef.current = result.emergencyId;
+        // Keep this emergency's uploaded clips on the device while it's on
+        // screen (the social-share preview plays them).
+        retainClipsFor(result.emergencyId);
+        // Live View decides the clip length; never blocks activation.
+        getLiveViewStatus(result.emergencyId)
+          .then((liveView) => {
+            if (!isCurrentSession()) return;
+            segmentIntervalMsRef.current = liveView.enabled ? LIVE_VIEW_SEGMENT_MS : DEFAULT_SEGMENT_MS;
+            setLiveViewEnabled(liveView.enabled);
+            setLiveViewLinks(liveView.links);
+          })
+          .catch(() => {});
       } else {
         setNotificationStatus('Backend event failed — recording and dialer still active.');
       }
@@ -990,15 +1177,24 @@ function EmergencyLiveScreen() {
           if (!isCurrentSession()) return;
         }
         if (ready) {
-          currentSegmentRef.current = {
-            facing: DEFAULT_CAMERA_FACING,
-            sequence: sequenceCounterRef.current,
-            startedAt: new Date().toISOString(),
-            finalized: false,
-          };
-          const recordingPromise = cameraRef.current?.recordAsync({ maxDuration: 300 });
-          videoRecordingPromiseRef.current = recordingPromise ?? null;
-          recordingPromise?.catch(() => {});
+          const free = getFreeBytes();
+          setStorageNotice(describeStorage(free));
+          setReducedVideoQuality(storageLevel(free) === 'reduced');
+          if (shouldRecordVideo(free, false)) {
+            beginSegmentRecordingRef.current({
+              facing: DEFAULT_CAMERA_FACING,
+              sequence: sequenceCounterRef.current,
+              startedAt: new Date().toISOString(),
+              finalized: false,
+            });
+          } else {
+            // Resumes automatically once space is available (runSegmentCheck).
+            videoPausedForStorageRef.current = true;
+            setStatusMessage('Storage almost full — video paused. Audio and GPS continue.');
+          }
+          segmentCheckTimerRef.current = setInterval(() => {
+            void runSegmentCheckRef.current();
+          }, SEGMENT_CHECK_MS);
         } else {
           setStatusMessage('Camera did not become ready in time — continuing without video.');
         }
@@ -1039,6 +1235,79 @@ function EmergencyLiveScreen() {
     triggerEmergency,
     waitForCameraReady,
   ]);
+
+  // ── Live View: private browser links for trusted contacts ─────────────
+  // Only shown when the server has Live View switched on. Sharing again
+  // always returns the SAME link (nobody watching is disconnected); a reset
+  // is a separate, confirmed action.
+  useEffect(() => {
+    if (!liveViewEnabled || phase !== 'recording' || !emergencyId) return;
+    const id = emergencyId;
+    const timer = setInterval(() => {
+      getLiveViewStatus(id)
+        .then((liveView) => setLiveViewLinks(liveView.links))
+        .catch(() => {});
+    }, LIVE_VIEW_POLL_MS);
+    return () => clearInterval(timer);
+  }, [emergencyId, liveViewEnabled, phase]);
+
+  const openedBy = useMemo(() => {
+    const names = liveViewLinks
+      .filter((link) => link.viewCount > 0)
+      .map((link) => orderedContacts.find((c) => c.id === link.contactId)?.name)
+      .filter(Boolean) as string[];
+    return names.length > 0 ? `Live view opened by ${names.join(', ')}` : null;
+  }, [liveViewLinks, orderedContacts]);
+
+  const sendLiveView = useCallback(async (contact: Contact, reset = false) => {
+    const id = activeEmergencyIdRef.current;
+    if (!id || liveViewBusy) return;
+    setLiveViewBusy(true);
+    try {
+      const link = reset ? await rotateLiveView(id, contact.id) : await shareLiveView(id, contact.id);
+      await Share.share({ message: link.shareMessage });
+    } catch {
+      Alert.alert('Live view unavailable', 'Could not create a live view link. Calls and recording are unaffected.');
+    } finally {
+      setLiveViewBusy(false);
+    }
+  }, [liveViewBusy]);
+
+  const confirmResetLiveView = useCallback((contact: Contact) => {
+    Alert.alert(
+      `Reset ${contact.name}'s link?`,
+      'Anyone with the old link loses access. You can then send the new link.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Reset and send', style: 'destructive', onPress: () => { void sendLiveView(contact, true); } },
+      ],
+    );
+  }, [sendLiveView]);
+
+  const confirmStopLiveView = useCallback(() => {
+    const id = activeEmergencyIdRef.current;
+    if (!id) return;
+    Alert.alert(
+      'Stop sharing live view?',
+      'Every live view link for this emergency stops working right away. Recording, GPS and calls continue.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Stop sharing',
+          style: 'destructive',
+          onPress: () => {
+            revokeLiveView(id)
+              .then(() => getLiveViewStatus(id))
+              .then((liveView) => {
+                setLiveViewLinks(liveView.links);
+                setStatusMessage('Live view links turned off.');
+              })
+              .catch(() => Alert.alert('Could not stop sharing', 'Check your connection and try again.'));
+          },
+        },
+      ],
+    );
+  }, []);
 
   useEffect(() => {
     if (!countdownEnabled || phase !== 'countdown') return;
@@ -1105,6 +1374,7 @@ function EmergencyLiveScreen() {
                         style={styles.cameraPreview}
                         facing={facing}
                         mode="video"
+                        videoQuality={reducedVideoQuality ? '480p' : undefined}
                         mute={false}
                         testID="emergency-camera-view"
                         accessibilityLabel="emergency-camera-view"
@@ -1152,6 +1422,16 @@ function EmergencyLiveScreen() {
                     {callStatus}
                   </Text>
                 )}
+                {storageNotice && (
+                  <Text style={styles.storageText} testID="emergency-storage-text" accessibilityLabel="emergency-storage-text">
+                    {storageNotice}
+                  </Text>
+                )}
+                {openedBy && (
+                  <Text style={styles.sharedText} testID="emergency-live-view-opened-text" accessibilityLabel="emergency-live-view-opened-text">
+                    {openedBy}
+                  </Text>
+                )}
                 {sharedTo.length > 0 && (
                   <Text style={styles.sharedText} testID="emergency-shared-text" accessibilityLabel="emergency-shared-text">
                     ✓ Shared to {sharedTo.map((p) => SOCIAL_PROVIDER_LABELS[p]).join(' and ')}
@@ -1195,6 +1475,39 @@ function EmergencyLiveScreen() {
                   </TouchableOpacity>
                 </View>
               ) : null}
+
+              {liveViewEnabled && emergencyId && orderedContacts.length > 0 && (
+                <View style={styles.liveViewPanel} testID="emergency-live-view-panel" accessibilityLabel="emergency-live-view-panel">
+                  <Text style={styles.liveViewTitle}>Send live view</Text>
+                  <Text style={styles.liveViewHint}>
+                    A private link to your video and location. Long-press a name to reset their link.
+                  </Text>
+                  <View style={styles.liveViewRow}>
+                    {orderedContacts.map((contact) => (
+                      <TouchableOpacity
+                        key={contact.id}
+                        activeOpacity={0.82}
+                        style={styles.liveViewBtn}
+                        disabled={liveViewBusy}
+                        onPress={() => { void sendLiveView(contact); }}
+                        onLongPress={() => confirmResetLiveView(contact)}
+                        testID="emergency-live-view-send-btn"
+                        accessibilityLabel={`emergency-live-view-send-${contact.name}`}
+                      >
+                        <Text style={styles.liveViewBtnText}>{contact.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <TouchableOpacity
+                    activeOpacity={0.82}
+                    onPress={confirmStopLiveView}
+                    testID="emergency-live-view-stop-btn"
+                    accessibilityLabel="emergency-live-view-stop-btn"
+                  >
+                    <Text style={styles.liveViewStopText}>Stop sharing live view</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
               <View style={styles.controls}>
                 <TouchableOpacity activeOpacity={0.82} style={[styles.actionBtn, compact && styles.actionBtnCompact]} onPress={confirmCallEmergencyNumber} testID="emergency-call911-btn" accessibilityLabel="emergency-call911-btn">
@@ -1354,6 +1667,23 @@ const styles = StyleSheet.create({
   allContactsBtn: { backgroundColor: 'rgba(78,225,213,0.14)', borderColor: '#4ee1d5' },
   videoBtn: { backgroundColor: 'rgba(74,168,255,0.18)', borderColor: '#4aa8ff' },
   sharedText: { color: '#22c55e', fontSize: 13, fontWeight: '800', marginTop: 6, textAlign: 'center' },
+  storageText: { color: '#fbbf24', fontSize: 13, fontWeight: '700', marginTop: 6, textAlign: 'center' },
+  liveViewPanel: {
+    backgroundColor: 'rgba(74,168,255,0.10)',
+    borderColor: 'rgba(74,168,255,0.45)',
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 8,
+    maxWidth: 620,
+    padding: 14,
+    width: '100%',
+  },
+  liveViewTitle: { color: '#fff', fontSize: 15, fontWeight: '900', textAlign: 'center' },
+  liveViewHint: { color: '#a8a0bf', fontSize: 12, fontWeight: '600', textAlign: 'center' },
+  liveViewRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
+  liveViewBtn: { backgroundColor: 'rgba(74,168,255,0.22)', borderColor: '#4aa8ff', borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 9 },
+  liveViewBtnText: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  liveViewStopText: { color: '#a8a0bf', fontSize: 12, fontWeight: '700', textAlign: 'center', textDecorationLine: 'underline' },
   shareBtn: { backgroundColor: 'rgba(244,114,182,0.18)', borderColor: '#f472b6' },
   stopSquare: { backgroundColor: '#fff', borderRadius: 4, height: 18, width: 18 },
   actionIcon: { color: '#fff', fontSize: 20, fontWeight: '900', lineHeight: 22 },

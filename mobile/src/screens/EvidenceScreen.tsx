@@ -13,6 +13,7 @@ import { useNavigation } from '@react-navigation/native';
 import { getEmergencies } from '../services/emergencyService';
 import { Emergency, EmergencyVideoSegment } from '../types/Emergency';
 import { contentColumn } from '../config/layout';
+import PendingEvidenceNotice from '../components/PendingEvidenceNotice';
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleString();
@@ -55,6 +56,7 @@ export default function EvidenceScreen() {
         <Text style={styles.title}>Evidence</Text>
         <View style={{ width: 40 }} />
       </View>
+      <PendingEvidenceNotice />
 
       {loading ? (
         <ActivityIndicator color="#7C3AED" style={{ marginTop: 40 }} />

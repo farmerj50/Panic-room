@@ -26,12 +26,26 @@ export async function getCurrentLocation(): Promise<{ latitude: number; longitud
   return { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
 }
 
+export type WatchedLocation = {
+  latitude: number;
+  longitude: number;
+  accuracy?: number | null;
+  // Fix time (ms) reported by the OS — used as the GPS history timestamp.
+  timestamp?: number;
+};
+
 export async function watchLocation(
-  callback: (loc: { latitude: number; longitude: number }) => void,
+  callback: (loc: WatchedLocation) => void,
 ): Promise<Location.LocationSubscription> {
   return Location.watchPositionAsync(
     { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 10 },
-    (loc) => callback({ latitude: loc.coords.latitude, longitude: loc.coords.longitude }),
+    (loc) =>
+      callback({
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+        accuracy: loc.coords.accuracy,
+        timestamp: loc.timestamp,
+      }),
   );
 }
 

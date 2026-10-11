@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { getActiveGpsEmergency, recordLocationPoint } from '../services/locationQueue';
+
 export const BACKGROUND_LOCATION_TASK = 'PANICROOM_BG_LOCATION';
 
 // expo-task-manager and expo-location are only available in native builds.
@@ -25,6 +27,17 @@ try {
             timestamp: loc.timestamp,
           }),
         );
+        // During an emergency (incl. Hidden SOS with the screen off) these
+        // fixes also go into the encrypted GPS history queue.
+        const emergencyId = await getActiveGpsEmergency();
+        if (emergencyId) {
+          await recordLocationPoint(emergencyId, {
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+            accuracy: loc.coords.accuracy,
+            timestamp: loc.timestamp,
+          });
+        }
       }
     },
   );

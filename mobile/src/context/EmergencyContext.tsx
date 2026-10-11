@@ -9,6 +9,7 @@ import { getCurrentLocation, getLastKnownLocation, watchLocation } from '../serv
 import { getMicrophoneStatus, requestMicrophonePermission } from '../services/corePermissions';
 import { mapUrl } from '../utils/mapUrl';
 import { setPendingHiddenSos } from '../hooks/useAppStateEmergencyGuard';
+import { recordLocationPoint, setActiveGpsEmergency } from '../services/locationQueue';
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -132,6 +133,9 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
   // runCoreActivation/activateEmergencySilently below.
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const locationSubRef = useRef<{ remove: () => void } | null>(null);
+  // The emergency the live GPS watch is recording history for (null until
+  // the backend event exists, and again once the watch stops).
+  const gpsEmergencyIdRef = useRef<string | null>(null);
   const silentActivationInFlight = useRef(false);
   const lastSilentNotifyAt = useRef(0);
   // Mirrors state for use inside callbacks without adding them to every
@@ -203,6 +207,8 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
   const stopLocationWatch = useCallback(() => {
     locationSubRef.current?.remove();
     locationSubRef.current = null;
+    gpsEmergencyIdRef.current = null;
+    void setActiveGpsEmergency(null);
   }, []);
 
   const stopAudioCapture = useCallback(async (): Promise<string | null> => {
@@ -237,7 +243,14 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
       params.onLocationUpdate?.(currentLocation);
 
       try {
-        const sub = await watchLocation((loc) => params.onLocationUpdate?.(loc));
+        gpsEmergencyIdRef.current = null;
+        const sub = await watchLocation((loc) => {
+          params.onLocationUpdate?.({ latitude: loc.latitude, longitude: loc.longitude });
+          // GPS history (always on, independent of Live View): queued on the
+          // device first, so points survive lost signal. Never awaited.
+          const id = gpsEmergencyIdRef.current;
+          if (id) void recordLocationPoint(id, loc);
+        });
         locationSubRef.current?.remove();
         locationSubRef.current = sub;
       } catch {
@@ -254,6 +267,9 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
         });
         newEmergencyId = emergency.id;
         setEmergencyId(emergency.id);
+        if (locationSubRef.current) gpsEmergencyIdRef.current = emergency.id;
+        void setActiveGpsEmergency(emergency.id);
+        if (currentLocation) void recordLocationPoint(emergency.id, currentLocation);
       } catch {
         return { ok: false, error: 'CREATE_FAILED' };
       }
