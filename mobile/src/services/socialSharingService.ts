@@ -59,6 +59,9 @@ export type SocialShareResult = {
   status: 'posted' | 'processing' | 'failed';
   privacyLevel?: SocialPrivacyLevel;
   error?: string;
+  // 'reauth_required': the stored TikTok/Instagram authorization is dead —
+  // the user must reconnect in Settings → Social Sharing.
+  code?: string;
 };
 
 export type SocialShareOptions = {
@@ -68,6 +71,8 @@ export type SocialShareOptions = {
   sequence: number;
   privacyLevel?: SocialPrivacyLevel;
   caption?: string;
+  // One per deliberate Share tap; the server publishes at most once per id.
+  requestId?: string;
 };
 
 export function postSocialShare(

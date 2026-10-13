@@ -164,9 +164,19 @@ async function shot(name) {
     expect(before.length).toBeGreaterThan(0);
 
     await $('~emergency-share-btn').click();
-    await byId('social-share-pick').waitForDisplayed({ timeout: 10000 });
-    await byId('social-share-pick-instagram').click();
-    await byId('social-share-pick-continue').click();
+    // The real provider rejected TikTok's fake token in the previous test, so
+    // TikTok is now 'reconnect needed' and Instagram is the only account
+    // offered: Share goes straight to its review (no picker). With both
+    // still usable, the picker appears — handle either.
+    const count = async (id) => (await $$(`android=new UiSelector().resourceId("${id}")`)).length;
+    await driver.waitUntil(
+      async () => (await count('social-share-pick')) > 0 || (await count('social-share-publish')) > 0,
+      { timeout: 20000, interval: 500, timeoutMsg: 'neither the picker nor the Instagram review opened' },
+    );
+    if ((await count('social-share-pick')) > 0) {
+      await byId('social-share-pick-instagram').click();
+      await byId('social-share-pick-continue').click();
+    }
     await byId('social-share-publishing').waitForDisplayed({ timeout: 10000 });
     await driver.waitUntil(
       async () => (await byId('social-share-publish').getAttribute('enabled')) === 'true',
@@ -187,11 +197,23 @@ async function shot(name) {
   });
 
   it('Cancel on the review step posts nothing and returns to the live screen', async () => {
+    // Both fake tokens have now been rejected by the real providers (both
+    // "reconnect needed"). Reconnect them; Share re-checks the accounts when
+    // none are usable, so the picker appears without restarting.
+    await db.seedFakeSocialConnections(email);
     await $('~emergency-share-btn').click();
-    await byId('social-share-pick').waitForDisplayed({ timeout: 10000 });
-    await byId('social-share-pick-tiktok').click();
-    await byId('social-share-pick-continue').click();
-    await byId('social-share-publishing').waitForDisplayed({ timeout: 10000 });
+    // With one account still usable the screen opens its review directly;
+    // with none usable it re-checks and shows the picker. Handle either.
+    const count = async (id) => (await $$(`android=new UiSelector().resourceId("${id}")`)).length;
+    await driver.waitUntil(
+      async () => (await count('social-share-pick')) > 0 || (await count('social-share-publish')) > 0,
+      { timeout: 20000, interval: 500, timeoutMsg: 'neither the picker nor a review opened' },
+    );
+    if ((await count('social-share-pick')) > 0) {
+      await byId('social-share-pick-tiktok').click();
+      await byId('social-share-pick-continue').click();
+    }
+    await byId('social-share-publish').waitForDisplayed({ timeout: 10000 });
     await byId('social-share-cancel').click();
     await waitGone('social-share-overlay', 10000);
     await shot('review-cancelled-back-to-live');
@@ -199,6 +221,9 @@ async function shot(name) {
   });
 
   it('a new emergency gets a fresh prompt, and Skip dismisses it', async () => {
+    // The real providers rejected the fake tokens above, so those connections
+    // are now marked as needing reconnection (no prompt) — reconnect them.
+    await db.seedFakeSocialConnections(email);
     await emergencyPage.exitBtn.click();
     await tabBar.emergencyBtn.waitForDisplayed({ timeout: 20000 });
     await tabBar.emergencyBtn.click();

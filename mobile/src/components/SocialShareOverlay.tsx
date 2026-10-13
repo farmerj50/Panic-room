@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Linking, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
+import * as Crypto from 'expo-crypto';
 
 import { ApiError } from '../services/apiClient';
+import { trackEvent } from '../services/analyticsService';
 import type { ShareableSegmentEntry } from '../services/shareSegment';
 import {
   DEFAULT_PRIVACY_LEVEL,
@@ -46,7 +48,12 @@ const PRIVACY_LABELS: Record<string, string> = {
 
 type Phase = 'hidden' | 'prompt' | 'pick' | 'publishing' | 'progress' | 'result';
 type SegmentState = { kind: 'loading' } | { kind: 'ready'; entry: ShareableSegmentEntry } | { kind: 'none' };
-type Outcome = SocialShareResult | { provider: SocialProvider; status: 'failed'; error: string };
+type Outcome = SocialShareResult | { provider: SocialProvider; status: 'failed'; error: string; code?: string };
+
+// A duplicate of a share that's still running (409 share_in_progress) is
+// waited out with the SAME requestId, which then returns the first result.
+const IN_PROGRESS_RETRY_MS = 3000;
+const IN_PROGRESS_MAX_WAITS = 20;
 
 type Props = {
   emergencyId: string;
@@ -56,6 +63,9 @@ type Props = {
   // Bumped by the manual Share button — opens the flow at the review step.
   openRequest: number;
   onShared: (result: SocialShareResult) => void;
+  // Every outcome, including failures (e.g. reauth_required), so the
+  // emergency screen can switch to the reconnect note.
+  onResult?: (result: { provider: SocialProvider; status: string; code?: string }) => void;
 };
 
 function SegmentPreview({ uri }: { uri: string }) {
@@ -93,6 +103,7 @@ export default function SocialShareOverlay({
   resolveShareSegment,
   openRequest,
   onShared,
+  onResult,
 }: Props) {
   const [phase, setPhase] = useState<Phase>('hidden');
   const [countdown, setCountdown] = useState(SHARE_PROMPT_SECONDS);
@@ -189,21 +200,47 @@ export default function SocialShareOverlay({
     openFlow();
   }, [openRequest, openFlow]);
 
+  // Synchronous guard: a second tap before React re-renders can never start
+  // a second publish (the button is also disabled and replaced by progress).
+  const publishingRef = useRef(false);
   const publish = useCallback(async () => {
-    if (!provider || segment.kind !== 'ready') return;
+    if (!provider || segment.kind !== 'ready' || publishingRef.current) return;
+    publishingRef.current = true;
     const flow = flowRef.current;
-    const options = { privacyLevel: privacyLevel ?? DEFAULT_PRIVACY_LEVEL[provider], caption, sequence: segment.entry.segment.sequence };
+    // Fresh per deliberate tap; every automatic retry below reuses it, so the
+    // server publishes this clip at most once for this tap.
+    const requestId = Crypto.randomUUID();
+    const options = {
+      privacyLevel: privacyLevel ?? DEFAULT_PRIVACY_LEVEL[provider],
+      caption,
+      sequence: segment.entry.segment.sequence,
+      requestId,
+    };
     setPhase('progress');
+
+    const attempt = async (): Promise<SocialShareResult> => {
+      for (let waits = 0; ; waits += 1) {
+        try {
+          return await postSocialShare(provider, emergencyId, options);
+        } catch (error) {
+          if (error instanceof ApiError && error.code === 'share_in_progress' && waits < IN_PROGRESS_MAX_WAITS) {
+            await new Promise((r) => setTimeout(r, IN_PROGRESS_RETRY_MS));
+            continue;
+          }
+          throw error;
+        }
+      }
+    };
 
     let result: Outcome;
     try {
       try {
-        result = await postSocialShare(provider, emergencyId, options);
+        result = await attempt();
       } catch (error) {
         // The segment's metadata may land a beat after its upload settles.
         if (!(error instanceof ApiError && error.code === 'no_video')) throw error;
         await new Promise((r) => setTimeout(r, NO_VIDEO_RETRY_DELAY_MS));
-        result = await postSocialShare(provider, emergencyId, options);
+        result = await attempt();
       }
     } catch (error) {
       result = {
@@ -213,13 +250,19 @@ export default function SocialShareOverlay({
       };
     }
 
+    publishingRef.current = false;
+    trackEvent('social_share_result', {
+      provider,
+      status: result.code === 'reauth_required' ? 'reauth' : result.status,
+    });
     // Reported even if the user cancelled the progress view — the post may
     // have gone through in the background.
     if (result.status !== 'failed') onShared(result as SocialShareResult);
+    onResult?.(result);
     if (flow !== flowRef.current) return;
     setOutcome(result);
     setPhase('result');
-  }, [caption, emergencyId, onShared, privacyLevel, provider, segment]);
+  }, [caption, emergencyId, onResult, onShared, privacyLevel, provider, segment]);
 
   if (phase === 'hidden') return null;
 
@@ -367,7 +410,7 @@ export default function SocialShareOverlay({
 
             <PrimaryButton
               label={`Share to ${label}`}
-              disabled={segment.kind !== 'ready'}
+              disabled={segment.kind !== 'ready' || publishingRef.current}
               onPress={() => void publish()}
               testID="social-share-publish"
             />
@@ -404,7 +447,9 @@ export default function SocialShareOverlay({
                 ? 'Shared successfully'
                 : outcome.status === 'processing'
                   ? `${label} is still processing`
-                  : 'Could not share'}
+                  : outcome.code === 'reauth_required'
+                    ? `Reconnect ${label}`
+                    : 'Could not share'}
             </Text>
             <Text style={[styles.subtitle, styles.centered]}>
               {outcome.status === 'failed'

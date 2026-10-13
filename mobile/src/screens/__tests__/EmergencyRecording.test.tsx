@@ -61,13 +61,20 @@ jest.mock('@react-navigation/native', () => ({
 jest.mock('expo-video', () => ({ VideoView: () => null, useVideoPlayer: jest.fn() }));
 jest.mock('expo-status-bar', () => ({ StatusBar: () => null }));
 jest.mock('../../components/LiveLocationMap', () => () => null);
-jest.mock('../../components/SocialShareOverlay', () => () => null);
+type OverlayProps = { providers: unknown[]; openRequest: number; onResult?: (r: { code?: string }) => void };
+let mockOverlayProps: OverlayProps | null = null;
+jest.mock('../../components/SocialShareOverlay', () => (props: OverlayProps) => {
+  mockOverlayProps = props;
+  return null;
+});
 jest.mock('../../context/TourContext', () => ({
   useTourTarget: () => ({ current: null }),
   useTourTargetPress: (_key: string, handler: () => void) => handler,
   useTour: () => ({ phase: 'idle', paused: false, currentStep: null, next: jest.fn() }),
 }));
 
+let mockCallMode = 'none';
+const mockRunCoreActivation = jest.fn().mockResolvedValue({ ok: true, emergencyId: 'e1', location: null });
 const mockContacts = [
   { id: 'c1', name: 'Sam', phoneNumber: '+15551230001', isPriority: true },
   { id: 'c2', name: 'Riley', phoneNumber: '+15551230002', isPriority: false },
@@ -80,18 +87,26 @@ jest.mock('../../context/EmergencyContext', () => ({
     setEmergencyId: jest.fn(),
     triggerEmergency: jest.fn(),
     resolveEmergency: jest.fn(),
-    emergencySettings: { cameraAutoRecord: true, audioAutoRecord: false, emergencyCallMode: 'none' },
-    runCoreActivation: jest.fn().mockResolvedValue({ ok: true, emergencyId: 'e1', location: null }),
+    emergencySettings: { cameraAutoRecord: true, audioAutoRecord: false, emergencyCallMode: mockCallMode },
+    runCoreActivation: (...args: unknown[]) => mockRunCoreActivation(...args),
     stopAudioCapture: jest.fn().mockResolvedValue(null),
     stopLocationWatch: jest.fn(),
   }),
 }));
+let mockIsPremium = true;
+jest.mock('../../context/AuthContext', () => ({ useAuth: () => ({ user: { id: 'u1' } }) }));
+jest.mock('../../context/SubscriptionContext', () => ({ useSubscription: () => ({ isPremium: mockIsPremium }) }));
+const mockSetRemind = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../services/socialSharingPrompts', () => ({ setRemindAfterEmergency: (...a: unknown[]) => mockSetRemind(...a) }));
+jest.mock('../../services/analyticsService', () => ({ trackEvent: jest.fn() }));
 jest.mock('../../services/corePermissions', () => ({
   requestCameraPermission: jest.fn().mockResolvedValue('granted'),
   requestMicrophonePermission: jest.fn().mockResolvedValue('granted'),
 }));
 jest.mock('../../services/experiments', () => ({ getExistingOnboardingVariant: jest.fn().mockResolvedValue(null) }));
-jest.mock('../../services/socialSharingService', () => ({ listConnections: jest.fn().mockResolvedValue({ connections: [] }) }));
+const mockListConnections = jest.fn().mockResolvedValue({ connections: [] });
+jest.mock('../../services/socialSharingService', () => ({ listConnections: (...args: unknown[]) => mockListConnections(...args) }));
+const TIKTOK = { provider: 'tiktok', status: 'connected', enabledForEmergency: true, providerUsername: 'me' };
 jest.mock('../../hooks/useAppStateEmergencyGuard', () => ({
   clearInProgressEmergency: jest.fn().mockResolvedValue(undefined),
   useAppStateEmergencyGuard: jest.fn(),
@@ -99,10 +114,11 @@ jest.mock('../../hooks/useAppStateEmergencyGuard', () => ({
 
 const mockLiveView = { enabled: false, links: [] as unknown[] };
 const mockShareLiveView = jest.fn();
+const mockCallEmergencyContacts = jest.fn().mockResolvedValue({ called: true, calledCount: 2 });
 const mockRotateLiveView = jest.fn();
 const mockRevokeLiveView = jest.fn();
 jest.mock('../../services/emergencyService', () => ({
-  callEmergencyContacts: jest.fn().mockResolvedValue({ called: true, calledCount: 2 }),
+  callEmergencyContacts: (...args: unknown[]) => mockCallEmergencyContacts(...args),
   updateEmergency: jest.fn().mockResolvedValue({}),
   getLiveViewStatus: jest.fn(() => Promise.resolve(mockLiveView)),
   shareLiveView: (...args: unknown[]) => mockShareLiveView(...args),
@@ -372,5 +388,191 @@ describe('Live View actions', () => {
     });
     expect(Share.share).not.toHaveBeenCalled();
     expect(alert).toHaveBeenCalledWith('Live view unavailable', expect.any(String));
+  });
+});
+
+describe('social share availability', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    mockRecordings.length = 0;
+    mockFreeBytes = 50 * 1024 * MB;
+    mockLiveView.enabled = false;
+    mockOverlayProps = null;
+    mockEnqueueClip.mockImplementation(async (clip: { sourceUri: string }) => ({ id: clip.sourceUri, localUri: clip.sourceUri }));
+    mockListConnections.mockReset().mockResolvedValue({ connections: [] });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  test('an account connected after the screen first loaded is picked up at activation (prompt can show)', async () => {
+    // First load (screen mount) sees nothing; by activation TikTok is connected.
+    mockListConnections.mockResolvedValueOnce({ connections: [] }).mockResolvedValue({ connections: [TIKTOK] });
+    await startEmergency();
+    expect(mockListConnections.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(mockOverlayProps?.providers).toEqual([TIKTOK]);
+  });
+
+  test('a failed first load does not hide sharing for the rest of the session', async () => {
+    mockListConnections.mockRejectedValueOnce(new Error('401 refresh race')).mockResolvedValue({ connections: [TIKTOK] });
+    await startEmergency();
+    expect(mockOverlayProps?.providers).toEqual([TIKTOK]);
+  });
+
+  test('Share re-checks connections when none are loaded, then opens sharing', async () => {
+    mockListConnections.mockResolvedValueOnce({ connections: [] }).mockResolvedValueOnce({ connections: [] }).mockResolvedValue({ connections: [TIKTOK] });
+    await startEmergency();
+    const before = mockOverlayProps!.openRequest;
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('emergency-share-btn'));
+    });
+    expect(mockOverlayProps!.openRequest).toBe(before + 1);
+  });
+
+  test('Share explains a connection that needs reconnecting instead of saying "not connected"', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockListConnections.mockResolvedValue({ connections: [{ ...TIKTOK, status: 'reauth_required' }] });
+    await startEmergency();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('emergency-share-btn'));
+    });
+    expect(alert).toHaveBeenCalledWith('Reconnect needed', expect.stringContaining('TikTok'), expect.any(Array));
+  });
+
+  test('Share explains when emergency sharing is switched off for the account', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockListConnections.mockResolvedValue({ connections: [{ ...TIKTOK, enabledForEmergency: false }] });
+    await startEmergency();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('emergency-share-btn'));
+    });
+    expect(alert).toHaveBeenCalledWith('Emergency sharing is off', expect.stringContaining('TikTok'));
+  });
+});
+
+describe('social sharing setup note (emergency screen)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    mockRecordings.length = 0;
+    mockFreeBytes = 50 * 1024 * MB;
+    mockLiveView.enabled = false;
+    mockOverlayProps = null;
+    mockIsPremium = true;
+    mockCallMode = 'none';
+    mockSetRemind.mockClear();
+    mockCallEmergencyContacts.mockClear();
+    mockRunCoreActivation.mockClear();
+    mockEnqueueClip.mockImplementation(async (clip: { sourceUri: string }) => ({ id: clip.sourceUri, localUri: clip.sourceUri }));
+    mockListConnections.mockReset().mockResolvedValue({ connections: [] });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  const note = () => screen.queryByTestId('emergency-social-setup-note');
+
+  test('free account: a Premium note appears only once recording is running, below every control', async () => {
+    mockIsPremium = false;
+    render(<EmergencyScreen />);
+    expect(note()).toBeNull(); // countdown
+    await advance(7000);
+    expect(note()).toHaveTextContent(/Premium feature — recording continues/);
+    const tree = JSON.stringify(screen.toJSON());
+    for (const control of ['emergency-call911-btn', 'emergency-stop-btn', 'emergency-share-btn', 'emergency-rec-label', 'emergency-status-text']) {
+      expect(tree.indexOf(control)).toBeGreaterThan(-1);
+      expect(tree.indexOf(control)).toBeLessThan(tree.indexOf('emergency-social-setup-note'));
+    }
+  });
+
+  test("Premium but not connected: the isn't-set-up note", async () => {
+    await startEmergency();
+    expect(note()).toHaveTextContent(/isn't set up/);
+  });
+
+  test('no note when connected, when switched off by the user, or when connections could not be loaded', async () => {
+    mockListConnections.mockResolvedValue({ connections: [TIKTOK] });
+    await startEmergency();
+    expect(note()).toBeNull();
+    screen.unmount();
+
+    mockRecordings.length = 0;
+    mockListConnections.mockResolvedValue({ connections: [{ ...TIKTOK, enabledForEmergency: false }] });
+    await startEmergency();
+    expect(note()).toBeNull();
+    screen.unmount();
+
+    mockRecordings.length = 0;
+    mockListConnections.mockRejectedValue(new Error('offline'));
+    await startEmergency();
+    expect(note()).toBeNull();
+  });
+
+  test('× hides the note; "Remind me after" saves the reminder and hides it', async () => {
+    await startEmergency();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('emergency-social-setup-dismiss'));
+    });
+    expect(note()).toBeNull();
+    expect(mockSetRemind).not.toHaveBeenCalled();
+    screen.unmount();
+
+    mockRecordings.length = 0;
+    await startEmergency();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('emergency-social-setup-remind'));
+    });
+    expect(note()).toBeNull();
+    expect(mockSetRemind).toHaveBeenCalledWith('u1');
+  });
+
+  test('free account: Share explains Premium and offers "Remind me after" — no paywall, no navigation', async () => {
+    mockIsPremium = false;
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    await startEmergency();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('emergency-share-btn'));
+    });
+    expect(alert).toHaveBeenCalledWith('Premium feature', expect.stringContaining('Premium'), expect.any(Array));
+    const buttons = alert.mock.calls[0][2] as { text: string; onPress?: () => void }[];
+    await act(async () => {
+      buttons.find((b) => b.text === 'Remind me after')!.onPress!();
+    });
+    expect(mockSetRemind).toHaveBeenCalledWith('u1');
+  });
+
+  test('a share that comes back "reconnect needed" switches the note to reconnect', async () => {
+    mockListConnections.mockResolvedValue({ connections: [TIKTOK] });
+    await startEmergency();
+    expect(note()).toBeNull();
+    mockListConnections.mockResolvedValue({ connections: [{ ...TIKTOK, status: 'reauth_required' }] });
+    await act(async () => {
+      mockOverlayProps!.onResult!({ code: 'reauth_required' });
+    });
+    expect(note()).toHaveTextContent(/Reconnect TikTok or Instagram/);
+  });
+
+  test('social sharing failures never interrupt recording, GPS/alerts or trusted-contact calls', async () => {
+    mockCallMode = 'contacts';
+    mockListConnections.mockRejectedValue(new Error('social API down'));
+    await startEmergency();
+    await act(async () => {
+      mockOverlayProps!.onResult!({ code: 'reauth_required' });
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('emergency-share-btn'));
+    });
+    // Core activation (GPS, emergency event, SMS notify) and calls ran.
+    expect(mockRunCoreActivation).toHaveBeenCalledTimes(1);
+    expect(mockRunCoreActivation.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ onNotifyResult: expect.any(Function), onLocationUpdate: expect.any(Function) }),
+    );
+    expect(mockCallEmergencyContacts).toHaveBeenCalledTimes(1);
+    // Recording keeps cutting clips on schedule (120s with Live View off).
+    await advance(130_000, 5000);
+    expect(mockRecordings.length).toBeGreaterThanOrEqual(2);
   });
 });

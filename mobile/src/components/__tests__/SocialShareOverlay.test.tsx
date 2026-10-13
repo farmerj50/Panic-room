@@ -14,7 +14,17 @@ jest.mock('../../services/socialSharingService', () => ({
   getPublishOptions: (...args: unknown[]) => mockGetPublishOptions(...args),
 }));
 
+jest.mock('../../services/analyticsService', () => ({ trackEvent: jest.fn() }));
+
 import SocialShareOverlay, { SHARE_PROMPT_SECONDS } from '../SocialShareOverlay';
+import { ApiError } from '../../services/apiClient';
+
+async function openReview() {
+  await act(async () => {
+    fireEvent.press(screen.getByTestId('social-share-prompt-share'));
+  });
+}
+const requestIds = () => mockPostSocialShare.mock.calls.map(([, , options]) => options.requestId);
 
 const tiktok = {
   provider: 'tiktok' as const,
@@ -124,6 +134,7 @@ describe('SocialShareOverlay', () => {
       privacyLevel: 'SELF_ONLY',
       caption: 'Being followed',
       sequence: 3,
+      requestId: expect.any(String),
     });
     expect(screen.getByTestId('social-share-result')).toBeTruthy();
     expect(props.onShared).toHaveBeenCalledWith(expect.objectContaining({ status: 'posted' }));
@@ -189,5 +200,96 @@ describe('SocialShareOverlay', () => {
     });
     expect(screen.getByTestId('social-share-publishing')).toBeTruthy();
     expect(mockPostSocialShare).not.toHaveBeenCalled();
+  });
+
+  test('a double tap on Share publishes exactly once', async () => {
+    let resolvePost: (v: unknown) => void = () => {};
+    mockPostSocialShare.mockImplementation(() => new Promise((resolve) => { resolvePost = resolve; }));
+    renderOverlay();
+    await openReview();
+    const publishButton = screen.getByTestId('social-share-publish');
+    await act(async () => {
+      fireEvent.press(publishButton);
+      fireEvent.press(publishButton);
+    });
+    expect(mockPostSocialShare).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolvePost({ provider: 'tiktok', status: 'posted', privacyLevel: 'SELF_ONLY' });
+    });
+    expect(screen.getByTestId('social-share-result')).toBeTruthy();
+  });
+
+  test('the automatic retry for a not-yet-uploaded clip reuses the same request id', async () => {
+    mockPostSocialShare
+      .mockRejectedValueOnce(new ApiError('No video available to share yet.', 400, 'no_video'))
+      .mockResolvedValue({ provider: 'tiktok', status: 'posted', privacyLevel: 'SELF_ONLY' });
+    renderOverlay();
+    await openReview();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('social-share-publish'));
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(5000);
+    });
+    expect(mockPostSocialShare).toHaveBeenCalledTimes(2);
+    const [first, second] = requestIds();
+    expect(first).toEqual(expect.any(String));
+    expect(second).toBe(first);
+  });
+
+  test('a share still in progress on the server is waited out with the same id, never re-posted under a new one', async () => {
+    mockPostSocialShare
+      .mockRejectedValueOnce(new ApiError('This share is already in progress.', 409, 'share_in_progress'))
+      .mockResolvedValue({ provider: 'tiktok', status: 'posted', privacyLevel: 'SELF_ONLY' });
+    renderOverlay();
+    await openReview();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('social-share-publish'));
+    });
+    expect(screen.getByTestId('social-share-progress')).toBeTruthy();
+    await act(async () => {
+      jest.advanceTimersByTime(3500);
+    });
+    expect(mockPostSocialShare).toHaveBeenCalledTimes(2);
+    expect(new Set(requestIds()).size).toBe(1);
+    expect(screen.getByTestId('social-share-result')).toBeTruthy();
+  });
+
+  test('a new deliberate share gets a new request id', async () => {
+    renderOverlay();
+    await openReview();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('social-share-publish'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('social-share-done'));
+    });
+    screen.unmount();
+    renderOverlay({ openRequest: 0 });
+    await openReview();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('social-share-publish'));
+    });
+    const [first, second] = requestIds();
+    expect(second).not.toBe(first);
+  });
+
+  test('an expired authorization shows an actionable reconnect message and reports it', async () => {
+    mockPostSocialShare.mockResolvedValue({
+      provider: 'tiktok',
+      status: 'failed',
+      code: 'reauth_required',
+      error: 'Reconnect TikTok in Settings → Social Sharing to share.',
+    });
+    const onResult = jest.fn();
+    const { props } = renderOverlay({ onResult });
+    await openReview();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('social-share-publish'));
+    });
+    expect(screen.getByText('Reconnect TikTok')).toBeTruthy();
+    expect(screen.getByText(/Reconnect TikTok in Settings → Social Sharing to share. Recording continues./)).toBeTruthy();
+    expect(onResult).toHaveBeenCalledWith(expect.objectContaining({ code: 'reauth_required' }));
+    expect(props.onShared).not.toHaveBeenCalled();
   });
 });

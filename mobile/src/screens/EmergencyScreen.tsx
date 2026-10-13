@@ -56,6 +56,11 @@ import {
 } from '../services/socialSharingService';
 import { createShareSegmentResolver } from '../services/shareSegment';
 import SocialShareOverlay from '../components/SocialShareOverlay';
+import SocialSetupNote, { type SocialSetupState } from '../components/SocialSetupNote';
+import { useAuth } from '../context/AuthContext';
+import { useSubscription } from '../context/SubscriptionContext';
+import { trackEvent } from '../services/analyticsService';
+import { setRemindAfterEmergency } from '../services/socialSharingPrompts';
 
 const SOCIAL_PROVIDER_LABELS: Record<SocialProvider, string> = { tiktok: 'TikTok', instagram: 'Instagram' };
 
@@ -405,27 +410,52 @@ function EmergencyLiveScreen() {
 
   useAppStateEmergencyGuard({ emergencyId, phase, elapsed });
 
-  // Fetched once per mount, not polled — Settings is where connection
-  // state actually changes, not this screen. Only providers that are both
-  // connected and enabled for emergency sharing are offered here.
+  // Only providers that are both connected and enabled for emergency sharing
+  // are offered here. Reloaded at every activation (and on a Share tap with
+  // nothing loaded): this tab stays mounted for the whole app session, so a
+  // load done once at mount went stale when an account was connected later
+  // in Settings, or when that first request failed — and the prompt and
+  // Share button then never appeared until the app was restarted.
   const [shareableProviders, setShareableProviders] = useState<SocialConnection[]>([]);
   const [shareOpenRequest, setShareOpenRequest] = useState(0);
   const [sharedTo, setSharedTo] = useState<SocialProvider[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    listConnections()
-      .then((result) => {
-        if (!cancelled) {
-          setShareableProviders(
-            result.connections.filter((c) => c.status === 'connected' && c.enabledForEmergency),
-          );
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+  const allConnectionsRef = useRef<SocialConnection[]>([]);
+  // null until a load succeeds — a failed load never produces a message.
+  const [allConnections, setAllConnections] = useState<SocialConnection[] | null>(null);
+  const refreshShareableProviders = useCallback(async () => {
+    try {
+      const result = await listConnections();
+      allConnectionsRef.current = result.connections;
+      setAllConnections(result.connections);
+      const shareable = result.connections.filter((c) => c.status === 'connected' && c.enabledForEmergency);
+      setShareableProviders(shareable);
+      return shareable;
+    } catch {
+      return null;
+    }
   }, []);
+
+  const { user } = useAuth();
+  const { isPremium } = useSubscription();
+  const [setupNoteDismissed, setSetupNoteDismissed] = useState(false);
+  const setupNoteTrackedRef = useRef(false);
+  // Why sharing isn't available right now (null = available, unknown, or the
+  // user deliberately switched it off — nothing to say).
+  const sharingSetupState = useMemo<SocialSetupState | null>(() => {
+    if (allConnections === null || shareableProviders.length > 0) return null;
+    if (allConnections.some((c) => ['reauth_required', 'error', 'revoked'].includes(c.status))) return 'reconnect_needed';
+    if (allConnections.some((c) => c.status === 'connected' && !c.enabledForEmergency)) return null;
+    return isPremium ? 'not_connected' : 'premium_required';
+  }, [allConnections, isPremium, shareableProviders.length]);
+
+  const remindAfterEmergency = useCallback(() => {
+    trackEvent('social_setup_note_remind', { state: sharingSetupState });
+    setSetupNoteDismissed(true);
+    if (user?.id) void setRemindAfterEmergency(user.id);
+  }, [sharingSetupState, user?.id]);
+  useEffect(() => {
+    void refreshShareableProviders();
+  }, [refreshShareableProviders]);
 
   // Fully isolated from the activation pipeline, same shape as
   // callPriorityContact/facetimePriorityContact: never calls or is called by
@@ -433,13 +463,45 @@ function EmergencyLiveScreen() {
   // wired to only renders once `emergencyId` is set (see the controls row
   // below), so this can never run before activation has happened. Posting
   // itself happens in SocialShareOverlay, behind an explicit review step.
-  const shareToSocial = useCallback(() => {
-    if (shareableProviders.length === 0) {
-      Alert.alert('Not connected', 'Connect TikTok or Instagram in Settings to share emergency video.');
+  const shareToSocial = useCallback(async () => {
+    let shareable: SocialConnection[] | null = shareableProviders;
+    if (shareable.length === 0) shareable = await refreshShareableProviders();
+    if (shareable && shareable.length > 0) {
+      setShareOpenRequest((v) => v + 1);
       return;
     }
-    setShareOpenRequest((v) => v + 1);
-  }, [shareableProviders.length]);
+    if (shareable === null) {
+      Alert.alert('Sharing unavailable', 'Could not check your connected accounts. Check your connection and try again. Recording continues.');
+      return;
+    }
+    // Say exactly why nothing can be shared. Never navigates or shows a
+    // paywall mid-emergency — "Remind me after" brings it up on Home later.
+    const all = allConnectionsRef.current;
+    const label = (c: SocialConnection) => SOCIAL_PROVIDER_LABELS[c.provider];
+    const needsReconnect = all.filter((c) => c.status === 'reauth_required' || c.status === 'error' || c.status === 'revoked');
+    const turnedOff = all.filter((c) => c.status === 'connected' && !c.enabledForEmergency);
+    const buttons = [
+      { text: 'OK', style: 'cancel' as const },
+      { text: 'Remind me after', onPress: remindAfterEmergency },
+    ];
+    if (needsReconnect.length > 0) {
+      Alert.alert('Reconnect needed', `Reconnect ${needsReconnect.map(label).join(' and ')} in Settings → Social Sharing to share emergency video. Recording continues.`, buttons);
+    } else if (turnedOff.length > 0) {
+      Alert.alert('Emergency sharing is off', `Turn on emergency sharing for ${turnedOff.map(label).join(' and ')} in Settings → Social Sharing.`);
+    } else if (!isPremium) {
+      Alert.alert('Premium feature', 'Sharing emergency video to TikTok or Instagram is part of Bes Premium. Recording continues.', buttons);
+    } else {
+      Alert.alert('Not connected', 'Connect TikTok or Instagram in Settings → Social Sharing to share emergency video. Recording continues.', buttons);
+    }
+  }, [isPremium, refreshShareableProviders, remindAfterEmergency, shareableProviders]);
+
+  // A share that failed because the account needs reconnecting: reload so the
+  // note switches to "reconnect", even if an earlier note was dismissed.
+  const handleShareResult = useCallback((result: { code?: string }) => {
+    if (result.code !== 'reauth_required') return;
+    setSetupNoteDismissed(false);
+    void refreshShareableProviders();
+  }, [refreshShareableProviders]);
 
   const handleShared = useCallback((result: SocialShareResult) => {
     if (result.status === 'posted') {
@@ -1080,6 +1142,9 @@ function EmergencyLiveScreen() {
     setLiveViewLinks([]);
     setFacing(DEFAULT_CAMERA_FACING);
     setSharedTo([]);
+    setSetupNoteDismissed(false);
+    setupNoteTrackedRef.current = false;
+    void refreshShareableProviders();
 
     triggerEmergency();
 
@@ -1229,6 +1294,7 @@ function EmergencyLiveScreen() {
     ensurePermissions,
     remountCameraAndWaitReady,
     resetCameraReadyGate,
+    refreshShareableProviders,
     resolveEmergency,
     runConfiguredCallAction,
     runCoreActivation,
@@ -1250,6 +1316,12 @@ function EmergencyLiveScreen() {
     }, LIVE_VIEW_POLL_MS);
     return () => clearInterval(timer);
   }, [emergencyId, liveViewEnabled, phase]);
+
+  useEffect(() => {
+    if (phase !== 'recording' || !sharingSetupState || setupNoteDismissed || setupNoteTrackedRef.current) return;
+    setupNoteTrackedRef.current = true;
+    trackEvent('social_setup_note_shown', { state: sharingSetupState });
+  }, [phase, setupNoteDismissed, sharingSetupState]);
 
   const openedBy = useMemo(() => {
     const names = liveViewLinks
@@ -1553,6 +1625,20 @@ function EmergencyLiveScreen() {
                   </TouchableOpacity>
                 ) : null}
               </View>
+
+              {/* Below every control, part of the normal layout — never covers
+                  the camera, recording status or buttons, and only appears
+                  once recording is already running. */}
+              {phase === 'recording' && emergencyId && sharingSetupState && !setupNoteDismissed ? (
+                <SocialSetupNote
+                  state={sharingSetupState}
+                  onRemind={remindAfterEmergency}
+                  onDismiss={() => {
+                    trackEvent('social_setup_note_dismiss', { state: sharingSetupState });
+                    setSetupNoteDismissed(true);
+                  }}
+                />
+              ) : null}
             </View>
           </ScrollView>
 
@@ -1567,6 +1653,7 @@ function EmergencyLiveScreen() {
               resolveShareSegment={resolveShareSegment}
               openRequest={shareOpenRequest}
               onShared={handleShared}
+              onResult={handleShareResult}
             />
           ) : null}
         </View>

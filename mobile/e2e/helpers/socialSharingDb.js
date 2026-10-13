@@ -72,9 +72,27 @@ async function disconnect() {
   await prisma.$disconnect();
 }
 
+async function makeFree(email) {
+  const user = await findUser(email);
+  await prisma.user.update({ where: { id: user.id }, data: { subscriptionStatus: 'free', subscriptionExpiresAt: null } });
+}
+
+async function clearSocialConnections(email) {
+  const user = await findUser(email);
+  await prisma.socialConnection.deleteMany({ where: { userId: user.id } });
+}
+
+async function setConnectionStatus(email, provider, status) {
+  const user = await findUser(email);
+  await prisma.socialConnection.updateMany({ where: { userId: user.id, provider }, data: { status } });
+}
+
 module.exports = {
   seedFakeSocialConnections,
+  setConnectionStatus,
   makePremium,
+  makeFree,
+  clearSocialConnections,
   userExists,
   trustedContactCount,
   latestEmergencySegments,

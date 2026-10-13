@@ -33,6 +33,8 @@ jest.mock('../../context/TourContext', () => ({
 }));
 
 jest.mock('../../components/LiveLocationMap', () => () => null);
+jest.mock('../../context/AuthContext', () => ({ useAuth: () => ({ user: { id: 'u1' } }) }));
+jest.mock('../../context/SubscriptionContext', () => ({ useSubscription: () => ({ isPremium: false }) }));
 
 jest.mock('../../context/EmergencyContext', () => ({
   useEmergencyContext: () => ({
