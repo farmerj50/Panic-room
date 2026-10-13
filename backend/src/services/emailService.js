@@ -32,4 +32,27 @@ async function sendWelcomeEmail({ to }) {
   return data;
 }
 
-module.exports = { hasResendConfig, sendWelcomeEmail };
+// Transactional (non-template) mail only needs the API key.
+function hasTransactionalEmailConfig() {
+  return Boolean(process.env.RESEND_API_KEY);
+}
+
+// One-time code a Google-only account must enter before it can be deleted.
+async function sendAccountDeletionCode({ to, code }) {
+  if (!hasTransactionalEmailConfig()) throw new Error("Resend is not configured");
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  const { data, error } = await resend.emails.send({
+    from: FROM,
+    to,
+    replyTo: REPLY_TO,
+    subject: "Your Bes account deletion code",
+    text:
+      `Your Bes account deletion code is ${code}. It expires in 10 minutes.\n\n` +
+      "If you didn't ask to delete your Bes account, ignore this email — nothing will be deleted. " +
+      "Consider securing your Google account.",
+  });
+  if (error) throw new Error(error.message || "Failed to send deletion code");
+  return data;
+}
+
+module.exports = { hasResendConfig, hasTransactionalEmailConfig, sendAccountDeletionCode, sendWelcomeEmail };

@@ -11,13 +11,17 @@ async function sendServerGA4Event(clientId, eventName, params = {}) {
   if (!GA4_MEASUREMENT_ID || !GA4_API_SECRET || !clientId) return;
 
   try {
-    await fetch(`${COLLECT_URL}?measurement_id=${GA4_MEASUREMENT_ID}&api_secret=${GA4_API_SECRET}`, {
+    // engagement_time_msec is required for an event to count toward active
+    // users / Realtime; server-originated events have no app session.
+    const fullParams = { engagement_time_msec: 1, ...params };
+    const response = await fetch(`${COLLECT_URL}?measurement_id=${GA4_MEASUREMENT_ID}&api_secret=${GA4_API_SECRET}`, {
       method: "POST",
       body: JSON.stringify({
         client_id: clientId,
-        events: [{ name: eventName, params }],
+        events: [{ name: eventName, params: fullParams }],
       }),
     });
+    if (!response.ok) console.warn(`GA4 rejected ${eventName}: HTTP ${response.status}`);
   } catch {
     // Fire-and-forget — analytics must never surface as a user-facing failure.
   }

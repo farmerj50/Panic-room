@@ -230,21 +230,28 @@ model Recording {
 }
 
 model User {
-  id                  String               @id @default(uuid())
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  emailHash           String               @unique
-  emailEncrypted      String
-  nameEncrypted       String?
-  passwordHash        String
-  contacts            TrustedContact[]
-  emergencies         EmergencyEvent[]
-  liveViewLinks       LiveViewLink[]
-  socialShareRequests SocialShareRequest[]
-  recordings          Recording[]
-  privateData         PrivateData[]
-  refreshTokens       RefreshToken[]
-  passwordResetTokens PasswordResetToken[]
+  id                        String                     @id @default(uuid())
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
+  emailHash                 String                     @unique
+  emailEncrypted            String
+  nameEncrypted             String?
+  // Null for accounts created with Google Sign-In (they can add one later
+  // via password reset). login() treats a missing hash as invalid credentials.
+  passwordHash              String?
+  // hashLookup("google:" + Google sub) once Google is linked to this account.
+  // Set only at Google sign-up or by an authenticated, password-confirmed
+  // link — never by matching emails.
+  googleSubHash             String?                    @unique
+  accountDeletionChallenges AccountDeletionChallenge[]
+  contacts                  TrustedContact[]
+  emergencies               EmergencyEvent[]
+  liveViewLinks             LiveViewLink[]
+  socialShareRequests       SocialShareRequest[]
+  recordings                Recording[]
+  privateData               PrivateData[]
+  refreshTokens             RefreshToken[]
+  passwordResetTokens       PasswordResetToken[]
 
   // Covert-messaging identity (Phase F). All optional — a user only gains
   // these once they opt in to the feature from ProfileScreen.
@@ -408,6 +415,23 @@ model RefreshToken {
   revokedAt           DateTime?
   replacedByTokenHash String?
   userAgent           String?
+
+  @@index([userId])
+}
+
+// Proof of ownership before a Google-only account (no password) is deleted:
+// a 6-digit code emailed to the account address plus a fresh Google sign-in
+// whose ID token carries this challenge's nonce. Single use, 10 minutes.
+model AccountDeletionChallenge {
+  id         String    @id @default(uuid())
+  createdAt  DateTime  @default(now())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash   String
+  nonceHash  String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int       @default(0)
 
   @@index([userId])
 }
