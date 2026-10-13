@@ -13,11 +13,15 @@ const { META_GRAPH_BASE, META_OAUTH_DIALOG_URL } = require("./socialSharingConfi
 const REQUEST_TIMEOUT_MS = 10000;
 const LONG_LIVED_TOKEN_TTL_MS = 60 * 24 * 60 * 60 * 1000; // ~60 days, matches Meta's long-lived token lifetime
 
+// authError: Meta rejected the stored token (expired, revoked, password
+// changed — OAuthException code 190). The user has to reconnect.
 class InstagramProviderError extends Error {
-  constructor(message, { status } = {}) {
+  constructor(message, { status, code } = {}) {
     super(message);
     this.name = "InstagramProviderError";
     this.status = status;
+    this.code = code;
+    this.authError = status === 401 || code === 190;
   }
 }
 
@@ -37,6 +41,7 @@ async function graphFetch(path, { method = "GET", params = {}, body } = {}) {
   if (!response.ok || json.error) {
     throw new InstagramProviderError(`Instagram API error: ${json.error?.message || response.statusText}`, {
       status: response.status,
+      code: json.error?.code,
     });
   }
   return json;

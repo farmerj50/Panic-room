@@ -35,6 +35,7 @@ model EmergencyEvent {
   smsMessages          SmsMessage[]
   locations            EmergencyLocation[]
   liveViewLinks        LiveViewLink[]
+  socialShareRequests  SocialShareRequest[]
   // GPS points the phone thinned out of its bounded offline queue before
   // they could be uploaded (reported so gaps in the history are explained).
   locationsThinned     Int                     @default(0)
@@ -239,6 +240,7 @@ model User {
   contacts            TrustedContact[]
   emergencies         EmergencyEvent[]
   liveViewLinks       LiveViewLink[]
+  socialShareRequests SocialShareRequest[]
   recordings          Recording[]
   privateData         PrivateData[]
   refreshTokens       RefreshToken[]
@@ -288,6 +290,28 @@ model User {
 // app has real TikTok/Instagram developer credentials, initiateConnect
 // always 503s and no row is ever created from a real flow. A row can still
 // be seeded manually for local testing of the connected-state UI.
+// One row per deliberate "Share" tap (the app sends a fresh requestId per
+// tap; its automatic retry reuses it). Claiming the row before posting makes
+// a duplicate request — double tap, network retry — return the first
+// result instead of publishing the same clip twice.
+model SocialShareRequest {
+  id          String         @id @default(uuid())
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emergencyId String
+  emergency   EmergencyEvent @relation(fields: [emergencyId], references: [id], onDelete: Cascade)
+  requestId   String
+  provider    String
+  sequence    Int
+  status      String         @default("in_progress") // in_progress | posted | processing | failed
+  result      Json?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@unique([userId, requestId])
+  @@index([createdAt])
+}
+
 model SocialConnection {
   id       String @id @default(uuid())
   userId   String

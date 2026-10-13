@@ -365,6 +365,35 @@ exports.share = async (req, res, next) => {
       return res.status(400).json({ error: "No video available to share yet.", code: "no_video" });
     }
 
+    // Idempotency: claim this deliberate share before anything is posted.
+    // Older app builds send no requestId and keep the previous behavior.
+    const requestId = typeof req.body.requestId === "string" ? req.body.requestId.slice(0, 100) : "";
+    let claim = null;
+    if (requestId) {
+      try {
+        claim = await prisma.socialShareRequest.create({
+          data: { userId: req.user.id, requestId, provider, emergencyId, sequence },
+        });
+      } catch (error) {
+        if (error?.code !== "P2002") throw error;
+        const existing = await prisma.socialShareRequest.findUnique({
+          where: { userId_requestId: { userId: req.user.id, requestId } },
+        });
+        if (!existing || existing.status === "in_progress") {
+          return res.status(409).json({ error: "This share is already in progress.", code: "share_in_progress" });
+        }
+        return res.json(existing.result);
+      }
+    }
+    const respond = async (body) => {
+      if (claim) {
+        await prisma.socialShareRequest
+          .update({ where: { id: claim.id }, data: { status: body.status, result: body } })
+          .catch((error) => console.error("Could not record share result:", error?.message || error));
+      }
+      return res.json(body);
+    };
+
     const key = decrypt(segment.fileUrl);
     const caption = normalizeCaption(req.body.caption);
 
@@ -372,14 +401,14 @@ exports.share = async (req, res, next) => {
       if (provider === "tiktok") {
         const accessToken = await ensureFreshTikTokToken(connection);
         const filePath = storageService.getFilePath(key);
-        if (!filePath) return res.json({ provider, status: "failed", error: "Video file not found." });
+        if (!filePath) return respond({ provider, status: "failed", error: "Video file not found." });
 
         // Re-validated against TikTok's own answer at post time — the
         // client's privacyLevel is a request, never trusted as-is.
         const privacyLevel = resolveTikTokPrivacy(req.body.privacyLevel, await tiktokPrivacyLevels(accessToken));
         const { publishId } = await tiktokClient.publishVideoFile({ accessToken, filePath, title: caption, privacyLevel });
         const status = await tiktokClient.pollPublishStatus(accessToken, publishId);
-        return res.json({ provider, status: status === "FAILED" ? "failed" : "posted", privacyLevel });
+        return respond({ provider, status: status === "FAILED" ? "failed" : "posted", privacyLevel });
       }
 
       // Reels publish takes no privacy param; resolved so the response
@@ -394,10 +423,24 @@ exports.share = async (req, res, next) => {
         videoUrl,
         caption,
       });
-      return res.json({ provider, status: result.status === "posted" ? "posted" : "processing", privacyLevel });
+      return respond({ provider, status: result.status === "posted" ? "posted" : "processing", privacyLevel });
     } catch (postError) {
       console.error(`Social share failed for ${provider}:`, postError?.message || postError);
-      return res.json({ provider, status: "failed", error: "Could not post right now." });
+      if (postError?.authError) {
+        // The stored authorization is dead — say so, and stop offering this
+        // provider until the user reconnects (Settings → Social Sharing).
+        await prisma.socialConnection
+          .update({ where: { id: connection.id }, data: { status: "reauth_required" } })
+          .catch(() => {});
+        const label = provider === "tiktok" ? "TikTok" : "Instagram";
+        return respond({
+          provider,
+          status: "failed",
+          code: "reauth_required",
+          error: `Reconnect ${label} in Settings → Social Sharing to share.`,
+        });
+      }
+      return respond({ provider, status: "failed", error: "Could not post right now." });
     }
   } catch (error) {
     next(error);

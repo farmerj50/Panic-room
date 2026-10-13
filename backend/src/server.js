@@ -3,6 +3,9 @@ const { purgeExpiredConsentEvents } = require("./services/smsConsentService");
 const { sweepStaleReservations } = require("./services/smsDispatchService");
 const { purgeExpiredLinks } = require("./services/liveViewService");
 const { checkStorageDurability } = require("./services/storageService");
+const prisma = require("./config/db");
+
+const SHARE_REQUEST_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 const PORT = process.env.PORT || 5000;
 
@@ -30,6 +33,7 @@ async function smsMaintenance() {
     const purged = await purgeExpiredConsentEvents();
     const reconciled = await sweepStaleReservations();
     const links = await purgeExpiredLinks();
+    await prisma.socialShareRequest.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - SHARE_REQUEST_RETENTION_MS) } } });
     if (purged || reconciled || links) {
       console.log(`Maintenance: purged ${purged} consent records, reconciled ${reconciled} texts, removed ${links} expired live-view links`);
     }

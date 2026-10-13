@@ -13,11 +13,24 @@ const {
 const REQUEST_TIMEOUT_MS = 10000;
 const MAX_SINGLE_CHUNK_BYTES = 64 * 1024 * 1024; // TikTok's single-chunk ceiling
 
+// authError: TikTok rejected the stored authorization itself (revoked,
+// expired refresh token, invalid access token). Retrying can't help — the
+// user has to reconnect.
+const TIKTOK_AUTH_ERROR_CODES = new Set([
+  "invalid_grant",
+  "access_token_invalid",
+  "token_expired",
+  "scope_not_authorized",
+  "invalid_token",
+]);
+
 class TikTokProviderError extends Error {
-  constructor(message, { status } = {}) {
+  constructor(message, { status, code } = {}) {
     super(message);
     this.name = "TikTokProviderError";
     this.status = status;
+    this.code = code;
+    this.authError = status === 401 || TIKTOK_AUTH_ERROR_CODES.has(code);
   }
 }
 
@@ -73,6 +86,7 @@ async function refreshAccessToken(refreshToken) {
   if (!response.ok || body.error) {
     throw new TikTokProviderError(`TikTok token refresh failed: ${body.error_description || body.error}`, {
       status: response.status,
+      code: body.error,
     });
   }
   return body;
@@ -175,6 +189,7 @@ async function publishVideoFile({ accessToken, filePath, title, privacyLevel = "
   if (!initResponse.ok || initBody.error?.code !== "ok") {
     throw new TikTokProviderError(`TikTok publish init failed: ${initBody.error?.message}`, {
       status: initResponse.status,
+      code: initBody.error?.code,
     });
   }
 
