@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Image,
   ImageBackground,
@@ -17,10 +18,10 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { UnauthStackParamList } from '../navigation/types';
 
 import StoreBadges from '../components/StoreBadges';
+import GoogleSignInButton from '../components/GoogleSignInButton';
 
 import appIcon from '../../assets/icon.png';
 import heroBg from '../../assets/images/hero-bg.webp';
-import covertHeartCard from '../../assets/covert-cards/heart.png';
 import teenGroup from '../../assets/images/teen-group.webp';
 import emergencyCard from '../../assets/images/emergency-card.webp';
 import safetyPlanCard from '../../assets/images/safety-plan-card.webp';
@@ -99,6 +100,7 @@ export default function LandingScreen() {
   // Everything on this page is gated content for logged-out visitors —
   // any feature/nav tap routes into account creation rather than a real tab.
   const goToSignUp = () => navigation.navigate('Register');
+  const [googleAvailable, setGoogleAvailable] = useState(false);
   const goToSignIn = () => navigation.navigate('Login');
 
   return (
@@ -173,20 +175,37 @@ export default function LandingScreen() {
 
             <View style={[styles.heroBody, !isWide && styles.heroBodyCompact]}>
               <View style={[styles.heroCopy, !isWide && styles.heroCopyCompact]}>
-                <Text style={[styles.heroTitle, !isWide && styles.heroTitleCompact]}>
-                  You are{'\n'}not alone.
+                <Text style={[styles.heroTitle, !isWide && styles.heroTitleCompact]} testID="landing-headline">
+                  Help without{'\n'}saying a word.
                 </Text>
                 <Text style={styles.heroSubtitle}>
                   Private support, emergency help, and trusted connections when you need them most.
                 </Text>
-                <TouchableOpacity activeOpacity={0.84} onPress={goToSignUp} style={styles.helpButton} accessibilityRole="button">
-                  <Text style={styles.helpText}>Get Started</Text>
-                  <View style={styles.helpShield}>
-                    <View style={styles.helpShieldInner} />
-                  </View>
-                </TouchableOpacity>
+                <View style={styles.authStack}>
+                  <GoogleSignInButton onAvailable={setGoogleAvailable} testID="landing-google-btn" />
+                  {googleAvailable && (
+                    <View style={styles.orRow}>
+                      <View style={styles.orLine} />
+                      <Text style={styles.orText}>or</Text>
+                      <View style={styles.orLine} />
+                    </View>
+                  )}
+                  <TouchableOpacity
+                    activeOpacity={0.84}
+                    onPress={goToSignUp}
+                    style={styles.helpButton}
+                    accessibilityRole="button"
+                    testID="landing-continue-email-btn"
+                    accessibilityLabel="landing-continue-email-btn"
+                  >
+                    <Text style={styles.helpText}>Continue with Email</Text>
+                    <View style={styles.helpShield}>
+                      <View style={styles.helpShieldInner} />
+                    </View>
+                  </TouchableOpacity>
+                </View>
                 <TouchableOpacity activeOpacity={0.78} onPress={goToSignIn} style={styles.learnButton} accessibilityRole="button">
-                  <Text style={styles.learnText}>Sign In</Text>
+                  <Text style={styles.learnText}>Already have an account? Sign in</Text>
                   <Text style={styles.learnArrow}>-&gt;</Text>
                 </TouchableOpacity>
                 <StoreBadges placement="hero" style={styles.heroStoreBadges} />
@@ -206,46 +225,9 @@ export default function LandingScreen() {
         </ImageBackground>
 
         <View style={[styles.pageContent, { maxWidth: isDesktop ? 1520 : 980 }]}>
-          <LinearGradient
-            colors={['rgba(12, 15, 43, 0.96)', 'rgba(18, 13, 57, 0.94)']}
-            style={[styles.panel, styles.covertPanel, !isWide && styles.covertPanelNarrow]}
-          >
-            <View style={[styles.covertRow, !isWide && styles.covertRowNarrow]}>
-              <View style={styles.covertCopy}>
-                <View style={styles.covertBadgeRow}>
-                  <View style={styles.covertBadge}>
-                    <Text style={styles.covertBadgeText}>BES PRO</Text>
-                  </View>
-                </View>
-                <Text style={styles.panelTitle}>Covert Messaging</Text>
-                <Text style={styles.covertBody}>
-                  Hide a private safety message inside an ordinary-looking message when
-                  discretion matters.
-                </Text>
-                <Text style={styles.covertPrice}>Included with Bes Pro — $4.99/month</Text>
-                <StoreBadges placement="covert-feature" style={styles.covertStoreBadges} />
-              </View>
-
-              {/* Shows the actual mechanism — a real cover-card image (not
-                  an emoji) that looks like an ordinary message until Bes
-                  reveals the hidden text inside it. */}
-              <View style={[styles.covertMockWrap, !isWide && styles.covertMockWrapNarrow]}>
-                <View style={styles.covertMockPhone}>
-                  <View style={styles.phoneNotch} />
-                  <View style={styles.covertMockBubble}>
-                    <Image source={covertHeartCard} resizeMode="cover" style={styles.covertMockImage} />
-                    <Text style={styles.covertMockCaption}>Thinking of you 💜</Text>
-                  </View>
-                  <Text style={styles.covertMockArrow}>↓</Text>
-                  <View style={styles.covertMockReveal}>
-                    <Text style={styles.covertMockRevealLabel}>🔓 Bes reveals</Text>
-                    <Text style={styles.covertMockRevealText}>"I need help — call me"</Text>
-                  </View>
-                </View>
-              </View>
-            </View>
-          </LinearGradient>
-
+          {/* Premium (Covert Messaging) is no longer advertised here — new
+              users see the free safety features first. It stays available
+              in the app and on the Paywall. */}
           <View style={[styles.featureGrid, !isWide && styles.stackedGrid]}>
             {FEATURE_CARDS.map((card) => (
               <TouchableOpacity
@@ -568,71 +550,10 @@ const styles = StyleSheet.create({
   panelCopy: { zIndex: 2 },
   panelTitle: { color: '#faf7ff', fontSize: 18, fontWeight: '800', marginBottom: 8 },
   panelSubtitle: { color: '#d4cce5', fontSize: 13, lineHeight: 19 },
-  // Ad-funnel confirmation panel — the exact feature the Nextdoor campaign
-  // advertises, placed before the generic feature grid so a visitor
-  // recognizes it immediately, with its own Google Play CTA right there.
-  covertPanel: { minHeight: 0, alignItems: 'stretch' },
-  covertPanelNarrow: { alignItems: 'stretch' },
-  covertRow: { flexDirection: 'row', gap: 28 },
-  covertRowNarrow: { flexDirection: 'column', gap: 20 },
-  covertCopy: { flex: 1, minWidth: 0 },
-  covertBadgeRow: { flexDirection: 'row', marginBottom: 10 },
-  covertBadge: {
-    backgroundColor: 'rgba(158, 84, 255, 0.22)',
-    borderColor: 'rgba(199, 140, 255, 0.65)',
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  covertBadgeText: { color: '#e4ccff', fontSize: 11, fontWeight: '900', letterSpacing: 0.5 },
-  covertBody: { color: '#d4cce5', fontSize: 14, lineHeight: 21, marginBottom: 14, maxWidth: 520 },
-  // Bumped up from the first pass — this is one of the main facts an
-  // ad-driven visitor needs, so it shouldn't read as fine print.
-  covertPrice: { color: '#e4ccff', fontSize: 17, fontWeight: '900', marginBottom: 20 },
-  covertStoreBadges: {},
-  // Demonstrates the actual mechanism in one glance: a real cover-card
-  // image (the feature's real carrier, not an emoji) looking ordinary,
-  // with Bes's reveal shown right underneath — explains it faster than
-  // more body text would.
-  covertMockWrap: { alignItems: 'center', justifyContent: 'center', width: 220 },
-  covertMockWrapNarrow: { width: '100%' },
-  covertMockPhone: {
-    alignItems: 'center',
-    backgroundColor: '#080b1f',
-    borderColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 28,
-    borderWidth: 2,
-    overflow: 'hidden',
-    paddingBottom: 18,
-    paddingTop: 26,
-    width: 200,
-  },
-  covertMockBubble: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderColor: 'rgba(149,110,255,0.3)',
-    borderRadius: 14,
-    borderWidth: 1,
-    marginBottom: 10,
-    padding: 10,
-    width: 150,
-  },
-  covertMockImage: { borderRadius: 8, height: 64, marginBottom: 8, width: 64 },
-  covertMockCaption: { color: '#efe8ff', fontSize: 12, fontWeight: '700' },
-  covertMockArrow: { color: '#9f58ff', fontSize: 16, fontWeight: '900', marginBottom: 8 },
-  covertMockReveal: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(78, 225, 213, 0.12)',
-    borderColor: 'rgba(78, 225, 213, 0.4)',
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    width: 168,
-  },
-  covertMockRevealLabel: { color: '#4ee1d5', fontSize: 11, fontWeight: '900', marginBottom: 3 },
-  covertMockRevealText: { color: '#e8fffb', fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  authStack: { gap: 12, maxWidth: 360, width: '100%' },
+  orRow: { alignItems: 'center', flexDirection: 'row', gap: 10 },
+  orLine: { backgroundColor: 'rgba(255,255,255,0.28)', flex: 1, height: 1 },
+  orText: { color: '#efe8ff', fontSize: 13, fontWeight: '700' },
   everyoneImage: { alignSelf: 'center', height: 108, marginTop: 8, opacity: 0.95, width: '100%' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   audienceChip: {

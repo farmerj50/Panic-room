@@ -19,6 +19,8 @@ import { ANDROID_PACKAGE_NAME, PREMIUM_PRODUCT_ID } from '../config/purchasesCon
 import { API_URL } from '../config/emergencyConfig';
 import { listConnections, type SocialProvider } from '../services/socialSharingService';
 import { contentColumn } from '../config/layout';
+import { deletionChallengeRequest } from '../services/authService';
+import { getGoogleIdToken, GoogleSignInCancelled } from '../services/googleAuth';
 
 // The one place account deletion happens, reachable in one tap from
 // Settings and from Profile → Danger Zone (Google Play requires the in-app
@@ -40,10 +42,17 @@ const DELETED_ITEMS = [
 
 export default function DeleteAccountScreen() {
   const navigation = useNavigation<any>();
-  const { deleteAccount } = useAuth();
+  const { deleteAccount, user } = useAuth();
   const { isPremium } = useSubscription();
+  // Accounts created with Google have no password: they confirm with a code
+  // emailed to them plus a fresh Google sign-in (see the backend's
+  // accountDeletionChallengeService).
+  const googleOnly = user?.hasPassword === false;
 
   const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [nonce, setNonce] = useState<string | null>(null);
+  const [sendingCode, setSendingCode] = useState(false);
   const [subscriptionAcknowledged, setSubscriptionAcknowledged] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [connected, setConnected] = useState<SocialProvider[]>([]);
@@ -61,7 +70,21 @@ export default function DeleteAccountScreen() {
     };
   }, []);
 
-  const canDelete = password.length > 0 && (!isPremium || subscriptionAcknowledged) && !deleting;
+  const proofReady = googleOnly ? Boolean(nonce) && /^\d{6}$/.test(code.trim()) : password.length > 0;
+  const canDelete = proofReady && (!isPremium || subscriptionAcknowledged) && !deleting;
+
+  const sendCode = async () => {
+    setSendingCode(true);
+    try {
+      const challenge = await deletionChallengeRequest();
+      setNonce(challenge.nonce);
+      setCode('');
+    } catch (error) {
+      Alert.alert('Could not send code', error instanceof Error ? error.message : 'Try again in a moment.');
+    } finally {
+      setSendingCode(false);
+    }
+  };
 
   const confirmDelete = () => {
     if (!canDelete) return;
@@ -73,7 +96,22 @@ export default function DeleteAccountScreen() {
         onPress: async () => {
           setDeleting(true);
           try {
-            await deleteAccount(password);
+            if (googleOnly) {
+              // A fresh Google sign-in carrying the server's one-time nonce.
+              let googleIdToken: string;
+              try {
+                googleIdToken = await getGoogleIdToken({ nonce: nonce ?? undefined });
+              } catch (error) {
+                setDeleting(false);
+                if (!(error instanceof GoogleSignInCancelled)) {
+                  Alert.alert('Google confirmation failed', 'Try again to confirm with Google.');
+                }
+                return;
+              }
+              await deleteAccount({ code: code.trim(), googleIdToken });
+            } else {
+              await deleteAccount({ password });
+            }
             // deleteAccount() flips AuthContext to 'unauthenticated' on
             // success, which drops the app back to the sign-in stack — no
             // explicit navigation needed here.
@@ -174,18 +212,56 @@ export default function DeleteAccountScreen() {
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.inputLabel}>Confirm your password</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          placeholderTextColor="#7f7899"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          editable={!deleting}
-          testID="delete-account-password-input"
-          accessibilityLabel="delete-account-password-input"
-        />
+        {googleOnly ? (
+          <View testID="delete-account-google-proof">
+            <Text style={styles.inputLabel}>Confirm it's you</Text>
+            <Text style={styles.cardText}>
+              We'll email a 6-digit code to {user?.email}. Then you'll confirm with your Google account.
+            </Text>
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={sendCode}
+              disabled={sendingCode || deleting}
+              testID="delete-account-send-code-btn"
+              accessibilityLabel="delete-account-send-code-btn"
+              accessibilityRole="button"
+            >
+              {sendingCode ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.secondaryText}>{nonce ? 'Send a new code' : 'Email me a code'}</Text>
+              )}
+            </TouchableOpacity>
+            {nonce && (
+              <TextInput
+                style={styles.input}
+                placeholder="6-digit code"
+                placeholderTextColor="#7f7899"
+                value={code}
+                onChangeText={(v) => setCode(v.replace(/\D/g, '').slice(0, 6))}
+                keyboardType="number-pad"
+                editable={!deleting}
+                testID="delete-account-code-input"
+                accessibilityLabel="delete-account-code-input"
+              />
+            )}
+          </View>
+        ) : (
+          <>
+            <Text style={styles.inputLabel}>Confirm your password</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor="#7f7899"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              editable={!deleting}
+              testID="delete-account-password-input"
+              accessibilityLabel="delete-account-password-input"
+            />
+          </>
+        )}
 
         <TouchableOpacity
           style={[styles.deleteBtn, !canDelete && styles.disabled]}
@@ -196,7 +272,11 @@ export default function DeleteAccountScreen() {
           accessibilityRole="button"
           accessibilityState={{ disabled: !canDelete }}
         >
-          {deleting ? <ActivityIndicator color="#fff" /> : <Text style={styles.deleteText}>Delete my account</Text>}
+          {deleting ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.deleteText}>{googleOnly ? 'Confirm with Google and delete' : 'Delete my account'}</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>

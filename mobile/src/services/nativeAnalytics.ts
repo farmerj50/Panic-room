@@ -18,6 +18,14 @@ import { API_URL } from '../config/emergencyConfig';
 
 const CLIENT_ID_KEY = 'bes_ga4_client_id';
 
+// GA4 only counts Measurement Protocol events toward users, sessions and
+// Realtime when they carry a session_id and engagement_time_msec — without
+// them events are accepted but barely show up. One session per app launch.
+const SESSION_ID = String(Math.floor(Date.now() / 1000));
+// Test builds can set EXPO_PUBLIC_GA4_DEBUG=1 so events appear in GA4
+// DebugView. Never set for store builds.
+const DEBUG_MODE = process.env.EXPO_PUBLIC_GA4_DEBUG === '1';
+
 let clientIdPromise: Promise<string> | null = null;
 
 async function getClientId(): Promise<string> {
@@ -47,7 +55,16 @@ export async function trackNativeEvent(eventName: string, params?: Record<string
     await fetch(`${API_URL}/api/analytics/event`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clientId, eventName, params: params ?? {} }),
+      body: JSON.stringify({
+        clientId,
+        eventName,
+        params: {
+          session_id: SESSION_ID,
+          engagement_time_msec: 100,
+          ...(DEBUG_MODE ? { debug_mode: 1 } : {}),
+          ...(params ?? {}),
+        },
+      }),
     });
   } catch {
     // Swallow network errors — analytics must never crash or block the caller.

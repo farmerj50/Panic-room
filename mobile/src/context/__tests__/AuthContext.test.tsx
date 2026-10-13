@@ -81,7 +81,7 @@ describe('AuthContext needsOnboarding', () => {
 
     expect(result.current.needsOnboarding).toBe(true);
     expect(result.current.onboardingVariant).toBe('onboarding');
-    expect(mockTrackEvent).toHaveBeenCalledWith('sign_up', { variant: 'onboarding' });
+    expect(mockTrackEvent).toHaveBeenCalledWith('sign_up', { variant: 'onboarding', method: 'email' });
   });
 
   test('register() sets needsOnboarding to false when bucketed into the contextual variant', async () => {
@@ -94,7 +94,7 @@ describe('AuthContext needsOnboarding', () => {
 
     expect(result.current.needsOnboarding).toBe(false);
     expect(result.current.onboardingVariant).toBe('contextual');
-    expect(mockTrackEvent).toHaveBeenCalledWith('sign_up', { variant: 'contextual' });
+    expect(mockTrackEvent).toHaveBeenCalledWith('sign_up', { variant: 'contextual', method: 'email' });
   });
 
   // The critical regression test for this experiment's bucketing correctness:

@@ -106,7 +106,7 @@ describe('DeleteAccountScreen', () => {
     await act(async () => {
       await pressAlertButton('Delete My Account');
     });
-    expect(mockDeleteAccount).toHaveBeenCalledWith('secret');
+    expect(mockDeleteAccount).toHaveBeenCalledWith({ password: 'secret' });
   });
 
   test('cancelling the final confirmation deletes nothing', async () => {

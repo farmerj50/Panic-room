@@ -1,6 +1,12 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { Alert, Share } from 'react-native';
 
+// These tests drive the real EmergencyScreen through many act() cycles of
+// simulated time. Under a parallel full-suite run, the file's first test also
+// pays for loading and first-rendering the screen, which can exceed Jest's
+// 5s real-time default — a timing limit, not a behavior failure.
+jest.setTimeout(30_000);
+
 // ── A controllable fake camera ────────────────────────────────────────────
 // Each recordAsync() call creates a recording that ends either when the
 // screen calls stopRecording() (a cut we made) or when the test ends it

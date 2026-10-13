@@ -19,6 +19,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useAuth } from '../context/AuthContext';
+import GoogleSignInButton from '../components/GoogleSignInButton';
 import { saveContactToBackend } from '../services/contactService';
 import { trackEvent } from '../services/analyticsService';
 import { API_URL } from '../config/emergencyConfig';
@@ -54,6 +55,7 @@ export default function AuthScreen() {
   const [trustedPhone, setTrustedPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  const [googleAvailable, setGoogleAvailable] = useState(false);
   const isWide = width >= 820;
 
   const contactStarted = Boolean(trustedName.trim() || trustedPhone.trim());
@@ -250,6 +252,16 @@ export default function AuthScreen() {
 
                 {(mode === 'login' || registerStep === 'account') && (
                   <>
+                    <View style={styles.googleBlock}>
+                      <GoogleSignInButton onAvailable={setGoogleAvailable} testID="auth-google-btn" />
+                      {googleAvailable && (
+                        <View style={styles.orRow}>
+                          <View style={styles.orLine} />
+                          <Text style={styles.orText}>or use email</Text>
+                          <View style={styles.orLine} />
+                        </View>
+                      )}
+                    </View>
                     {mode === 'register' && (
                       <View style={styles.field}>
                         <Text style={styles.label}>Name</Text>
@@ -426,6 +438,10 @@ export default function AuthScreen() {
 }
 
 const styles = StyleSheet.create({
+  googleBlock: { gap: 14, marginBottom: 14 },
+  orRow: { alignItems: 'center', flexDirection: 'row', gap: 10 },
+  orLine: { backgroundColor: 'rgba(255,255,255,0.22)', flex: 1, height: 1 },
+  orText: { color: '#bdb5d3', fontSize: 13, fontWeight: '700' },
   safe: { backgroundColor: '#050715', flex: 1 },
   keyboard: { flex: 1 },
   scroll: {

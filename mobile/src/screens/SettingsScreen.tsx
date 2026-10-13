@@ -6,6 +6,7 @@ import { TourStepKey, useTour, useTourTarget, useTourTargetPress } from '../cont
 import { useSubscription } from '../context/SubscriptionContext';
 import { ANDROID_PACKAGE_NAME, PREMIUM_PRODUCT_ID } from '../config/purchasesConfig';
 import { contentColumn } from '../config/layout';
+import GoogleAccountRow from '../components/GoogleAccountRow';
 
 type RowProps = {
   label: string;
@@ -112,6 +113,7 @@ export default function SettingsScreen() {
           color="#f472b6"
           onPress={goToSocialSharing}
         />
+        <GoogleAccountRow />
         <SettingsRow
           testID="settings-delete"
           stepKey="settings-delete"
