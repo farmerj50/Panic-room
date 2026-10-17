@@ -65,6 +65,7 @@ class BesVisionView(context: Context, appContext: AppContext) : ExpoView(context
   private var analysisEnabled = false
   private var targetFps = 8
   @Volatile private var scoreThreshold = 0.3f
+  @Volatile private var model = PersonDetector.DEFAULT_MODEL
   // Validation only: adds this much time to every inference, to prove that
   // releasing the camera never waits on a slow model. 0 in normal use.
   @Volatile private var debugSlowInferenceMs = 0
@@ -151,6 +152,10 @@ class BesVisionView(context: Context, appContext: AppContext) : ExpoView(context
 
   fun setDebugSlowInferenceMs(value: Int) {
     debugSlowInferenceMs = value.coerceIn(0, 5000)
+  }
+
+  fun setModel(value: String) {
+    model = value
   }
 
   fun setTargetFps(value: Int) {
@@ -299,7 +304,7 @@ class BesVisionView(context: Context, appContext: AppContext) : ExpoView(context
       run.lastAnalyzedAt = now
 
       val det = run.detector ?: try {
-        PersonDetector(context, scoreThreshold).also { run.detector = it }
+        PersonDetector(context, scoreThreshold, model).also { run.detector = it }
       } catch (e: Throwable) {
         Log.e(TAG, "Model failed to load", e)
         detectorFailed = true

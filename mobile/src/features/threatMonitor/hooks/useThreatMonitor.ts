@@ -155,6 +155,7 @@ export function useThreatMonitor() {
       analysisEnabled: MONITOR_CONFIG.detectionEnabled && active && status === 'running',
       targetFps: MONITOR_CONFIG.targetFps,
       scoreThreshold: MONITOR_CONFIG.scoreThreshold,
+      model: MONITOR_CONFIG.model,
       debugSlowInferenceMs: MONITOR_CONFIG.debugSlowInferenceMs,
       onCameraState,
       onDetections,

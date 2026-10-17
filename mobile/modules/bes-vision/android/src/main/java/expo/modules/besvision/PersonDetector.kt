@@ -25,7 +25,11 @@ data class DetectionResult(
 // EfficientDet-Lite0 (COCO, TFLite_Detection_PostProcess built in). Only the
 // person class is kept. Not thread-safe: the owning view calls detect() from
 // its single analysis thread and close() only after that thread has stopped.
-class PersonDetector(context: Context, private val scoreThreshold: Float = 0.5f) : Closeable {
+class PersonDetector(
+  context: Context,
+  private val scoreThreshold: Float = 0.5f,
+  model: String = DEFAULT_MODEL,
+) : Closeable {
   private val interpreter: Interpreter
   private val inputSize: Int
   private val input: ByteBuffer
@@ -45,7 +49,7 @@ class PersonDetector(context: Context, private val scoreThreshold: Float = 0.5f)
   private val outputs: Map<Int, Any>
 
   init {
-    interpreter = Interpreter(loadModel(context), Interpreter.Options().setNumThreads(2))
+    interpreter = Interpreter(loadModel(context, model), Interpreter.Options().setNumThreads(2))
     interpreter.allocateTensors()
     val inputShape = interpreter.getInputTensor(0).shape() // [1, h, w, 3]
     inputSize = inputShape[1]
@@ -137,22 +141,30 @@ class PersonDetector(context: Context, private val scoreThreshold: Float = 0.5f)
 
   companion object {
     const val PERSON_CLASS = 0
-    private const val MODEL_ASSET = "bes_vision/efficientdet_lite0.tflite"
+    // EfficientDet-Lite2 (448 px) is the candidate; Lite0 (320 px) stays
+    // selectable until phone benchmarks settle the choice.
+    const val DEFAULT_MODEL = "lite2"
+    private val MODEL_ASSETS = mapOf(
+      "lite0" to "bes_vision/efficientdet_lite0.tflite",
+      "lite2" to "bes_vision/efficientdet_lite2.tflite",
+    )
 
     // Loaded once per process (4.5 MB) and shared, read-only, by every
     // interpreter, instead of a new native allocation on every Start. Read
     // into a direct buffer rather than memory-mapped, so it works whether or
     // not the APK stores the asset compressed.
-    @Volatile private var modelBuffer: ByteBuffer? = null
+    private val modelBuffers = HashMap<String, ByteBuffer>()
 
-    private fun loadModel(context: Context): ByteBuffer {
-      val cached = modelBuffer ?: synchronized(this) {
-        modelBuffer ?: context.assets.open(MODEL_ASSET).use { it.readBytes() }.let { bytes ->
+    private fun loadModel(context: Context, model: String): ByteBuffer {
+      val asset = MODEL_ASSETS[model] ?: MODEL_ASSETS.getValue(DEFAULT_MODEL)
+      val cached = synchronized(this) {
+        modelBuffers.getOrPut(asset) {
+          val bytes = context.assets.open(asset).use { it.readBytes() }
           ByteBuffer.allocateDirect(bytes.size).order(ByteOrder.nativeOrder()).apply {
             put(bytes)
             rewind()
           }
-        }.also { modelBuffer = it }
+        }
       }
       return cached.duplicate().order(ByteOrder.nativeOrder())
     }

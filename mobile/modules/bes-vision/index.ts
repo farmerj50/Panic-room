@@ -2,6 +2,8 @@ import type { ComponentType } from 'react';
 import type { NativeSyntheticEvent, ViewProps } from 'react-native';
 import { requireNativeViewManager, requireOptionalNativeModule } from 'expo-modules-core';
 
+export type DetectorModel = 'lite0' | 'lite2';
+
 export type NativeCameraState = 'starting' | 'running' | 'waiting' | 'released' | 'preempted' | 'error';
 
 export type CameraStateEvent = {
@@ -33,6 +35,7 @@ export type BesVisionViewProps = ViewProps & {
   analysisEnabled?: boolean;
   targetFps?: number;
   scoreThreshold?: number;
+  model?: DetectorModel;
   // Validation only (adds latency to every inference).
   debugSlowInferenceMs?: number;
   onCameraState?: (event: NativeSyntheticEvent<CameraStateEvent>) => void;
@@ -42,7 +45,7 @@ export type BesVisionViewProps = ViewProps & {
 type BesVisionNativeModule = {
   releaseCamera(): Promise<boolean>;
   listTestImages(): Promise<string[]>;
-  detectImage(name: string, scoreThreshold?: number, sensorRotation?: number): Promise<Omit<DetectionsEvent, 'sessionId' | 'timestamp' | 'targetFps' | 'rotationRate'>>;
+  detectImage(name: string, scoreThreshold?: number, sensorRotation?: number, model?: DetectorModel): Promise<Omit<DetectionsEvent, 'sessionId' | 'timestamp' | 'targetFps' | 'rotationRate'>>;
 };
 
 // Android only. Elsewhere the module is absent and the AI Monitor is hidden.
@@ -60,9 +63,9 @@ export function releaseMonitorCamera(): Promise<boolean> {
   return nativeModule ? nativeModule.releaseCamera() : Promise.resolve(true);
 }
 
-export function detectTestImage(name: string, scoreThreshold?: number, sensorRotation?: number) {
+export function detectTestImage(name: string, scoreThreshold?: number, sensorRotation?: number, model?: DetectorModel) {
   if (!nativeModule) return Promise.reject(new Error('BesVision is not available on this platform'));
-  return nativeModule.detectImage(name, scoreThreshold, sensorRotation);
+  return nativeModule.detectImage(name, scoreThreshold, sensorRotation, model);
 }
 
 export function listTestImages(): Promise<string[]> {

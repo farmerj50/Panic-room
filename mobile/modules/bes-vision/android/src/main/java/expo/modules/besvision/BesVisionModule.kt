@@ -61,13 +61,13 @@ class BesVisionModule : Module() {
 
     // Validation harness: runs the detector on an image the tester pushed to
     // the app's own external files dir (bes-vision-test/). Local only.
-    AsyncFunction("detectImage") { name: String, scoreThreshold: Double?, sensorRotation: Int? ->
+    AsyncFunction("detectImage") { name: String, scoreThreshold: Double?, sensorRotation: Int?, model: String? ->
       val context = appContext.reactContext ?: throw IllegalStateException("No context")
       val dir = File(context.getExternalFilesDir(null), "bes-vision-test")
       val file = File(dir, name).canonicalFile
       require(file.path.startsWith(dir.canonicalPath + File.separator)) { "Invalid test image" }
       val bitmap = BitmapFactory.decodeFile(file.path) ?: throw IllegalArgumentException("Unreadable image")
-      val detector = PersonDetector(context, (scoreThreshold ?: 0.5).toFloat())
+      val detector = PersonDetector(context, (scoreThreshold ?: 0.5).toFloat(), model ?: PersonDetector.DEFAULT_MODEL)
       // sensorRotation simulates a camera frame: the image is rotated back the
       // way a sensor delivers it, then detect() must undo that rotation — the
       // same math the live ImageProxy path relies on.
@@ -101,6 +101,7 @@ class BesVisionModule : Module() {
       Prop("analysisEnabled") { view: BesVisionView, enabled: Boolean? -> view.setAnalysisEnabled(enabled ?: false) }
       Prop("scoreThreshold") { view: BesVisionView, value: Double? -> view.setScoreThreshold(value ?: 0.3) }
       Prop("debugSlowInferenceMs") { view: BesVisionView, value: Int? -> view.setDebugSlowInferenceMs(value ?: 0) }
+      Prop("model") { view: BesVisionView, value: String? -> view.setModel(value ?: PersonDetector.DEFAULT_MODEL) }
       Prop("targetFps") { view: BesVisionView, fps: Int? -> view.setTargetFps(fps ?: 8) }
 
       OnViewDidUpdateProps { view -> view.applyProps() }
