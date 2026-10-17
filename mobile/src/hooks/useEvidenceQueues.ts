@@ -10,8 +10,10 @@ import { reconcileClipQueue, resumeClipQueue } from '../services/segmentQueue';
 export function useEvidenceQueues() {
   useEffect(() => {
     reconcileClipQueue()
-      .then(({ recovered, lost }) => {
-        if (recovered || lost) console.warn(`Evidence queue: recovered ${recovered} clip(s), ${lost} missing.`);
+      .then(({ recovered, lost, incomplete }) => {
+        if (recovered || lost || incomplete) {
+          console.warn(`Evidence queue: recovered ${recovered} clip(s), ${incomplete} incomplete (kept), ${lost} missing.`);
+        }
       })
       .catch((error) => console.warn('Evidence queue reconcile failed', error));
     void resumeLocationQueue();
