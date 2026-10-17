@@ -107,7 +107,9 @@ export default function EmergencySettingsScreen() {
         await updateEmergencySettings({ lockScreenEnabled: true });
         Alert.alert(
           'Lock Screen Button Enabled',
-          'You\'ll see a "ACTIVATE SOS" button on your lock screen. Tap it to trigger emergency mode without unlocking your phone.',
+          'You\'ll see an "ACTIVATE SOS" button in your notification shade and on your lock screen. Tapping it goes ' +
+            'straight to Emergency and skips your Bes app PIN. If your phone is locked, your phone may still ask ' +
+            'for its own PIN, pattern or fingerprint first.',
         );
       } else {
         await disableLockScreenButton();
@@ -243,7 +245,8 @@ export default function EmergencySettingsScreen() {
             title="Lock Screen SOS Button"
             description={
               'Shows a persistent "ACTIVATE SOS" button in your notification shade and on your lock screen. ' +
-              'Tapping it opens the emergency screen without requiring Face ID, Touch ID, or PIN.'
+              'Tapping it opens Emergency and skips your Bes app PIN. If your phone is locked, your phone may ' +
+              'still ask you to unlock it (PIN, pattern, Face ID or fingerprint) first.'
             }
             value={lockScreenActive}
             onToggle={toggleLockScreen}
@@ -311,8 +314,9 @@ export default function EmergencySettingsScreen() {
             entitlement. Until approved, the button still works but respects your silent mode setting.{'\n\n'}
             <Text style={styles.noteBold}>Android:</Text>{' '}
             The lock screen button uses a high-priority notification visible on the lock screen.
-            Tapping "ACTIVATE SOS" opens Bes without unlocking the device when the
-            action is set to not require authentication.{'\n\n'}
+            Tapping "ACTIVATE SOS" opens Emergency and skips your Bes app PIN. If the
+            phone is locked, Android may still ask for your phone's PIN, pattern or
+            fingerprint before Bes opens.{'\n\n'}
             You can revoke any permission at any time in Settings › Bes.
           </Text>
         </LinearGradient>

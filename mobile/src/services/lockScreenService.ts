@@ -82,7 +82,8 @@ async function registerSosCategory() {
 
 /**
  * Posts a persistent notification in the notification shade and on the lock screen.
- * The "ACTIVATE SOS" button can be tapped without unlocking the device.
+ * Tapping "ACTIVATE SOS" skips the Bes app PIN; on a locked phone the OS may
+ * still require device authentication before the app opens.
  * Returns false if expo-notifications isn't installed or permission was denied.
  */
 export async function enableLockScreenButton(): Promise<boolean> {
