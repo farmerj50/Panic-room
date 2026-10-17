@@ -99,7 +99,8 @@
         {
           "android": {
             "enableMinifyInReleaseBuilds": true,
-            "enableShrinkResourcesInReleaseBuilds": true
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "extraProguardRules": "# expo-camera is built from source (see patches/); its barcode scanner is disabled, so ML Kit is compile-only.\n-dontwarn com.google.mlkit.vision.**"
           }
         }
       ],
