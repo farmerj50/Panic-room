@@ -1,0 +1,15 @@
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioRecorder.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioRecorder.kt
+index 7752963..1fc06d6 100644
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioRecorder.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioRecorder.kt
+@@ -263,7 +263,9 @@ class AudioRecorder(
+ 
+       val filename = "recording-${UUID.randomUUID()}${options.extension}"
+       try {
+-        val directory = File(context.cacheDir, "Audio")
++        // Bes: record evidence outside the cache — Android purges app caches
++        // under storage pressure, which deleted recordings mid-recording.
++        val directory = File(File(context.filesDir, "bes-recording"), "Audio")
+         ensureDirExists(directory)
+         val file = File(directory, filename)
+         filePath = file.absolutePath

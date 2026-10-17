@@ -27,7 +27,9 @@ jest.mock('expo-file-system', () => {
       mockFiles.delete(this.uri);
     }
     async copy(target: File) {
-      mockFiles.set(target.uri, mockFiles.get(this.uri)!);
+      if (!mockFiles.has(this.uri)) throw new Error('missing');
+      mockFiles.set(target.uri, mockTruncateNextCopy ? 1 : mockFiles.get(this.uri)!);
+      mockTruncateNextCopy = false;
     }
     delete() {
       mockFiles.delete(this.uri);
@@ -50,6 +52,10 @@ jest.mock('expo-file-system', () => {
   return { File, Directory, Paths: { document: new Directory('file:///doc') } };
 });
 
+// Lets a test make the next copy() write a truncated file.
+let mockTruncateNextCopy = false;
+const mockTrackEvent = jest.fn();
+jest.mock('../analyticsService', () => ({ trackEvent: (...args: unknown[]) => mockTrackEvent(...args) }));
 const mockUploadFile = jest.fn();
 const mockAddVideoSegment = jest.fn();
 const mockUpdateEmergency = jest.fn();
@@ -120,6 +126,8 @@ beforeEach(async () => {
   __resetClipQueueForTests();
   mockUploadFile.mockReset().mockResolvedValue({ key: 'user1/abc.mp4' });
   mockAddVideoSegment.mockReset().mockResolvedValue({});
+  mockTrackEvent.mockReset();
+  mockTruncateNextCopy = false;
   mockUpdateEmergency.mockReset().mockResolvedValue({});
 });
 
@@ -199,6 +207,69 @@ test('the queue survives an app restart', async () => {
   await flush();
   expect(mockAddVideoSegment.mock.calls.map(([, data]) => data.sequence).sort()).toEqual([1, 2]);
   expect(await stored()).toEqual([]);
+});
+
+describe('a recording whose file is already gone (e.g. purged by Android)', () => {
+  test('is reported as lost — never uploaded, never retried, never silently dropped', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const outcomes: string[] = [];
+    const record = await enqueueClip(
+      { kind: 'audio', emergencyId: EMERGENCY, startedAt: STARTED, endedAt: ENDED, sourceUri: 'file:///cache/Audio/gone.m4a' },
+      (o) => outcomes.push(o),
+    );
+    await runClipQueue();
+    await flush();
+    expect(record.state).toBe('lost');
+    expect(mockUploadFile).not.toHaveBeenCalled();
+    expect(outcomes).toEqual(['failed']);
+    expect(await getClipQueueSummary()).toEqual(expect.objectContaining({ lost: 1, waiting: 0 }));
+    expect(mockTrackEvent).toHaveBeenCalledWith('evidence_clip_lost', { kind: 'audio', reason: 'source_missing' });
+  });
+});
+
+describe('moving a clip into evidence storage', () => {
+  test('falls back to copy, and keeps the original if the copy is incomplete', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const source = cameraClip(3);
+    const original = mockFiles.get(source);
+    // Rename fails (e.g. different filesystem) and the copy comes out truncated.
+    const { File } = jest.requireMock('expo-file-system');
+    const move = jest.spyOn(File.prototype, 'move').mockRejectedValueOnce(new Error('EXDEV'));
+    mockTruncateNextCopy = true;
+    const record = await enqueueClip({
+      kind: 'video', emergencyId: EMERGENCY, sequence: 3, facing: 'back', startedAt: STARTED, endedAt: ENDED, sourceUri: source,
+    });
+    move.mockRestore();
+    expect(mockFiles.get(source)).toBe(original); // original untouched
+    expect(record.localUri).toBe(source); // uploads from the original instead
+    expect(record.state).toBe('pending');
+    expect([...mockFiles.keys()].some((u) => u.startsWith(DIR))).toBe(false); // partial copy removed
+  });
+
+  test('a verified copy replaces the original', async () => {
+    const source = cameraClip(4);
+    const { File } = jest.requireMock('expo-file-system');
+    const move = jest.spyOn(File.prototype, 'move').mockRejectedValueOnce(new Error('EXDEV'));
+    const record = await enqueueClip({
+      kind: 'video', emergencyId: EMERGENCY, sequence: 4, facing: 'back', startedAt: STARTED, endedAt: ENDED, sourceUri: source,
+    });
+    move.mockRestore();
+    expect(record.localUri.startsWith(DIR)).toBe(true);
+    expect(mockFiles.get(record.localUri)).toBe(4000);
+    expect(mockFiles.has(source)).toBe(false);
+  });
+
+  test('handing the same clip over twice is harmless (idempotent)', async () => {
+    mockUploadFile.mockRejectedValue(new Error('offline'));
+    const source = cameraClip(5);
+    const clip = { kind: 'video' as const, emergencyId: EMERGENCY, sequence: 5, facing: 'back' as const, startedAt: STARTED, endedAt: ENDED, sourceUri: source };
+    const first = await enqueueClip(clip);
+    const second = await enqueueClip(clip);
+    expect(second.localUri).toBe(first.localUri);
+    expect(second.state).toBe('pending');
+    expect((await stored()).filter((r: { id: string }) => r.id === first.id)).toHaveLength(1);
+  });
 });
 
 describe('crash recovery at launch', () => {

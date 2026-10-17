@@ -1,9 +1,11 @@
 // Durable, crash-safe upload queue for emergency evidence (video clips and
 // the audio recording). Recording never waits on it.
 //
-// - Each finished clip is moved out of the camera cache (which the OS may
-//   purge) into Paths.document/emergency-segments/. Its filename alone
-//   describes it — <emergencyId>__v<sequence>__<facing>__<startMs>__<endMs>.<ext>
+// - The camera and recorder write into persistent files (bes-recording/),
+//   never the cache: Android purges app caches under storage pressure, which
+//   deleted clips mid-recording (patches/expo-camera, patches/expo-audio).
+// - Each finished clip is moved into Paths.document/emergency-segments/. Its
+//   filename alone describes it — <emergencyId>__v<sequence>__<facing>__<startMs>__<endMs>.<ext>
 //   (audio: __a0__) — so a crash at any point can be reconciled at launch.
 // - Write order: record ('moving', target path) → move file → record 'pending'.
 // - The local file is deleted only after the server confirms the clip.
@@ -15,6 +17,7 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Directory, File, Paths } from 'expo-file-system';
 
+import { trackEvent } from './analyticsService';
 import { ApiError } from './apiClient';
 import { addVideoSegment, createRecording, updateEmergency } from './emergencyService';
 import { uploadFile } from './uploadService';
@@ -164,6 +167,9 @@ function fileExists(uri: string | undefined) {
   }
 }
 
+// Idempotent: a clip already in evidence storage is left as is. The
+// original is only removed after a copy is verified complete; a partial copy
+// is discarded and the original kept.
 async function moveInto(sourceUri: string, name: string): Promise<string> {
   if (isWeb) return sourceUri;
   const target = new File(ensureDirectory(), name);
@@ -173,6 +179,12 @@ async function moveInto(sourceUri: string, name: string): Promise<string> {
     await source.move(target);
   } catch {
     await source.copy(target);
+    if (!target.exists || target.size !== source.size) {
+      try {
+        if (source.exists && target.exists) target.delete();
+      } catch {}
+      throw new Error('Copied clip did not match the original');
+    }
     try {
       source.delete();
     } catch {}
@@ -220,6 +232,12 @@ export async function enqueueClip(
     if (!list.some((r) => r.id === record.id)) list.push(record);
     await persist();
   });
+  // Recordings are written outside the cache (patches/expo-camera, expo-audio);
+  // a cache path means that protection is gone (e.g. lost in an Expo upgrade).
+  if (!isWeb && /\/cache\//.test(clip.sourceUri)) {
+    console.warn('[Evidence] Recording was written to the purgeable cache', { kind: clip.kind });
+    trackEvent('evidence_recorded_to_cache', { kind: clip.kind });
+  }
   try {
     record.localUri = await moveInto(clip.sourceUri, name);
   } catch (error) {
@@ -227,14 +245,24 @@ export async function enqueueClip(
     console.warn('Could not move clip to evidence storage', error);
     record.localUri = clip.sourceUri;
   }
+  // If the recording's file is already gone there is nothing to upload: say
+  // so (Evidence shows lost clips) instead of retrying a missing file forever.
+  const saved = isWeb || fileExists(record.localUri);
+  const state: ClipState = saved ? 'pending' : 'lost';
   await locked(async () => {
     const list = await load();
     const stored = list.find((r) => r.id === record.id);
-    if (stored) Object.assign(stored, { localUri: record.localUri, state: 'pending', sourceUri: undefined });
+    if (stored) Object.assign(stored, { localUri: record.localUri, state, sourceUri: undefined });
     await persist();
   });
-  record.state = 'pending';
+  record.state = state;
   record.sourceUri = undefined;
+  if (!saved) {
+    console.error('[Evidence] Clip file was missing before it could be saved', { kind: clip.kind, name });
+    trackEvent('evidence_clip_lost', { kind: clip.kind, reason: 'source_missing' });
+    settle(record.id, 'failed');
+    return record;
+  }
   void runClipQueue();
   return record;
 }
