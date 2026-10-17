@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RecordingPresets, useAudioRecorder } from 'expo-audio';
 import { Contact } from '../types/contact';
 import { getContactsFromBackend } from '../services/contactService';
+import { journalRecordingStarted } from '../services/segmentQueue';
 import { createEmergency, notifyEmergencyContacts } from '../services/emergencyService';
 import { isTourActive } from '../services/tourModeState';
 import { getCurrentLocation, getLastKnownLocation, watchLocation } from '../services/locationService';
@@ -24,7 +25,7 @@ type NotifyResponse = {
 // ─── Emergency settings ──────────────────────────────────────────────────────
 
 export type EmergencySettings = {
-  /** Persistent notification on lock screen — tap ACTIVATE SOS without unlocking. */
+  /** Persistent SOS notification (shade + lock screen); skips the Bes app PIN, not device unlock. */
   lockScreenEnabled: boolean;
   /** Background GPS task — keeps location fresh even when app is closed. */
   backgroundLocationEnabled: boolean;
@@ -290,6 +291,8 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
         try {
           await audioRecorder.prepareToRecordAsync();
           audioRecorder.record();
+          // Lets the next launch recover this recording if the app dies first.
+          void journalRecordingStarted({ kind: 'audio', emergencyId: newEmergencyId, startedAt: new Date().toISOString() });
         } catch {
           // Best-effort — losing audio doesn't fail the whole activation.
         }

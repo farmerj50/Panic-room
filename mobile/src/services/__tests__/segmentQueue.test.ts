@@ -2,6 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // In-memory file system standing in for expo-file-system.
 const mockFiles = new Map<string, number>(); // uri -> size
+const mockContent = new Map<string, Uint8Array>(); // uri -> bytes (for MP4 index checks)
+const mockMtime = new Map<string, number>(); // uri -> last-modified ms
 jest.mock('expo-file-system', () => {
   const join = (parts: unknown[]) =>
     parts
@@ -21,9 +23,29 @@ jest.mock('expo-file-system', () => {
     get name() {
       return this.uri.split('/').pop()!;
     }
+    get modificationTime() {
+      return mockMtime.get(this.uri) ?? 0;
+    }
+    open() {
+      const bytes = mockContent.get(this.uri) ?? new Uint8Array(mockFiles.get(this.uri) ?? 0);
+      return {
+        size: bytes.length,
+        offset: 0,
+        readBytes(n: number) {
+          const out = bytes.slice(this.offset, this.offset + n);
+          this.offset += n;
+          return out;
+        },
+        close() {},
+      };
+    }
     async move(target: File) {
       if (!mockFiles.has(this.uri)) throw new Error('missing');
       mockFiles.set(target.uri, mockFiles.get(this.uri)!);
+      for (const m of [mockContent, mockMtime] as Map<string, unknown>[]) {
+        if (m.has(this.uri)) m.set(target.uri, m.get(this.uri));
+        m.delete(this.uri);
+      }
       mockFiles.delete(this.uri);
     }
     async copy(target: File) {
@@ -83,7 +105,10 @@ import {
   clipFileName,
   discardUnuploadedClips,
   enqueueClip,
+  clearRecordingJournal,
   getClipQueueSummary,
+  hasCompleteMp4Index,
+  journalRecordingStarted,
   parseClipFileName,
   reconcileClipQueue,
   releaseRetainedClips,
@@ -122,6 +147,8 @@ async function stored() {
 beforeEach(async () => {
   jest.useRealTimers();
   mockFiles.clear();
+  mockContent.clear();
+  mockMtime.clear();
   await AsyncStorage.clear();
   __resetClipQueueForTests();
   mockUploadFile.mockReset().mockResolvedValue({ key: 'user1/abc.mp4' });
@@ -359,4 +386,152 @@ test('unsent clips are only removed by the explicit discard action', async () =>
   expect(await discardUnuploadedClips()).toBe(1);
   expect(mockFiles.has(record.localUri)).toBe(false);
   expect((await getClipQueueSummary()).waiting).toBe(0);
+});
+
+// ── Interrupted recordings (crash / kill mid-recording) ───────────────────
+const box = (type: string, payload = 0) => {
+  const size = 8 + payload;
+  const b = new Uint8Array(size);
+  new DataView(b.buffer).setUint32(0, size);
+  for (let i = 0; i < 4; i += 1) b[4 + i] = type.charCodeAt(i);
+  return b;
+};
+const concat = (...parts: Uint8Array[]) => {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let o = 0;
+  for (const p of parts) {
+    out.set(p, o);
+    o += p.length;
+  }
+  return out;
+};
+const completeMp4 = () => concat(box('ftyp', 16), box('mdat', 4000), box('moov', 200));
+// What a recorder leaves when killed: data written, index never written.
+const interruptedMp4 = () => concat(box('ftyp', 16), box('mdat', 4000));
+
+const REC = 'file:///doc/bes-recording';
+const BEFORE_LAUNCH = 1_000; // ms epoch, long before this test process started
+function leftover(kind: 'Camera' | 'Audio', name: string, bytes: Uint8Array, mtime = BEFORE_LAUNCH + 30_000) {
+  const uri = `${REC}/${kind}/${name}`;
+  mockFiles.set(uri, bytes.length);
+  mockContent.set(uri, bytes);
+  mockMtime.set(uri, mtime);
+  return uri;
+}
+const JOURNAL_STARTED = new Date(BEFORE_LAUNCH).toISOString();
+
+describe('MP4 index check', () => {
+  test('accepts a finished recording and rejects interrupted or damaged ones', () => {
+    expect(hasCompleteMp4Index(leftover('Camera', 'ok.mp4', completeMp4()))).toBe(true);
+    expect(hasCompleteMp4Index(leftover('Camera', 'killed.mp4', interruptedMp4()))).toBe(false);
+    const truncated = completeMp4().slice(0, 4100); // moov cut off mid-box
+    expect(hasCompleteMp4Index(leftover('Camera', 'cut.mp4', truncated))).toBe(false);
+    expect(hasCompleteMp4Index(leftover('Camera', 'empty.mp4', new Uint8Array(0)))).toBe(false);
+  });
+
+  test('handles 64-bit box sizes', () => {
+    const large = new Uint8Array(16 + 100);
+    const v = new DataView(large.buffer);
+    v.setUint32(0, 1);
+    large.set([109, 100, 97, 116], 4); // 'mdat'
+    v.setUint32(8, 0);
+    v.setUint32(12, 116);
+    expect(hasCompleteMp4Index(leftover('Camera', 'big.mp4', concat(box('ftyp', 8), large, box('moov', 20))))).toBe(true);
+  });
+});
+
+describe('recovering recordings interrupted by a crash', () => {
+  test('a finished-but-unqueued recording is matched to its emergency, queued once and uploaded', async () => {
+    await journalRecordingStarted({ kind: 'video', emergencyId: EMERGENCY, sequence: 3, facing: 'front', startedAt: JOURNAL_STARTED });
+    leftover('Camera', 'abc.mp4', completeMp4());
+    __resetClipQueueForTests(); // app killed
+
+    const result = await reconcileClipQueue();
+    await flush();
+    expect(result).toEqual(expect.objectContaining({ recovered: 1, incomplete: 0 }));
+    expect(mockAddVideoSegment).toHaveBeenCalledTimes(1);
+    expect(mockAddVideoSegment).toHaveBeenCalledWith(EMERGENCY, expect.objectContaining({ sequence: 3, facing: 'front' }));
+
+    // A second launch must not recover or upload it again.
+    __resetClipQueueForTests();
+    expect(await reconcileClipQueue()).toEqual(expect.objectContaining({ recovered: 0, incomplete: 0 }));
+    await flush();
+    expect(mockAddVideoSegment).toHaveBeenCalledTimes(1);
+  });
+
+  test('an interrupted recording without an index is kept as incomplete — not uploaded, not deleted', async () => {
+    mockUploadFile.mockClear();
+    await journalRecordingStarted({ kind: 'audio', emergencyId: EMERGENCY, startedAt: JOURNAL_STARTED });
+    leftover('Audio', 'recording-1.m4a', interruptedMp4());
+    __resetClipQueueForTests();
+
+    expect(await reconcileClipQueue()).toEqual(expect.objectContaining({ recovered: 0, incomplete: 1 }));
+    await flush();
+    expect(mockUploadFile).not.toHaveBeenCalled();
+    const [record] = await stored();
+    expect(record).toEqual(expect.objectContaining({ state: 'incomplete', kind: 'audio', emergencyId: EMERGENCY }));
+    expect(mockFiles.has(record.localUri)).toBe(true);
+    expect(await getClipQueueSummary()).toEqual(expect.objectContaining({ incomplete: 1 }));
+
+    // Still kept after another launch.
+    __resetClipQueueForTests();
+    await reconcileClipQueue();
+    expect(mockFiles.has(record.localUri)).toBe(true);
+  });
+
+  test('a leftover file with no journal entry is kept and reported, never guessed or deleted', async () => {
+    const uri = leftover('Camera', 'mystery.mp4', completeMp4());
+    __resetClipQueueForTests();
+    expect(await reconcileClipQueue()).toEqual(expect.objectContaining({ incomplete: 1 }));
+    expect(mockFiles.has(uri)).toBe(true);
+    expect(mockUploadFile).not.toHaveBeenCalled();
+  });
+
+  test('a recording still being written by this launch is left alone', async () => {
+    await journalRecordingStarted({ kind: 'video', emergencyId: EMERGENCY, sequence: 1, facing: 'back', startedAt: JOURNAL_STARTED });
+    const uri = leftover('Camera', 'live.mp4', interruptedMp4(), Date.now() + 60_000);
+    __resetClipQueueForTests();
+    expect(await reconcileClipQueue()).toEqual(expect.objectContaining({ recovered: 0, incomplete: 0 }));
+    expect(mockFiles.has(uri)).toBe(true);
+    expect(await stored()).toEqual([]);
+  });
+
+  test('recordings handed to the queue normally are not recovered again', async () => {
+    mockUploadFile.mockRejectedValue(new Error('offline'));
+    await journalRecordingStarted({ kind: 'video', emergencyId: EMERGENCY, sequence: 1, facing: 'back', startedAt: JOURNAL_STARTED });
+    await enqueueVideo(1);
+    await clearRecordingJournal(EMERGENCY);
+    __resetClipQueueForTests();
+    expect(await reconcileClipQueue()).toEqual(expect.objectContaining({ recovered: 0, incomplete: 0 }));
+    expect(await stored()).toHaveLength(1);
+    expect(await AsyncStorage.getItem('bes_recording_journal')).toBe('[]');
+  });
+});
+
+test('a full disk that blocks saving the queue still moves and uploads the clip', async () => {
+  jest.spyOn(console, 'warn').mockImplementation(() => {});
+  const setItem = jest.spyOn(AsyncStorage, 'setItem').mockRejectedValue(new Error('database or disk is full (code 13 SQLITE_FULL)'));
+  const record = await enqueueVideo(9);
+  expect(record.state).toBe('pending');
+  expect(record.localUri.startsWith(DIR)).toBe(true);
+  await runClipQueue();
+  await flush();
+  expect(mockAddVideoSegment).toHaveBeenCalledWith(EMERGENCY, expect.objectContaining({ sequence: 9 }));
+  setItem.mockRestore();
+});
+
+test('if the queue was never saved, the moved clip is rebuilt from its filename at the next launch', async () => {
+  jest.spyOn(console, 'warn').mockImplementation(() => {});
+  mockUploadFile.mockRejectedValue(new Error('offline'));
+  const setItem = jest.spyOn(AsyncStorage, 'setItem').mockRejectedValue(new Error('SQLITE_FULL'));
+  const record = await enqueueVideo(10);
+  setItem.mockRestore();
+  __resetClipQueueForTests(); // app killed before any save succeeded
+
+  mockUploadFile.mockResolvedValue({ key: 'user1/abc.mp4' });
+  expect((await reconcileClipQueue()).recovered).toBe(1);
+  await runClipQueue();
+  await flush();
+  expect(mockAddVideoSegment).toHaveBeenCalledWith(EMERGENCY, expect.objectContaining({ sequence: 10 }));
+  expect(mockFiles.has(record.localUri)).toBe(false); // uploaded, then cleaned up
 });

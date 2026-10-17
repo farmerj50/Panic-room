@@ -16,6 +16,7 @@ const mockRecordings: Recording[] = [];
 let mockClipCounter = 0;
 // recordAsync() calls that fail to start (native "could not create video file").
 let mockFailStarts = 0;
+let mockStartError = 'Starting video recording failed - could not create video file.';
 let mockStartCalls = 0;
 let mockCameraMounts = 0;
 
@@ -27,7 +28,7 @@ jest.mock('expo-camera', () => {
         mockStartCalls += 1;
         if (mockFailStarts > 0) {
           mockFailStarts -= 1;
-          return Promise.reject(new Error('Starting video recording failed - could not create video file.'));
+          return Promise.reject(new Error(mockStartError));
         }
         return (
           new Promise((resolve) => {
@@ -135,6 +136,8 @@ jest.mock('../../services/emergencyService', () => ({
 const mockEnqueueClip = jest.fn();
 jest.mock('../../services/segmentQueue', () => ({
   enqueueClip: (...args: unknown[]) => mockEnqueueClip(...args),
+  journalRecordingStarted: jest.fn().mockResolvedValue(undefined),
+  clearRecordingJournal: jest.fn().mockResolvedValue(undefined),
   releaseRetainedClips: jest.fn().mockResolvedValue(undefined),
   resumeClipQueue: jest.fn().mockResolvedValue(undefined),
   retainClipsFor: jest.fn(),
@@ -178,6 +181,7 @@ describe('continuous emergency recording', () => {
     mockFailStarts = 0;
     mockStartCalls = 0;
     mockCameraMounts = 0;
+    mockStartError = 'Starting video recording failed - could not create video file.';
     mockFreeBytes = 50 * 1024 * MB;
     mockLiveView.enabled = false;
     mockLiveView.links = [];
@@ -309,6 +313,45 @@ describe('continuous emergency recording', () => {
     mockFreeBytes = 10 * 1024 * MB;
     await advance(20_000, 5000);
     expect(mockRecordings).toHaveLength(0);
+  });
+
+  test('a full disk shows an explicit storage-full notice and pauses video', async () => {
+    mockFreeBytes = 0;
+    render(<EmergencyScreen />);
+    await advance(7000);
+    expect(mockRecordings).toHaveLength(0);
+    expect(screen.getByText(/Storage full — video paused/)).toBeTruthy();
+  });
+
+  test('a recording that fails because storage ran out is not retried in a loop; the user is told', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockStartError = 'Video recording failed: Insufficient storage space. The available storage (0 bytes) is below the required threshold of 52428800 bytes.';
+    mockFailStarts = 5;
+    render(<EmergencyScreen />);
+    await advance(7000);
+    expect(mockStartCalls).toBe(1);
+    expect(screen.getAllByText(/Storage full/).length).toBeGreaterThan(0);
+    // The phone still reports some free space: the notice must not claim video is recording.
+    mockFreeBytes = 140 * MB;
+    await advance(6000);
+    expect(screen.queryByText(/recording video at lower quality/)).toBeNull();
+    expect(screen.getByText(/video paused until more space is free/)).toBeTruthy();
+  });
+
+  test('journals each segment before recording so a crash can be recovered, and clears it on a normal exit', async () => {
+    const queue = jest.requireMock('../../services/segmentQueue');
+    queue.journalRecordingStarted.mockClear();
+    queue.clearRecordingJournal.mockClear();
+    await startEmergency();
+    expect(queue.journalRecordingStarted).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'video', emergencyId: 'e1', sequence: 1 }),
+    );
+    expect(queue.clearRecordingJournal).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('emergency-exit-btn'));
+    });
+    await advance(2000);
+    expect(queue.clearRecordingJournal).toHaveBeenCalledWith('e1');
   });
 });
 

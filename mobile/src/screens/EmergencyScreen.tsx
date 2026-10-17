@@ -36,7 +36,9 @@ import {
 } from '../services/emergencyService';
 import { describeSmsResult } from '../utils/smsStatus';
 import {
+  clearRecordingJournal,
   enqueueClip,
+  journalRecordingStarted,
   releaseRetainedClips,
   resumeClipQueue,
   retainClipsFor,
@@ -44,7 +46,14 @@ import {
   waitForClipAttempt,
   type ClipOutcome,
 } from '../services/segmentQueue';
-import { formatMegabytes, getFreeBytes, shouldRecordVideo, storageLevel } from '../services/storageMonitor';
+import {
+  FULL_BELOW_BYTES,
+  formatMegabytes,
+  getFreeBytes,
+  isInsufficientStorageError,
+  shouldRecordVideo,
+  storageLevel,
+} from '../services/storageMonitor';
 import { clearInProgressEmergency, useAppStateEmergencyGuard } from '../hooks/useAppStateEmergencyGuard';
 import { mapUrl } from '../utils/mapUrl';
 import type { Contact } from '../types/contact';
@@ -81,6 +90,8 @@ type VideoSegmentInfo = {
 // this many times before falling back to a full restart.
 const MAX_START_ATTEMPTS = 3;
 const START_RETRY_MS = 750;
+const STORAGE_FULL_NOTICE =
+  'Storage full — video paused and new audio may not be saved. Recordings already made are kept. Free up space now to resume.';
 
 // In-session view of a finished segment (the social-share resolver reads
 // these). The durable upload itself is owned by segmentQueue.ts: the clip is
@@ -682,6 +693,9 @@ function EmergencyLiveScreen() {
     // are no longer needed on the device.
     pendingSegmentUploadsRef.current = [];
     videoPausedForStorageRef.current = false;
+    // Stopped normally: its recordings were all handed to the queue above
+    // (queued ahead of this under the queue lock), so none are "interrupted".
+    if (emergencyIdForUpload) void clearRecordingJournal(emergencyIdForUpload);
     if (emergencyIdForUpload) void releaseRetainedClips(emergencyIdForUpload);
     void runClipQueue();
   }, [finalizeCurrentSegment, resolveEmergency, stopAudioCapture, stopLocationWatch]);
@@ -986,6 +1000,17 @@ function EmergencyLiveScreen() {
   const beginSegmentRecording = (segment: VideoSegmentInfo) => {
     currentSegmentRef.current = segment;
     segment.startAttempts = (segment.startAttempts ?? 0) + 1;
+    // Journal first (not awaited — recording never waits on the queue) so a
+    // crash mid-segment can be recovered at the next launch.
+    if (activeEmergencyIdRef.current) {
+      void journalRecordingStarted({
+        kind: 'video',
+        emergencyId: activeEmergencyIdRef.current,
+        sequence: segment.sequence,
+        facing: segment.facing,
+        startedAt: segment.startedAt,
+      });
+    }
     const recordingPromise = cameraRef.current?.recordAsync({ maxDuration: MAX_SEGMENT_SECONDS });
     videoRecordingPromiseRef.current = recordingPromise ?? null;
     const isCurrent = () => !segment.finalized && currentSegmentRef.current === segment && !emergencyStoppingRef.current;
@@ -1021,6 +1046,16 @@ function EmergencyLiveScreen() {
         void cutToNewSegmentRef.current(facingRef.current, { inPlace: true });
       },
       (error) => {
+        // A full disk won't fix itself by retrying: say so and pause video
+        // (the storage check resumes it once space is back).
+        if (isInsufficientStorageError(error) && isCurrent()) {
+          segment.finalized = true;
+          videoRecordingPromiseRef.current = null;
+          videoPausedForStorageRef.current = true;
+          setStorageNotice(STORAGE_FULL_NOTICE);
+          setStatusMessage('Storage full — video paused. Free up space now.');
+          return;
+        }
         console.warn(`Segment ${segment.sequence} recording failed to start — retrying`, error);
         retryStart();
       },
@@ -1034,10 +1069,17 @@ function EmergencyLiveScreen() {
   const describeStorage = (free: number | null) => {
     const level = storageLevel(free);
     if (level === 'ok' || free === null) return null;
+    if (free < FULL_BELOW_BYTES) return STORAGE_FULL_NOTICE;
     if (level === 'critical') return `Storage almost full (${formatMegabytes(free)} left) — video paused. Audio and GPS continue. Free up space to resume.`;
     if (level === 'reduced') return `Storage low (${formatMegabytes(free)} left) — recording video at lower quality.`;
     return `Storage low (${formatMegabytes(free)} left). Recordings are kept until they upload — connect to Wi-Fi or free up space.`;
   };
+  // While video is paused for storage the notice must say so — the phone's
+  // free-space figure and the recorder's own check can disagree.
+  const describePausedStorage = (free: number | null) =>
+    free === null || free < FULL_BELOW_BYTES
+      ? STORAGE_FULL_NOTICE
+      : `Storage low (${formatMegabytes(free)} left) — video paused until more space is free. Audio and GPS continue.`;
 
   // Runs every few seconds while the camera session is live: cuts a new
   // segment on schedule, applies the low-storage policy (never deleting
@@ -1047,13 +1089,15 @@ function EmergencyLiveScreen() {
     segmentCheckBusyRef.current = true;
     try {
       const free = getFreeBytes();
-      setStorageNotice(describeStorage(free));
+      const staysPaused = videoPausedForStorageRef.current && !shouldRecordVideo(free, true);
+      setStorageNotice(staysPaused ? describePausedStorage(free) : describeStorage(free));
       const segment = currentSegmentRef.current;
       const recording = Boolean(segment && !segment.finalized);
 
       if (!shouldRecordVideo(free, videoPausedForStorageRef.current)) {
         if (recording) {
           videoPausedForStorageRef.current = true;
+          setStorageNotice(describePausedStorage(free));
           await finalizeCurrentSegment();
           setStatusMessage('Storage almost full — video paused. Audio and GPS continue.');
         }

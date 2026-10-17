@@ -28,11 +28,11 @@ export default function PendingEvidenceNotice() {
 
   if (!summary) return null;
   const unsent = summary.waiting + summary.conflict;
-  if (unsent === 0 && summary.lost === 0) return null;
+  if (unsent === 0 && summary.lost === 0 && summary.incomplete === 0) return null;
 
   const confirmDiscard = () => {
     Alert.alert(
-      `Delete ${plural(unsent + summary.lost, 'clip')} that were never uploaded?`,
+      `Delete ${plural(unsent + summary.lost + summary.incomplete, 'clip')} that were never uploaded?`,
       'These recordings exist only on this phone. Deleting them cannot be undone.',
       [
         { text: 'Keep them', style: 'cancel' },
@@ -51,6 +51,12 @@ export default function PendingEvidenceNotice() {
       )}
       {summary.conflict > 0 && (
         <Text style={styles.muted}>{plural(summary.conflict, 'recording')} couldn't be matched to its emergency and is kept here.</Text>
+      )}
+      {summary.incomplete > 0 && (
+        <Text style={styles.muted} testID="pending-evidence-incomplete">
+          {plural(summary.incomplete, 'recording')} stopped when the app closed unexpectedly and couldn't be finished. Kept on
+          this phone.
+        </Text>
       )}
       {summary.lost > 0 && (
         <Text style={styles.muted}>{plural(summary.lost, 'recording')} could not be recovered after the app closed unexpectedly.</Text>
