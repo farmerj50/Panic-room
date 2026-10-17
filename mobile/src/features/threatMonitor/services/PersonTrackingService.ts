@@ -126,6 +126,8 @@ export class PersonTracker {
           direction: directionOf(t.vx, t.vy * frameAspect, t.speed),
           speed: t.speed,
           suddenChange: t.suddenChange,
+          vx: t.vx,
+          vy: t.vy * frameAspect,
         },
       }));
   }

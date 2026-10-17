@@ -9,6 +9,9 @@ import { acquireForMonitor, onEmergencyClaim, releaseForMonitor } from '../servi
 import type { MonitorFrame } from '../models/types';
 import { computeCrowdMetrics } from '../services/CrowdMetricsService';
 import { PersonTracker } from '../services/PersonTrackingService';
+import { THREAT_DETECTORS } from '../threat/detectors';
+import { ThreatAssessmentEngine } from '../threat/ThreatAssessmentEngine';
+import type { ThreatAssessment } from '../threat/types';
 import type { CameraStateEvent, DetectionsEvent } from '../services/besVision';
 
 export type MonitorStatus = 'idle' | 'starting' | 'running' | 'paused' | 'error';
@@ -31,6 +34,8 @@ export function useThreatMonitor() {
   const startedAtRef = useRef(0);
   const framesRef = useRef(0);
   const trackerRef = useRef(new PersonTracker());
+  const engineRef = useRef(new ThreatAssessmentEngine(THREAT_DETECTORS));
+  const [assessment, setAssessment] = useState<ThreatAssessment | null>(null);
 
   const stop = useCallback((reason: StopReason = 'user') => {
     if (!activeRef.current) return;
@@ -40,6 +45,8 @@ export function useThreatMonitor() {
     releaseForMonitor();
     setFrame(null);
     trackerRef.current.reset();
+    engineRef.current.reset();
+    setAssessment(null);
     if (reason !== 'error') {
       setStatus('idle');
       setMessage(reason === 'emergency' ? 'Stopped — Emergency is using the camera.' : null);
@@ -63,6 +70,7 @@ export function useThreatMonitor() {
     startedAtRef.current = Date.now();
     framesRef.current = 0;
     trackerRef.current.reset();
+    engineRef.current.reset();
     setMessage(null);
     setStatus('starting');
     setActive(true);
@@ -130,14 +138,17 @@ export function useThreatMonitor() {
     const aspect = e.frameHeight / e.frameWidth;
     const people = trackerRef.current.update(e.detections, e.timestamp, aspect);
     setFrameSize({ width: e.frameWidth, height: e.frameHeight });
-    setFrame({
+    const monitorFrame = {
       timestamp: e.timestamp,
       sessionId: String(e.sessionId),
       peopleCount: people.length,
       detections: people,
       crowdMetrics: computeCrowdMetrics(people, { deviceRotationRate: e.rotationRate >= 0 ? e.rotationRate : null }),
       inferenceMs: e.inferenceMs,
-    });
+    };
+    setFrame(monitorFrame);
+    // Advisory only: the assessment is shown to the user, never acted on.
+    setAssessment(engineRef.current.update(monitorFrame));
   }, []);
 
   return {
@@ -146,6 +157,8 @@ export function useThreatMonitor() {
     // The Phase 2 input stream: one MonitorFrame per analyzed camera frame.
     frame,
     frameSize,
+    // Phase 2: explainable threat candidates for the dashboard (advisory only).
+    assessment,
     start,
     pause,
     resume,

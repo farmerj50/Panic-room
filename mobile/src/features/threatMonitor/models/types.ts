@@ -13,6 +13,9 @@ export type TrackMotion = {
   direction: Direction;
   speed: number; // smoothed, frame widths per second
   suddenChange: boolean;
+  // Smoothed velocity in frame widths per second (+x right, +y down).
+  vx?: number;
+  vy?: number;
 };
 
 export type TrackedPerson = {
