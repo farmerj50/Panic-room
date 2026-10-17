@@ -1,0 +1,184 @@
+import { useState } from 'react';
+import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import { useCameraPermissions } from 'expo-camera';
+
+import PermissionCard from '../../../components/PermissionCard';
+import CrowdMetricsPanel from '../components/CrowdMetricsPanel';
+import DetectionOverlay from '../components/DetectionOverlay';
+import MonitorControls from '../components/MonitorControls';
+import { useThreatMonitor } from '../hooks/useThreatMonitor';
+import { claimForEmergency } from '../services/CameraOwnershipService';
+import { BesVisionView } from '../services/besVision';
+import { runDetectionHarness } from '../services/detectionHarness';
+
+const STATUS_LABEL = {
+  idle: 'Off',
+  starting: 'Starting…',
+  running: 'Monitoring',
+  paused: 'Paused',
+  error: 'Stopped',
+} as const;
+
+// AI Monitor (beta): live on-device people detection. Phase 1 only observes —
+// it never classifies threats or raises alerts.
+export default function AIThreatMonitorScreen() {
+  const navigation = useNavigation<any>();
+  const [permission, requestPermission] = useCameraPermissions();
+  const monitor = useThreatMonitor();
+  const [sosBusy, setSosBusy] = useState(false);
+  const [viewSize, setViewSize] = useState({ width: 0, height: 0 });
+
+  const granted = permission?.granted === true;
+
+  // Release the camera first, then hand over to Emergency's countdown.
+  const onSos = async () => {
+    if (sosBusy) return;
+    setSosBusy(true);
+    try {
+      await claimForEmergency();
+    } finally {
+      setSosBusy(false);
+      navigation.navigate('Emergency');
+    }
+  };
+
+  const onStart = async () => {
+    if (!granted) {
+      const result = await requestPermission();
+      if (!result.granted) return;
+    }
+    monitor.start();
+  };
+
+  return (
+    <SafeAreaView style={styles.safe} testID="ai-monitor-screen">
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton} testID="ai-monitor-back-btn">
+          <Text style={styles.headerButtonText}>{'<'}</Text>
+        </TouchableOpacity>
+        <Text style={styles.title}>AI Monitor</Text>
+        {/* Long-press runs the validation harness on pushed test images. */}
+        <TouchableOpacity style={styles.beta} onLongPress={() => void runDetectionHarness()} testID="ai-monitor-beta">
+          <Text style={styles.betaText}>Beta</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View
+        style={styles.cameraBox}
+        testID="ai-monitor-camera-box"
+        onLayout={(e) => setViewSize({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })}
+      >
+        {BesVisionView && (
+          <BesVisionView style={StyleSheet.absoluteFill} testID="ai-monitor-camera" {...monitor.cameraProps} />
+        )}
+        {monitor.status === 'running' && monitor.frame && (
+          <DetectionOverlay people={monitor.frame.detections} frameSize={monitor.frameSize} viewSize={viewSize} />
+        )}
+        {!monitor.cameraProps.active && (
+          <View style={styles.cameraIdle}>
+            <Text style={styles.idleText}>Camera is off</Text>
+          </View>
+        )}
+        <View style={styles.statusChip} testID="ai-monitor-status" accessibilityLabel={`ai-monitor-status-${monitor.status}`}>
+          <View style={[styles.dot, monitor.status === 'running' && styles.dotOn]} />
+          <Text style={styles.statusText}>{STATUS_LABEL[monitor.status]}</Text>
+        </View>
+      </View>
+
+      <View style={styles.body}>
+        <CrowdMetricsPanel frame={monitor.status === 'running' ? monitor.frame : null} />
+
+        {monitor.message && (
+          <Text style={styles.message} testID="ai-monitor-message">
+            {monitor.message}
+          </Text>
+        )}
+
+        {!granted && permission && (
+          <>
+            <PermissionCard
+              icon="📷"
+              title="Camera"
+              description="AI Monitor needs the camera to see people around you."
+              granted={false}
+              onRequest={() => {
+                if (permission.canAskAgain) void requestPermission();
+                else void Linking.openSettings();
+              }}
+            />
+            {!permission.canAskAgain && (
+              <TouchableOpacity onPress={() => Linking.openSettings()} testID="ai-monitor-open-settings">
+                <Text style={styles.link}>Camera access is off. Open Settings to allow it.</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )}
+
+        <MonitorControls
+          status={monitor.status}
+          onStart={onStart}
+          onPause={monitor.pause}
+          onResume={monitor.resume}
+          onStop={() => monitor.stop('user')}
+        />
+
+        <TouchableOpacity
+          style={[styles.sos, sosBusy && styles.disabled]}
+          onPress={onSos}
+          disabled={sosBusy}
+          testID="ai-monitor-sos-btn"
+          accessibilityLabel="ai-monitor-sos-btn"
+        >
+          <Text style={styles.sosText}>SOS — Emergency</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.privacy} testID="ai-monitor-privacy-note">
+          Processed on this phone. Nothing is recorded or uploaded.
+        </Text>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#050715' },
+  header: { alignItems: 'center', flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8 },
+  headerButton: { alignItems: 'center', height: 42, justifyContent: 'center', width: 42 },
+  headerButtonText: { color: '#fff', fontSize: 28, fontWeight: '500' },
+  title: { color: '#fff', flex: 1, fontSize: 19, fontWeight: '900' },
+  beta: { backgroundColor: 'rgba(122,87,214,0.25)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
+  betaText: { color: '#c9b8ff', fontSize: 12, fontWeight: '800' },
+  cameraBox: {
+    backgroundColor: '#000',
+    borderRadius: 20,
+    flex: 1,
+    marginHorizontal: 16,
+    overflow: 'hidden',
+  },
+  cameraIdle: { backgroundColor: '#000', bottom: 0, left: 0, position: 'absolute', right: 0, top: 0, alignItems: 'center', justifyContent: 'center' },
+  idleText: { color: '#8e88a8', fontSize: 15, fontWeight: '700' },
+  statusChip: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 999,
+    flexDirection: 'row',
+    gap: 6,
+    left: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    position: 'absolute',
+    top: 12,
+  },
+  dot: { backgroundColor: '#8e88a8', borderRadius: 4, height: 8, width: 8 },
+  dotOn: { backgroundColor: '#34d399' },
+  statusText: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  body: { gap: 12, padding: 16 },
+  message: { color: '#fbbf24', fontSize: 14, fontWeight: '700' },
+  link: { color: '#c9b8ff', fontSize: 14, fontWeight: '700' },
+  sos: { alignItems: 'center', backgroundColor: '#ef445b', borderRadius: 14, paddingVertical: 14 },
+  sosText: { color: '#fff', fontSize: 16, fontWeight: '900' },
+  disabled: { opacity: 0.6 },
+  privacy: { color: '#a8a0bf', fontSize: 13, textAlign: 'center' },
+});
