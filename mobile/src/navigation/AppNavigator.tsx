@@ -304,13 +304,17 @@ function AuthenticatedNavigatorInner({
   const pendingRoute = useRef<keyof RootStackParamList | null>(null);
   useEvidenceQueues();
 
+  // Read readiness from the ref, never from `navReady` state: the
+  // notification listener below is registered once, so it keeps the first
+  // render's goEmergency, where navReady is still false — that version only
+  // queued the route, and ACTIVATE SOS did nothing while the app was running.
   const goEmergency = useCallback(() => {
-    if (navReady && navigationRef.isReady()) {
+    if (navigationRef.isReady()) {
       navigationRef.navigate('Emergency');
     } else {
       pendingRoute.current = 'Emergency';
     }
-  }, [navReady, navigationRef]);
+  }, [navigationRef]);
 
   useEffect(() => {
     if (!Notifications) return;
