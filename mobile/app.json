@@ -3,7 +3,7 @@
     "name": "Bes",
     "slug": "bes",
     "scheme": "bes",
-    "version": "1.0.34",
+    "version": "1.0.35",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -30,7 +30,7 @@
     },
     "android": {
       "package": "com.ginslayer.besapp",
-      "versionCode": 41,
+      "versionCode": 42,
       "adaptiveIcon": {
         "backgroundColor": "#22084A",
         "foregroundImage": "./assets/android-icon-foreground.png",
