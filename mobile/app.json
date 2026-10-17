@@ -108,6 +108,7 @@
       "./plugin/withEdgeToEdgeSystemBars",
       "./plugin/withReleaseSigning",
       "./plugin/withRemoveBarcodeScannerActivity",
+      "./plugin/withEvidenceRecordingGuard",
       "expo-web-browser",
       "expo-video"
     ]
