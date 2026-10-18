@@ -142,6 +142,22 @@ export const POSE_SCENARIOS: Scenario[] = [
       ], (v) => 0.8 + v.timing),
   },
 
+  {
+    id: 'shove-attack',
+    label: 'assault',
+    activity: 'one person shoves another hard, twice, pushing them back',
+    build: (seed) =>
+      scene(
+        seed,
+        7,
+        [
+          cast(1, (v) => actions.shove(0.36 + v.shift, 1, 1.5 + v.timing, 3.2 + v.timing)),
+          cast(2, (v) => actions.shoved(0.36 + v.shift + 0.18, -1, 1.5 + v.timing, 3.2 + v.timing)),
+        ],
+        (v) => 1.5 + v.timing,
+      ),
+  },
+
   // ── Look-alikes (should produce nothing) ───────────────────────────────
   { id: 'walk-alone', label: 'none', activity: 'person walking past', build: (seed) => scene(seed, 7, [cast(1, (v) => actions.walk(0.1 + v.shift, 0.1, 1))]) },
   {
@@ -184,6 +200,58 @@ export const POSE_SCENARIOS: Scenario[] = [
     label: 'none',
     activity: 'two joggers running past each other',
     build: (seed) => scene(seed, 6, [cast(1, (v) => actions.run(0.05 + v.shift, 0.25, 1)), cast(2, (v) => actions.run(0.95 + v.shift, -0.25, -1))]),
+  },
+
+  // Fall look-alikes (final baseline pass).
+  { id: 'plop-sit', label: 'none', activity: 'someone drops quickly to sit on the floor', build: (seed) => scene(seed, 7, [cast(1, (v) => actions.plopSit(0.4 + v.shift, 1.5 + v.timing))]) },
+  { id: 'kneel', label: 'none', activity: 'someone kneels to tie a shoe and stands up', build: (seed) => scene(seed, 7, [cast(1, (v) => actions.kneel(0.4 + v.shift, 1.5 + v.timing))]) },
+  { id: 'flop-on-bed', label: 'none', activity: 'someone flops down onto a bed or couch on purpose', build: (seed) => scene(seed, 7, [cast(1, (v) => actions.flopDown(0.4 + v.shift, 1.5 + v.timing, v.facing))]) },
+
+  // Ordinary gestures and interactions (final baseline pass).
+  {
+    id: 'handshake',
+    label: 'none',
+    activity: 'two people shake hands',
+    build: (seed) =>
+      scene(seed, 6, [cast(1, (v) => actions.handshake(0.38 + v.shift, 1, 2 + v.timing)), cast(2, (v) => actions.handshake(0.38 + v.shift + REACH + 0.02, -1, 2 + v.timing))]),
+  },
+  {
+    id: 'wave-hello',
+    label: 'none',
+    activity: 'someone waves hello to a friend a few steps away',
+    build: (seed) => scene(seed, 6, [cast(1, (v) => actions.wave(0.3 + v.shift, 1, 1.5 + v.timing)), cast(2, (v) => actions.stand(0.3 + v.shift + 0.38, -1))]),
+  },
+  {
+    id: 'point-and-talk',
+    label: 'none',
+    activity: 'someone points at the person they are talking to',
+    build: (seed) => scene(seed, 6, [cast(1, (v) => actions.point(0.34 + v.shift, 1, 1.5 + v.timing)), cast(2, (v) => actions.stand(0.34 + v.shift + 0.3, -1))]),
+  },
+  {
+    id: 'stretch-near-friend',
+    label: 'none',
+    activity: 'someone stretches their arms overhead next to a friend',
+    build: (seed) => scene(seed, 6, [cast(1, (v) => actions.stretch(0.36 + v.shift, 1.5 + v.timing)), cast(2, (v) => actions.stand(0.36 + v.shift + REACH, -1))]),
+  },
+  {
+    id: 'play-fight',
+    label: 'none',
+    activity: 'friends play-fighting: slow pulled punches that stop short',
+    build: (seed) =>
+      scene(seed, 7, [
+        cast(1, (v) => actions.playPunch(0.35 + v.shift, 1, { start: 0.8 + v.timing, period: 0.9 })),
+        cast(2, (v) => actions.playPunch(0.35 + v.shift + REACH + 0.06, -1, { start: 1.2 + v.timing, period: 1.0 })),
+      ]),
+  },
+  {
+    id: 'pad-training',
+    label: 'none',
+    activity: 'boxing practice: punches land on pads a partner holds up',
+    build: (seed) =>
+      scene(seed, 7, [
+        cast(1, (v) => actions.punching(0.35 + v.shift, 1, { start: 0.8 + v.timing, period: 0.55 })),
+        cast(2, (v) => actions.holdPads(0.35 + v.shift + REACH + 0.06, -1)),
+      ]),
   },
 ];
 

@@ -215,3 +215,75 @@ The AI features must stay off in production until all of these are met:
    - Accessibility of the dashboard.
 10. **Staged rollout.** Opt-in beta behind the flags, with analytics limited to start/stop and no detection data;
     explicit approval before enabling any flag in a production build.
+
+## Final AI behavior baseline (one pass, 2026-10-18)
+
+One bounded improvement pass per category, then model development stops.
+
+- **Data:** synthetic clips generated in this repository only. No consented or licensed real clips exist yet.
+- **What the detectors are:** rule-based logic on pose and crowd motion. Not a trained or validated
+  action-recognition model; no LLM judgment is involved.
+- **Process:** tuned on the train split; checked on validation (used once to choose between fixed variants of
+  the panic rules); the evaluation split was run once with frozen thresholds `3972f816`. That is the second
+  evaluation run ever; the first was the M10 run, kept as `results/m10-evaluation.md`. Nothing was tuned on it.
+- **Full results:** `results/final-baseline-evaluation.md` and `results/final-baseline-validation.md`.
+
+**New scenarios:**
+
+| Area | Added |
+|---|---|
+| Aggressive behaviour (positive) | Shove (labelled assault) |
+| Gesture and interaction look-alikes | Handshake, wave, pointing, stretching, play-fighting with pulled punches, pad training |
+| Fall look-alikes | Plopping down to sit, kneeling, flopping onto a bed |
+| Crowd look-alikes | Start-line race, goal celebration, venue exit, queue shuffle |
+
+**Changes:**
+
+| Category | Bounded change |
+|---|---|
+| Fight / assault | Strikes must travel along the line between the two people; a punch landing on hands held out from the body (pads, high-five) doesn't count; the pair must stay within reach (not running past); new shove rule (two hands to the chest, and the other person is pushed back) |
+| Panic | Two suppressors tried ("rushing toward one spot", "lined up at a start") and **removed**: on validation they cut recall from 0.75 to 0.47 or removed almost no false alarms |
+| Dispersal | A source at the edge of the group is allowed; a more common heading is allowed when the outward pattern is strong |
+| Surge | Compression also requires the crowd to end up mostly stopped |
+| Fall | Hip drop measured from standing height, not from a mid-fall sample |
+
+**Evaluation split** (precision with related types allowed; strict in the full report):
+
+| Category | Status | Recall | Precision | False-positive rate | False alarms per hour | Latency, median (s) |
+|---|---|---|---|---|---|---|
+| 1. Fighting / possible assault | **Disabled** | Assault 0.20; fights 0.00 as fights (caught as assault when at all) | 1.00 | 0.00 | 0 | 1.8 |
+| 2. Aggressive behaviour vs gestures | **Disabled** | 0.38 | 1.00 | 0.00 | 0 | 1.8 |
+| 3. Normal interactions | **Disabled** | — (look-alikes only) | — | 0.00 (0/160) | 0 | — |
+| 4. Crowd panic vs races and celebrations | Test builds | 0.82 | 0.45 | 0.25 | 75.8 | 2.8 |
+| 5. Sudden dispersal | Test builds | 0.55 | 1.00 | 0.00 | 0 | 2.6 |
+| 6. Crowd surge vs normal movement | Test builds | 0.60 | 0.92 | 0.02 | 5.1 | 2.7 |
+| 7. Falls vs sitting, bending, lying | Test builds | 1.00 | 0.77 | 0.10 | 50.0 | 2.4 |
+
+**Known limitations:**
+
+- **Fight and assault.**
+  - Recall is too low, and synthetic agreement is not evidence, so they stay disabled.
+  - A real fight where a hand is held out to block can be missed.
+  - Uppercuts and other non-forward strikes are not recognized.
+- **Panic.**
+  - Race starts (old and start-line, 16/20 each) and goal celebrations (7/20) are indistinguishable by motion
+    alone.
+  - Consider leaving panic off in any user-facing beta until real clips show otherwise.
+- **Falls.** A deliberate flop onto a bed or couch reads as a possible fall (12/20).
+- **Surge.** A packed crowd exiting a venue sometimes reads as a surge (2/20); compression recall fell to about 0.4.
+- **Dispersal.** Recall stays around 0.5.
+- **Everything.** Every number is synthetic. Real-world accuracy is unknown.
+
+**Improving over time: opt-in feedback.**
+
+- **Opt-in:** off by default ("Help improve AI Monitor").
+- **What users can do:** mark an event Correct, Wrong type (pick the right one) or False warning, and report a
+  missed event (type and roughly when).
+- **What's stored:** on the phone only. Event type, times, severity, the evidence wording and the indicator text.
+  No video, images, track data or location.
+- **Who controls it:** users can delete it or share the text themselves. Nothing uploads it.
+- **No live effect:** nothing in the detectors reads it, and a test checks that saving feedback leaves the frozen
+  thresholds unchanged.
+- **Before collecting at scale:** uploading it to Bes for review would need a backend endpoint and a Data Safety
+  update.
+

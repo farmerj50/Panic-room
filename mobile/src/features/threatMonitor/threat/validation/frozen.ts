@@ -2,6 +2,7 @@ import { CROWD_CONFIG } from '../../services/CrowdMetricsService';
 import { TRACKING_CONFIG } from '../../services/PersonTrackingService';
 import { CROWD_FEATURES } from '../crowd/crowdFeatures';
 import { THREAT_DETECTORS } from '../detectors';
+import { CONFRONTATION_CONFIG } from '../detectors/confrontationDetector';
 import { CROWD_THREAT_CONFIG } from '../detectors/crowdDetectors';
 import { FALL_CONFIG } from '../detectors/fallDetector';
 import { RELIABILITY_CONFIG } from '../reliability';
@@ -21,6 +22,7 @@ export function frozenThresholds() {
     crowdFeatures: CROWD_FEATURES,
     crowdThreats: CROWD_THREAT_CONFIG,
     fall: FALL_CONFIG,
+    confrontation: CONFRONTATION_CONFIG,
     detectors: THREAT_DETECTORS.map((d) => ({ id: d.id, types: d.types, requires: d.requires })),
   };
 }
@@ -37,7 +39,7 @@ export function thresholdFingerprint(): string {
 }
 
 // Fingerprint of the thresholds the M10 evaluation-split results were produced with.
-export const FROZEN_FINGERPRINT = 'ec789a7e';
+export const FROZEN_FINGERPRINT = '3972f816';
 
 const f2 = (v: number | null) => (v == null ? '—' : v.toFixed(2));
 const f1 = (v: number | null | undefined) => (v == null ? '—' : v.toFixed(1));

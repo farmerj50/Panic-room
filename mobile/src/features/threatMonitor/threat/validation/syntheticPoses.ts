@@ -248,6 +248,99 @@ export const actions = {
     rightArm: { shoulder: 40 + 120 * Math.abs(Math.sin(t * freq * Math.PI + 1)), elbow: 30 },
   }),
 
+  // Sits straight down onto the floor quickly (a child plopping down): hips
+  // drop fast but the torso stays upright.
+  plopSit: (x: number, at: number): ActorAt => (t) => {
+    const k = Math.min(1, Math.max(0, (t - at) / 0.6));
+    return { hipX: x, hipY: STAND_Y + 0.42 * H * k, height: H, torsoTilt: 10 * k, kneeBend: 100 * k };
+  },
+
+  // Kneels down (to tie a shoe), torso upright, then stands again.
+  kneel: (x: number, at: number): ActorAt => (t) => {
+    const k = t < at ? 0 : t < at + 0.8 ? (t - at) / 0.8 : t < at + 3 ? 1 : Math.max(0, 1 - (t - at - 3) / 0.8);
+    return { hipX: x, hipY: STAND_Y + 0.25 * H * k, height: H, torsoTilt: 20 * k, kneeBend: 90 * k };
+  },
+
+  // Flops down onto a bed or couch on purpose: fast, and nearly a fall.
+  flopDown: (x: number, at: number, facing: 1 | -1 = 1): ActorAt => (t) => {
+    const k = Math.min(1, Math.max(0, (t - at) / 0.9));
+    return { hipX: x + 0.05 * k * facing, hipY: STAND_Y + 0.2 * H * k, height: H, facing, torsoTilt: 80 * k, kneeBend: 40 * k };
+  },
+
+  // ── Gestures and interactions (final baseline pass) ─────────────────────
+  // Handshake: right hand out to meet the other person's, a few small pumps.
+  handshake: (x: number, facing: 1 | -1, at: number): ActorAt => (t) => {
+    const on = t >= at && t < at + 1.6;
+    return { hipX: x, hipY: STAND_Y, height: H, facing, rightArm: { shoulder: on ? 55 + 6 * Math.sin((t - at) * 14) : 10, elbow: on ? 25 : 10 } };
+  },
+
+  // Waving at someone across the room.
+  wave: (x: number, facing: 1 | -1, at: number): ActorAt => (t) => {
+    const on = t >= at && t < at + 2.2;
+    return { hipX: x, hipY: STAND_Y, height: H, facing, rightArm: { shoulder: on ? 150 : 10, elbow: on ? 35 + 30 * Math.sin((t - at) * 12) : 10 } };
+  },
+
+  // Pointing at someone while talking.
+  point: (x: number, facing: 1 | -1, at: number): ActorAt => (t) => {
+    const k = Math.min(1, Math.max(0, (t - at) / 0.4)) * (t < at + 2.5 ? 1 : Math.max(0, 1 - (t - at - 2.5) / 0.4));
+    return { hipX: x, hipY: STAND_Y, height: H, facing, rightArm: { shoulder: 10 + 80 * k, elbow: 10 * (1 - k) } };
+  },
+
+  // Stretching both arms overhead.
+  stretch: (x: number, at: number): ActorAt => (t) => {
+    const k = t < at ? 0 : t < at + 1 ? t - at : t < at + 2.5 ? 1 : Math.max(0, 1 - (t - at - 2.5));
+    return { hipX: x, hipY: STAND_Y, height: H, leftArm: { shoulder: 10 + 160 * k, elbow: 10 }, rightArm: { shoulder: 10 + 160 * k, elbow: 10 } };
+  },
+
+  // A hard two-handed shove at `at` (and again at `again`, if given).
+  shove: (x: number, facing: 1 | -1, at: number, again?: number): ActorAt => (t) => {
+    const ext = (s: number) => (t < s ? 0 : t < s + 0.15 ? (t - s) / 0.15 : t < s + 0.35 ? 1 : Math.max(0, 1 - (t - s - 0.35) / 0.4));
+    const k = Math.max(ext(at), again != null ? ext(again) : 0);
+    return {
+      hipX: x + 0.03 * k * facing,
+      hipY: STAND_Y,
+      height: H,
+      facing,
+      torsoTilt: 12 * k,
+      leftArm: { shoulder: 60 + 30 * k, elbow: 100 * (1 - k) },
+      rightArm: { shoulder: 60 + 30 * k, elbow: 100 * (1 - k) },
+    };
+  },
+
+  // Being shoved: pushed backwards (away from `facing`) just after each shove lands.
+  shoved: (x: number, facing: 1 | -1, at: number, again?: number): ActorAt => (t) => {
+    const push = (s: number) => Math.min(1, Math.max(0, (t - s - 0.12) / 0.35));
+    const back = 0.09 * push(at) + (again != null ? 0.09 * push(again) : 0);
+    const reel = Math.max(0, 1 - Math.abs(t - at - 0.3) / 0.4) + (again != null ? Math.max(0, 1 - Math.abs(t - again - 0.3) / 0.4) : 0);
+    return { hipX: x - back * facing, hipY: STAND_Y, height: H, facing, torsoTilt: -15 * Math.min(1, reel), leftArm: { shoulder: 30 + 40 * Math.min(1, reel), elbow: 30 }, rightArm: { shoulder: 30 + 40 * Math.min(1, reel), elbow: 30 } };
+  },
+
+  // Play-fighting: slow, pulled punches that stop short of the other person.
+  playPunch: (x: number, facing: 1 | -1, opts: { start?: number; period?: number } = {}): ActorAt => (t) => {
+    const start = opts.start ?? 0.8;
+    const period = opts.period ?? 0.9;
+    const phase = t >= start ? ((t - start) % period) / period : 0;
+    const ext = t < start ? 0 : phase < 0.35 ? phase / 0.35 : Math.max(0, 1 - (phase - 0.35) / 0.4);
+    return {
+      hipX: x,
+      hipY: STAND_Y,
+      height: H,
+      facing,
+      leftArm: { shoulder: 70, elbow: 110 },
+      rightArm: { shoulder: 25 + 45 * ext, elbow: 130 - 70 * ext }, // never fully extended
+    };
+  },
+
+  // Holding punch pads out in front of the chest for a partner (sport).
+  holdPads: (x: number, facing: 1 | -1): ActorAt => (t) => ({
+    hipX: x,
+    hipY: STAND_Y,
+    height: H,
+    facing,
+    leftArm: { shoulder: 85 + 3 * Math.sin(t * 3), elbow: 30 },
+    rightArm: { shoulder: 85 + 3 * Math.sin(t * 3 + 1), elbow: 30 },
+  }),
+
   // One quick mutual high-five.
   highFive: (x: number, facing: 1 | -1, at: number): ActorAt => (t) => {
     const k = Math.max(0, 1 - Math.abs(t - at) / 0.3);

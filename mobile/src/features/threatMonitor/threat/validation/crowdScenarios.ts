@@ -220,6 +220,47 @@ export const CROWD_SCENARIOS: Scenario[] = [
       return walker(p.x, p.z, changeAt(c.onset + c.r() * 2.5, still, heading(a + (c.r() - 0.5) * 0.8, c.between(1, 1.5)), 0.8), c.duration, 0.04, c.r() * 6);
     });
   }),
+  // Final baseline pass: more look-alikes.
+  scenario('race-start-line', 'none', 'runners lined up on a start line set off together', (c) => {
+    const lateral = c.r() < 0.5;
+    const dir = lateral ? (c.r() < 0.5 ? 0 : Math.PI) : c.r() < 0.5 ? Math.PI / 2 : -Math.PI / 2;
+    const n = c.int(8, 14);
+    const center = { x: c.between(-0.5, 0.5), z: c.between(8, 11) };
+    return Array.from({ length: n }, (_, i) => {
+      const along = (i - (n - 1) / 2) * c.between(0.6, 0.9);
+      const p = lateral ? { x: center.x + (c.r() - 0.5) * 0.3, z: center.z + along * 0.6 } : { x: center.x + along, z: center.z + (c.r() - 0.5) * 0.3 };
+      return walker(p.x, p.z, changeAt(c.onset + c.r() * 0.5, still, heading(dir + (c.r() - 0.5) * 0.15, c.between(3, 5))), c.duration, 0.02, c.r() * 6);
+    });
+  }),
+  scenario('goal-celebration', 'none', 'fans jump and rush toward the same spot to celebrate a goal', (c) => {
+    const people = placePeople(c.r, c.int(10, 14), c.area(7, 14), 1.0);
+    const spot = { x: c.between(-1, 1), z: c.between(9, 12) };
+    return people.map((p) => {
+      const dx = spot.x - p.x;
+      const dz = spot.z - p.z;
+      const d = Math.hypot(dx, dz);
+      if (c.r() < 0.35 || d < 1) {
+        const base = walker(p.x, p.z, () => still, c.duration, 0.05, c.r() * 6);
+        return (t: number) => ({ ...base(t), lift: t > c.onset ? 0.35 * Math.max(0, Math.sin(t * 2.2 * Math.PI * 2)) : 0 });
+      }
+      const speed = c.between(2.5, 4);
+      const at = c.onset + c.r() * 0.6;
+      const stopAt = at + 0.3 + (d - 0.8) / speed;
+      const v = heading(Math.atan2(dz, dx), speed);
+      return walker(p.x, p.z, (t) => (t < stopAt ? changeAt(at, still, v)(t) : still), c.duration, 0.04, c.r() * 6);
+    });
+  }),
+  scenario('venue-exit', 'none', 'a packed crowd starts walking out of a venue together', (c) => {
+    const dir = [Math.PI / 2, -Math.PI / 2, 0, Math.PI][c.int(0, 3)];
+    const block = packedBlock(c.r, c.int(3, 4), c.int(4, 5), { x: c.between(-0.5, 0.5), z: c.between(9, 11) }, c.between(0.5, 0.7));
+    return block.map((p) => walker(p.x, p.z, changeAt(c.onset + c.r() * 1.5, still, heading(dir + (c.r() - 0.5) * 0.2, c.between(0.9, 1.4)), 0.8), c.duration, 0.03, c.r() * 6));
+  }),
+  scenario('queue-shuffle', 'none', 'a packed queue shuffles forward a step at a time', (c) => {
+    const dir = [Math.PI / 2, -Math.PI / 2][c.int(0, 1)];
+    const block = packedBlock(c.r, c.int(4, 5), c.int(2, 3), { x: c.between(-0.5, 0.5), z: c.between(9, 11) }, c.between(0.5, 0.7));
+    const period = c.between(1.8, 2.6);
+    return block.map((p) => walker(p.x, p.z, (t) => (t > c.onset && (t - c.onset) % period < 0.6 ? heading(dir, 0.8) : still), c.duration, 0.03, c.r() * 6));
+  }),
   {
     id: 'phone-turning-slowly',
     label: 'none',

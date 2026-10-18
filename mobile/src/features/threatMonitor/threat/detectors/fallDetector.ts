@@ -9,6 +9,7 @@ export const FALL_CONFIG = {
   minDownMs: 600, // and the person stays down
   minHipDropSpeed: 0.8, // torso lengths/s at the fastest moment; lying down on purpose is far slower
   lookbackMs: 6000,
+  standingWindowMs: 2000,
 };
 
 // A fall: a body that goes from upright to horizontal quickly, with the hips
@@ -49,10 +50,17 @@ export const fallDetector: ThreatDetector = {
       const transitionMs = downSince - samples[uprightIdx].t;
       if (transitionMs > FALL_CONFIG.maxTransitionMs) continue;
 
-      const hipBefore = hipMid(samples[uprightIdx].pose);
+      // Final baseline pass: the drop is measured from the standing hip
+      // height (median of the upright samples just before), not from the
+      // last upright sample, which at low frame rates is already mid-fall.
+      const standing = samples
+        .filter((x, i) => i <= uprightIdx && samples[uprightIdx].t - x.t <= FALL_CONFIG.standingWindowMs && (angles[i] ?? 90) <= FALL_CONFIG.uprightBelowDeg)
+        .map((x) => hipMid(x.pose)?.y)
+        .filter((y): y is number => y != null)
+        .sort((p, q) => p - q);
       const hipNow = hipMid(samples[samples.length - 1].pose);
-      if (!hipBefore || !hipNow) continue;
-      const hipDrop = (hipNow.y - hipBefore.y) / torso;
+      if (!standing.length || !hipNow) continue;
+      const hipDrop = (hipNow.y - standing[Math.floor(standing.length / 2)]) / torso;
       if (hipDrop < FALL_CONFIG.minHipDropTorsos) continue;
       let peakDropSpeed = 0;
       for (let i = uprightIdx + 1; i < samples.length; i += 1) {

@@ -30,6 +30,10 @@ export const CROWD_THREAT_CONFIG = {
     minPeople: 4,
     minShare: 0.4, // of the people seen in the last few seconds
     maxEarlierRunningShare: 0.3, // the crowd wasn't already running (a race, a jog)
+    // Final baseline pass: "rushing toward one spot" and "lined up at a
+    // start" suppressors were tried and removed — on validation they cut
+    // real-panic recall (0.75 → 0.47) or removed almost no false alarms.
+    // Race starts and celebrations remain a known limitation.
   },
   dispersal: {
     slowBelow: 0.6, // standing...
@@ -40,6 +44,10 @@ export const CROWD_THREAT_CONFIG = {
     minShare: 0.5,
     minOutwardness: 0.5, // headings point away from a common point
     maxSameWay: 0.8, // and spread out, rather than one stream
+    // Final baseline pass: fleeing a point at the group's edge goes into one
+    // half-plane, so allow a more common heading when the outward pattern is strong.
+    strongOutwardness: 0.75,
+    maxSameWayStrong: 0.92,
   },
   surge: {
     minTracked: 6,
@@ -52,6 +60,9 @@ export const CROWD_THREAT_CONFIG = {
     // Compression: part of the crowd pushes into the rest and spacing shrinks.
     compressMovingShare: 0.4,
     compressMinSpeed: 0.7,
+    // Final baseline pass: compressed people end up mostly stopped against
+    // something; a packed crowd still walking out together isn't compressed.
+    compressMaxMovingNow: 0.7,
     maxCompression: 0.8, // spacing shrinks to this share of what it typically was
     pushWithinMs: 2000,
   },
@@ -69,7 +80,7 @@ const calmest = (before: CrowdSnapshot[], key: 'runningShare' | 'movingShare' | 
 // The point people's headings radiate from: where their lines of travel
 // come closest to meeting (least squares). Null when they're near parallel
 // (a race, a flow) or the point is far from the group.
-export function radiatingFrom(group: Onset[]): { x: number; z: number } | null {
+export function radiatingFrom(group: Onset[], maxSpreads = 1.5): { x: number; z: number } | null {
   let a11 = 0;
   let a12 = 0;
   let a22 = 0;
@@ -94,7 +105,7 @@ export function radiatingFrom(group: Onset[]): { x: number; z: number } | null {
   const cx = group.reduce((a, o) => a + o.from.x, 0) / group.length;
   const cz = group.reduce((a, o) => a + o.from.z, 0) / group.length;
   const spread = group.reduce((a, o) => a + Math.hypot(o.from.x - cx, o.from.z - cz), 0) / group.length;
-  return Math.hypot(p.x - cx, p.z - cz) <= 1.5 * spread + 1 ? p : null;
+  return Math.hypot(p.x - cx, p.z - cz) <= maxSpreads * spread + 1 ? p : null;
 }
 
 // How much a group's movement points away from a center (1 = straight out).
@@ -163,10 +174,12 @@ export const suddenDispersalDetector: ThreatDetector = {
     const share = group.length / present;
     if (group.length < C.minPeople || share < C.minShare) return [];
     // Outward from a common point, in different directions (not one flow).
-    const source = radiatingFrom(group);
-    if (!source || sameWay(group) > C.maxSameWay) return [];
+    const source = radiatingFrom(group, 2.5);
+    if (!source) return [];
     const out = outwardness(group, source);
     if (out < C.minOutwardness) return [];
+    const way = sameWay(group);
+    if (way > (out >= C.strongOutwardness ? C.maxSameWayStrong : C.maxSameWay)) return [];
 
     const strength = 0.45 + 0.25 * Math.min(1, (out - C.minOutwardness) / 0.4) + 0.2 * Math.min(1, (share - C.minShare) / 0.4) + 0.1 * Math.min(1, (group.length - C.minPeople) / 6);
     return [
@@ -208,7 +221,7 @@ export const crowdSurgeDetector: ThreatDetector = {
         s.movingShare >= C.compressMovingShare &&
         s.meanSpeed >= C.compressMinSpeed,
     );
-    const compressing = compression <= C.maxCompression && pushed;
+    const compressing = compression <= C.maxCompression && pushed && now.movingShare < C.compressMaxMovingNow;
     if (!compressing && !lurch) return [];
 
     const strength =

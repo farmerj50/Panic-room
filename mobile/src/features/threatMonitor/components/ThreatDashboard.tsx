@@ -1,5 +1,6 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+import { EventFeedback, FeedbackSettings, MissedEventReport, useAiFeedback, type AiFeedback } from './AiFeedback';
 import type { DetectionState, DetectorStatus } from '../threat/events/detectionState';
 import type { ThreatEvent } from '../threat/events/ThreatEventLog';
 import {
@@ -46,6 +47,7 @@ const DETECTOR_STATE_LABEL: Record<DetectorStatus['state'], string> = {
 // SOS stays a deliberate tap on the button below it.
 export default function ThreatDashboard({ threatsEnabled, detection, detectors, events, reliability, onClearEvents }: Props) {
   const tone = STATE_TONE[detection.kind];
+  const feedback = useAiFeedback();
   return (
     <View style={styles.wrap} testID="threat-dashboard">
       <View
@@ -82,8 +84,10 @@ export default function ThreatDashboard({ threatsEnabled, detection, detectors, 
               No events this session.
             </Text>
           ) : (
-            events.map((e) => <EventCard key={e.id} event={e} />)
+            events.map((e) => <EventCard key={e.id} event={e} feedback={feedback} />)
           )}
+          <MissedEventReport feedback={feedback} />
+          <FeedbackSettings feedback={feedback} />
         </View>
       )}
 
@@ -103,7 +107,7 @@ export default function ThreatDashboard({ threatsEnabled, detection, detectors, 
   );
 }
 
-function EventCard({ event }: { event: ThreatEvent }) {
+function EventCard({ event, feedback }: { event: ThreatEvent; feedback: AiFeedback }) {
   const ongoing = event.status === 'ongoing';
   const ended =
     event.endReason === 'stale'
@@ -146,6 +150,7 @@ function EventCard({ event }: { event: ThreatEvent }) {
       <Text style={styles.note} testID="threat-event-not-confirmed">
         {NOT_CONFIRMED_NOTE}
       </Text>
+      <EventFeedback event={event} feedback={feedback} />
     </View>
   );
 }

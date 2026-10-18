@@ -1,6 +1,6 @@
 import type { MonitorFrame } from '../../models/types';
 import { KP, visible } from '../pose/skeleton';
-import { poseHistory, strikeTarget, torsoAngle, torsoCenter, typicalTorso, uni, wrists, type PoseSample } from '../pose/poseFeatures';
+import { hipMid, poseHistory, strikeTarget, torsoAngle, torsoCenter, typicalTorso, uni, wrists, type PoseSample } from '../pose/poseFeatures';
 import type { DetectorObservation, ThreatDetector } from '../types';
 
 export const CONFRONTATION_CONFIG = {
@@ -20,6 +20,16 @@ export const CONFRONTATION_CONFIG = {
   // Two people this close (torso centers, in torso lengths) can reach each other.
   maxPairDistance: 3,
   downAboveDeg: 55,
+  // Final baseline pass:
+  handsOutFront: 0.35, // torso lengths from the head/chest: pads or a high-five, not a guard
+  minAxisShare: 0.7, // strikes travel mostly along the line between the two bodies, not up/down arcs
+  minTogetherShare: 0.7, // the pair stays within reach for most of the last 2 s (not runners passing)
+  togetherMs: 2000,
+  // A shove: both hands drive into the other's chest and their body is pushed back.
+  shoveMinTravel: 0.25,
+  shoveMaxEnd: 0.6,
+  shovePushedBack: 0.3, // torso lengths the other person's hips move away within shoveWithinMs
+  shoveWithinMs: 800,
 };
 
 type Strike = { t: number };
@@ -54,19 +64,32 @@ export function strikesBy(attacker: PoseSample[], target: PoseSample[], torso: n
       const ty = aim.y - w0.y;
       const cos = (dx * tx + dy * ty) / (Math.hypot(dx, dy) * Math.hypot(tx, ty) || 1);
       const end = Math.hypot(aim.x - w1.x, aim.y - w1.y) / torso;
+      // Direction between the two bodies (torso centers): a strike travels
+      // mostly along it; dance arcs and raised arms move across it.
+      const ca = torsoCenter(a1);
+      const cb = torsoCenter(victim);
+      const axis = ca && cb ? { x: cb.x - ca.x, y: cb.y - ca.y } : null;
+      const axisShare = axis ? Math.abs(dx * axis.x + dy * axis.y) / (Math.hypot(dx, dy) * Math.hypot(axis.x, axis.y) || 1) : 1;
       const startDist = Math.hypot(tx, ty) / torso;
       farthestSince.set(k, Math.max(farthestSince.get(k) ?? startDist, startDist));
       const retracted = !lastEnd.has(k) || (farthestSince.get(k) ?? 0) - (lastEnd.get(k) ?? 0) >= CONFRONTATION_CONFIG.minRetraction;
       // Meeting the other person's hand in mid-air (a high-five, a handshake),
       // away from their body — not a fist landing on a guard at their face.
-      const handToHand = victimHands.some(
-        (h) =>
-          Math.hypot(h.x - w1.x, h.y - w1.y) / torso <= CONFRONTATION_CONFIG.handContact &&
-          Math.hypot(h.x - aim.x, h.y - aim.y) / torso >= CONFRONTATION_CONFIG.handContact + 0.2,
-      );
+      // Final pass: also when the fist ends nearer the other person's hands
+      // than their head/chest while those hands are held out in front of the
+      // body (pads, a high-five) — a guard at the face doesn't count.
+      const handToHand = victimHands.some((h) => {
+        const toFist = Math.hypot(h.x - w1.x, h.y - w1.y) / torso;
+        const fromBody = Math.hypot(h.x - aim.x, h.y - aim.y) / torso;
+        return (
+          (toFist <= CONFRONTATION_CONFIG.handContact && fromBody >= CONFRONTATION_CONFIG.handContact + 0.2) ||
+          (toFist < end && fromBody >= CONFRONTATION_CONFIG.handsOutFront)
+        );
+      });
       if (
         retracted &&
         !handToHand &&
+        axisShare >= CONFRONTATION_CONFIG.minAxisShare &&
         speed >= CONFRONTATION_CONFIG.minStrikeSpeed &&
         travel >= CONFRONTATION_CONFIG.minStrikeTravel &&
         cos >= CONFRONTATION_CONFIG.minAimCosine &&
@@ -82,6 +105,65 @@ export function strikesBy(attacker: PoseSample[], target: PoseSample[], torso: n
     }
   }
   return strikes;
+}
+
+// Hard shoves by `attacker` at `target`: both wrists drive toward the
+// target's chest and end there, then the target's hips are pushed away.
+export function shovesBy(attacker: PoseSample[], target: PoseSample[], torso: number): Array<{ t: number; pushedBack: number }> {
+  const C = CONFRONTATION_CONFIG;
+  const byTime = new Map(target.map((s) => [s.t, s]));
+  const out: Array<{ t: number; pushedBack: number }> = [];
+  for (let i = 1; i < attacker.length; i += 1) {
+    const a0 = attacker[i - 1];
+    const a1 = attacker[i];
+    if (a1.t - a0.t <= 0 || a1.t - a0.t > C.maxSampleGapMs) continue;
+    const victim = byTime.get(a1.t);
+    const chest = victim && torsoCenter(victim);
+    const attackerCenter = torsoCenter(a1);
+    if (!victim || !chest || !attackerCenter) continue;
+    let hands = 0;
+    for (const k of [KP.leftWrist, KP.rightWrist]) {
+      const w0k = a0.pose.keypoints[k];
+      const w1k = a1.pose.keypoints[k];
+      if (!visible(w0k) || !visible(w1k)) continue;
+      const w0 = uni(w0k, a0.aspect);
+      const w1 = uni(w1k, a1.aspect);
+      const travel = Math.hypot(w1.x - w0.x, w1.y - w0.y) / torso;
+      const toward = Math.hypot(chest.x - w0.x, chest.y - w0.y) - Math.hypot(chest.x - w1.x, chest.y - w1.y);
+      const end = Math.hypot(chest.x - w1.x, chest.y - w1.y) / torso;
+      if (travel >= C.shoveMinTravel && toward > 0 && end <= C.shoveMaxEnd) hands += 1;
+    }
+    if (hands < 2) continue;
+    if (out.length && a1.t - out[out.length - 1].t < 600) continue;
+    // Did the target's hips move away from the attacker right after?
+    const hip0 = hipMid(victim.pose);
+    const later = target.filter((s) => s.t > a1.t && s.t <= a1.t + C.shoveWithinMs);
+    const hip1 = later.length ? hipMid(later[later.length - 1].pose) : null;
+    if (!hip0 || !hip1) continue;
+    const away = Math.sign(chest.x - attackerCenter.x) || 1;
+    const pushedBack = ((hip1.x - hip0.x) * away) / torso;
+    if (pushedBack >= C.shovePushedBack) out.push({ t: a1.t, pushedBack });
+  }
+  return out;
+}
+
+// The pair stayed within reach for most of the recent past (not passing by).
+function stayedTogether(ha: PoseSample[], hb: PoseSample[], torso: number): boolean {
+  const C = CONFRONTATION_CONFIG;
+  const last = Math.max(ha[ha.length - 1]?.t ?? 0, hb[hb.length - 1]?.t ?? 0);
+  const byTime = new Map(hb.map((s) => [s.t, s]));
+  let both = 0;
+  let close = 0;
+  for (const a of ha) {
+    if (last - a.t > C.togetherMs) continue;
+    const b = byTime.get(a.t);
+    const ca = torsoCenter(a);
+    const cb = b && torsoCenter(b);
+    if (!ca || !cb) continue;
+    both += 1;
+    if (Math.hypot(ca.x - cb.x, ca.y - cb.y) / torso <= C.maxPairDistance) close += 1;
+  }
+  return both >= 3 && close / both >= C.minTogetherShare;
 }
 
 function isDown(samples: PoseSample[]): boolean {
@@ -121,8 +203,24 @@ export const confrontationDetector: ThreatDetector = {
         if (distance > CONFRONTATION_CONFIG.maxPairDistance) continue;
         const closeness = Math.min(1, (CONFRONTATION_CONFIG.maxPairDistance - distance) / 1.5);
 
+        if (!stayedTogether(ha, hb, (ta + tb) / 2)) continue;
         const sa = strikesBy(ha, hb, ta).length;
         const sb = strikesBy(hb, ha, tb).length;
+        const shovesA = shovesBy(ha, hb, ta);
+        const shovesB = shovesBy(hb, ha, tb);
+        if (shovesA.length + shovesB.length > 0 && sa + sb === 0) {
+          const [attacker, victim, shoves] = shovesA.length >= shovesB.length ? [a, b, shovesA] : [b, a, shovesB];
+          out.push({
+            type: 'assault',
+            subjectKey: `assault:${attacker}-${victim}`,
+            trackIds: [attacker, victim],
+            strength: Math.min(1, 0.5 + 0.15 * Math.min(shoves.length, 3)),
+            indicators: [
+              { id: 'shoved', label: `Shoved the other person backwards (${shoves.length}× in 3 s)`, value: shoves.length, weight: 0.6 },
+            ],
+          });
+          continue;
+        }
         if (sa + sb === 0) continue;
         const proximity = 0.6 + 0.4 * closeness;
         const closeIndicator = {
