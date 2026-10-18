@@ -93,6 +93,7 @@ describe('crowd metrics', () => {
       averageSpeed: 0,
       cameraMoving: false,
       motionReliable: true,
+      deviceRotationRate: 0,
     });
   });
 });

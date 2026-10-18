@@ -42,6 +42,9 @@ export type CrowdMetrics = {
   averageSpeed: number;
   cameraMoving: boolean;
   motionReliable: boolean; // false while the phone itself is moving
+  // Gyroscope reading behind that call (rad/s), when the phone has one.
+  // Crowd threat detectors apply a stricter limit than motionReliable.
+  deviceRotationRate?: number;
 };
 
 export type MonitorFrame = {

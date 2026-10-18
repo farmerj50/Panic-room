@@ -1,6 +1,7 @@
 import type { MonitorFrame } from '../../models/types';
 import type { ThreatType } from '../types';
 import { syntheticSequence, type SyntheticPerson } from './syntheticFrames';
+import { CROWD_SCENARIOS } from './crowdScenarios';
 import { actions, actor, type ActorAt } from './syntheticPoses';
 
 // Labelled synthetic scenarios: threats and everyday look-alikes. Seeds vary
@@ -64,7 +65,8 @@ const cast = (id: number, make: (v: ReturnType<typeof variation>) => ActorAt) =>
 // Fist-to-face distance for the stick figure: hips ~0.22 frame widths apart.
 const REACH = 0.22;
 
-export const SCENARIOS: Scenario[] = [
+// Person-level scenes (pose): falls, fights and their look-alikes.
+export const POSE_SCENARIOS: Scenario[] = [
   // ── Threats ────────────────────────────────────────────────────────────
   {
     id: 'fall-forward',
@@ -160,3 +162,6 @@ export const SCENARIOS: Scenario[] = [
     build: (seed) => scene(seed, 6, [cast(1, (v) => actions.run(0.05 + v.shift, 0.25, 1)), cast(2, (v) => actions.run(0.95 + v.shift, -0.25, -1))]),
   },
 ];
+
+export { CROWD_SCENARIOS };
+export const SCENARIOS: Scenario[] = [...POSE_SCENARIOS, ...CROWD_SCENARIOS];

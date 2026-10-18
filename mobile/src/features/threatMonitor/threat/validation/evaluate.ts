@@ -40,6 +40,10 @@ export type EvaluationReport = {
 const ALSO_ACCEPTABLE: Partial<Record<ScenarioLabel, ThreatType[]>> = {
   assault: ['fall', 'physical_confrontation'],
   physical_confrontation: ['assault'],
+  // People scattering in a hurry are both a dispersal and a panic.
+  crowd_panic: ['sudden_dispersal'],
+  sudden_dispersal: ['crowd_panic'],
+  crowd_surge: ['crowd_panic'],
 };
 
 export function evaluate(scenarios: Scenario[], split: SplitName, seedsPerScenario = 10, detectors?: readonly ThreatDetector[]): EvaluationReport {

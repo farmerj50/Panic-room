@@ -31,6 +31,7 @@ Applies to all data used to develop, tune or evaluate Bes threat recognition
 | Dataset | Kind | License / authorization | Provenance | Permitted uses | Splits |
 |---|---|---|---|---|---|
 | `synthetic-pose-v1` | Synthetic skeleton + track sequences generated in code (`syntheticPoses.ts`) | Bes-owned (generated) | This repository | train, validation, evaluation (logic only) | seeds 1–99 train, 100–199 validation, 200–299 evaluation |
+| `synthetic-crowd-v1` | Simulated crowds on a floor plane, projected through a phone camera with detector noise (jitter, misses, occlusion) and run through the app's real tracker and crowd metrics (`syntheticCrowd.ts`, `crowdScenarios.ts`) | Bes-owned (generated) | This repository | train, validation, evaluation (logic only) | same seed ranges |
 
 No real-world clips are registered yet.
 
@@ -74,3 +75,28 @@ No real-world clips are registered yet.
 ```
 
 Video files themselves are never committed to the repository.
+
+## Synthetic results (logic checks, not real-world accuracy)
+
+Thresholds were tuned on the train split only, then frozen before the
+validation and evaluation splits were run once (20 seeds per scenario).
+Per-clip: a category counts as raised if a candidate of that type was shown
+at any point. Related types are not counted against each other (panic ↔
+dispersal, surge → panic).
+
+M8 crowd, evaluation split (340 clips: 6 threat scenarios, 11 look-alikes):
+
+| Category | Recall | Precision | FPR | Main errors |
+|---|---|---|---|---|
+| Crowd panic | 0.82 | 0.66 | 0.06 | Race start on the gun 16/20 (indistinguishable by motion); sport 1/20 |
+| Sudden dispersal | 0.50 | 1.00 | 0.00 | Scatter from a point at the edge of a group usually shows as panic instead |
+| Crowd surge | 0.68 | 0.93 | 0.01 | Crossing starting on green 2/20 |
+
+Validation split: panic 0.75 / 0.60 / 0.07, dispersal 0.50 / 1.00 / 0.00,
+surge 0.78 / 0.84 / 0.02.
+
+Known limits: movement alone can't separate a race start from people fleeing
+the same way; distances toward/away from the camera come from box size with
+an assumed lens (`CROWD_FEATURES.focal`); crowd motion is ignored while the
+phone turns faster than 0.1 rad/s (gyroscope).
+

@@ -94,5 +94,6 @@ export function computeCrowdMetrics(
     averageSpeed: speeds.length ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0,
     cameraMoving,
     motionReliable: !cameraMoving,
+    ...(rotation != null ? { deviceRotationRate: rotation } : {}),
   };
 }
