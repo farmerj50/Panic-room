@@ -30,7 +30,7 @@
     },
     "android": {
       "package": "com.ginslayer.besapp",
-      "versionCode": 49,
+      "versionCode": 50,
       "adaptiveIcon": {
         "backgroundColor": "#22084A",
         "foregroundImage": "./assets/android-icon-foreground.png",
