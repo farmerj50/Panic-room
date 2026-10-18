@@ -139,3 +139,24 @@ test('registering the same emergency twice keeps one entry', async () => {
   await registerPendingEmergency({ id: ID, activatedAt: AT });
   expect(await pendingEmergencyCount()).toBe(1);
 });
+
+test('older server: later status updates go to the id it returned (alias kept on the device)', async () => {
+  mockCreateEmergency.mockResolvedValue({ id: 'server-9' });
+  await registerPendingEmergency({ id: ID, activatedAt: AT });
+  await syncPendingEmergencies();
+  await endEmergency(ID);
+  expect(mockUpdateEmergency).toHaveBeenCalledWith('server-9', { status: 'RESOLVED' });
+});
+
+test('ended while its create was in flight: the resolved status is still sent', async () => {
+  let release!: () => void;
+  mockCreateEmergency.mockImplementation((d: { id: string }) => new Promise((r) => (release = () => r({ id: d.id }))));
+  await registerPendingEmergency({ id: ID, activatedAt: AT });
+  const sync = syncPendingEmergencies();
+  await new Promise((r) => setTimeout(r, 0));
+  await endEmergency(ID, '2026-10-18T09:02:00.000Z'); // create still in flight (sent as ACTIVE)
+  release();
+  await sync;
+  await resumePendingEmergencies();
+  expect(mockUpdateEmergency).toHaveBeenCalledWith(ID, { status: 'RESOLVED' });
+});

@@ -175,8 +175,8 @@ async function exitEmergency() {
     await tabBar.emergencyBtn.click();
     await emergencyPage.waitForLiveScreen(30000);
     await emergencyPage.waitForRecordingPhase(30000);
-    const status = await $('~emergency-status-text').getText();
-    expect(status.toLowerCase()).toContain('video paused');
+    const storage = await $('~emergency-storage-text').getText();
+    expect(storage.toLowerCase()).toContain('paused');
     expect(await byId('emergency-sync-status').isExisting()).toBe(false); // on the server: nothing to say
     expect((await emergencyPage.recLabel.getText()).startsWith('LIVE')).toBe(true);
     await exitEmergency();
@@ -189,9 +189,9 @@ async function exitEmergency() {
     if (need > 0) shell(`dd if=/dev/zero of=${FILL}-${Date.now()} bs=1048576 count=${need} 2>/dev/null; true`);
     await startEmergencyOffline();
     await $('~emergency-sync-local').waitForExist({ timeout: 15000 });
-    const status = await $('~emergency-status-text').getText();
-    console.log(`[offline] low storage status: "${status}"`);
-    expect(status.toLowerCase()).toContain('video paused');
+    const storage = await $('~emergency-storage-text').getText();
+    console.log(`[offline] low storage notice: "${storage}"`);
+    expect(storage.toLowerCase()).toContain('paused');
     await driver.pause(10000);
     await shot('04-offline-low-storage');
     await exitEmergency();

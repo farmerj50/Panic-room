@@ -564,3 +564,13 @@ describe('an emergency recorded without signal', () => {
     expect(mockAddVideoSegment).toHaveBeenCalledWith('server-9', expect.objectContaining({ sequence: 1 }));
   });
 });
+
+test('older server, emergency already synced: clips queued later go to the server id', async () => {
+  await registerPendingEmergency({ id: EMERGENCY, activatedAt: STARTED });
+  mockCreateEmergency.mockResolvedValue({ id: 'server-9' });
+  await syncPendingEmergencies();
+  await enqueueVideo(2);
+  await runClipQueue();
+  expect(mockAddVideoSegment).toHaveBeenCalledWith('server-9', expect.objectContaining({ sequence: 2 }));
+});
+

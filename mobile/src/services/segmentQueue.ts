@@ -23,7 +23,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 import { trackEvent } from './analyticsService';
 import { ApiError } from './apiClient';
 import { addVideoSegment, createRecording, updateEmergency } from './emergencyService';
-import { pendingCreateIds, registerEmergencyIdRemap } from './pendingEmergencies';
+import { pendingCreateIds, registerEmergencyIdRemap, serverIdFor } from './pendingEmergencies';
 import { uploadFile } from './uploadService';
 
 export type ClipKind = 'video' | 'audio';
@@ -329,6 +329,8 @@ export async function enqueueClip(
   // the upload can start, so it's never missed).
   onFirstAttempt?: (outcome: ClipOutcome) => void,
 ): Promise<ClipRecord> {
+  // Follow the server's id if an older server ignored the phone's.
+  clip = { ...clip, emergencyId: await serverIdFor(clip.emergencyId) };
   const ext = clip.sourceUri.split('?')[0].split('.').pop() ?? '';
   const facing = clip.kind === 'video' ? clip.facing ?? 'back' : 'none';
   const name = clipFileName({ ...clip, sequence: clip.sequence ?? 0, facing, ext });

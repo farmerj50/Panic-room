@@ -31,7 +31,9 @@ export type PendingEmergency = {
 // Emergencies already on the server whose "resolved" status couldn't be sent.
 type PendingResolve = { id: string; endedAt: string };
 
-type Stored = { creates: PendingEmergency[]; resolves: PendingResolve[] };
+// Phone id -> server id, when an older server ignored the phone's id: every
+// later clip, GPS point or status update for it goes to the server's id.
+type Stored = { creates: PendingEmergency[]; resolves: PendingResolve[]; aliases: Record<string, string> };
 
 export type SyncEvent = { type: 'synced'; id: string; serverId: string; endedBeforeSync: boolean } | { type: 'changed' };
 
@@ -60,9 +62,9 @@ async function load(): Promise<Stored> {
       try {
         const raw = await AsyncStorage.getItem(PENDING_EMERGENCIES_KEY);
         const parsed = raw ? (JSON.parse(raw) as Partial<Stored>) : {};
-        state = { creates: parsed.creates ?? [], resolves: parsed.resolves ?? [] };
+        state = { creates: parsed.creates ?? [], resolves: parsed.resolves ?? [], aliases: parsed.aliases ?? {} };
       } catch {
-        state = { creates: [], resolves: [] };
+        state = { creates: [], resolves: [], aliases: {} };
       }
       return state;
     })();
@@ -73,7 +75,7 @@ async function load(): Promise<Stored> {
 async function save(): Promise<void> {
   if (!state) return;
   try {
-    if (state.creates.length === 0 && state.resolves.length === 0) await AsyncStorage.removeItem(PENDING_EMERGENCIES_KEY);
+    if (state.creates.length === 0 && state.resolves.length === 0 && Object.keys(state.aliases).length === 0) await AsyncStorage.removeItem(PENDING_EMERGENCIES_KEY);
     else await AsyncStorage.setItem(PENDING_EMERGENCIES_KEY, JSON.stringify(state));
   } catch {
     // Storage full or failing: the in-memory state still drives this session.
@@ -113,6 +115,12 @@ export async function isOnServer(id: string): Promise<boolean> {
   return !(await pendingCreateIds()).has(id);
 }
 
+// The id the server knows this emergency by (the same id unless an older
+// server ignored the phone's id). Used for every upload and status update.
+export async function serverIdFor(id: string): Promise<string> {
+  return (await load()).aliases[id] ?? id;
+}
+
 export async function pendingEmergencyCount(): Promise<number> {
   return (await load()).creates.length;
 }
@@ -130,7 +138,8 @@ export async function registerPendingEmergency(entry: Omit<PendingEmergency, 'at
 // The person ended the emergency. Not on the server yet: remember the end
 // time (it's created resolved later). Already there: send the status, and
 // keep retrying it if that fails.
-export async function endEmergency(id: string, endedAt = new Date().toISOString()): Promise<void> {
+export async function endEmergency(localId: string, endedAt = new Date().toISOString()): Promise<void> {
+  const id = await serverIdFor(localId);
   const stillLocal = await locked(async () => {
     const s = await load();
     const pending = s.creates.find((c) => c.id === id);
@@ -161,6 +170,7 @@ export async function endEmergency(id: string, endedAt = new Date().toISOString(
 
 async function syncOne(entry: PendingEmergency): Promise<'done' | 'retry'> {
   let serverId: string;
+  const sentResolved = Boolean(entry.endedAt);
   try {
     const created = await createEmergency({
       id: entry.id,
@@ -195,12 +205,18 @@ async function syncOne(entry: PendingEmergency): Promise<'done' | 'retry'> {
       }
     }
   }
+  // Ended while this create was in flight (it was sent as ACTIVE): send the
+  // resolved status now rather than lose it.
+  const endedMeanwhile = !sentResolved && entry.endedAt ? entry.endedAt : null;
   await locked(async () => {
     const s = await load();
     s.creates = s.creates.filter((c) => c.id !== entry.id);
+    if (serverId !== entry.id) s.aliases[entry.id] = serverId;
+    if (endedMeanwhile && !s.resolves.some((r) => r.id === serverId)) s.resolves.push({ id: serverId, endedAt: endedMeanwhile });
     await save();
   });
   emit({ type: 'synced', id: entry.id, serverId, endedBeforeSync: Boolean(entry.endedAt) });
+  if (endedMeanwhile) scheduleRetry();
   return 'done';
 }
 

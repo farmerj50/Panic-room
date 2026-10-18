@@ -19,7 +19,7 @@ import { decodeBase64, decodeUTF8, encodeBase64, encodeUTF8 } from 'tweetnacl-ut
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { ApiError, apiRequest } from './apiClient';
-import { pendingCreateIds, registerEmergencyIdRemap } from './pendingEmergencies';
+import { pendingCreateIds, registerEmergencyIdRemap, serverIdFor } from './pendingEmergencies';
 import { getItemAsync, setItemAsync } from './secureStorage';
 
 export type QueuedPoint = {
@@ -139,11 +139,12 @@ function scheduleRetry() {
 // Records a GPS fix for an active emergency (throttled to one per 15s unless
 // the person moved more than 25m) and sends it right away.
 export async function recordLocationPoint(
-  emergencyId: string,
+  localEmergencyId: string,
   loc: { latitude: number; longitude: number; accuracy?: number | null; timestamp?: number },
   now = Date.now(),
 ): Promise<boolean> {
   try {
+    const emergencyId = await serverIdFor(localEmergencyId);
     const previous = lastRecorded[emergencyId];
     if (previous && now - previous.t < MIN_RECORD_INTERVAL_MS && distanceMeters(previous, loc) < MIN_RECORD_DISTANCE_M) {
       return false;
