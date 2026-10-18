@@ -18,7 +18,7 @@
 
 # Privacy Policy
 
-**Last updated: August 3, 2026**
+**Last updated: October 18, 2026**
 
 This Privacy Policy describes how Bes ("Bes," "we," "us," or "our") collects,
 uses, and protects information when you use the Bes mobile application and
@@ -78,6 +78,22 @@ an emergency.
   and when.
 - Your public encryption key (not secret on its own) is stored so contacts
   can send you encrypted messages.
+
+### AI Monitor (optional, Android)
+- AI Monitor is off until you open it and start it. While it runs, it uses
+  your camera to detect people, body posture and crowd movement **entirely on
+  your phone**. Camera frames are analyzed in memory and discarded: **AI
+  Monitor does not record, store or upload images or video, and does not
+  identify people** (no face recognition or identity of any kind).
+- The events it shows (for example a possible fall or crowd panic) are kept
+  in your phone's memory while the app is open and are not sent to us.
+- If you turn on "Help improve AI Monitor", your answers (for example
+  "correct", "wrong type" or "false warning"), the event type, its times and
+  the wording shown are stored **on your phone only**. They leave your phone
+  only if you choose to share them yourself, and you can delete them at any
+  time. Feedback never changes how detection works on its own.
+- We receive only that AI Monitor was started or stopped, how long it ran
+  and its average analysis rate — never images, detections or locations.
 
 ### Automatically collected information
 - Basic technical data needed to operate the Service (e.g., session tokens,
@@ -194,6 +210,11 @@ emergency-notification, recording, and Covert Messaging features. In
 particular: **Bes is not a substitute for calling 911 or your local
 emergency number, and delivery of alerts to your trusted contacts is not
 guaranteed.**
+
+AI Monitor is informational only. It can miss real events and can flag
+ordinary ones, it never activates an emergency or contacts anyone on its
+own, and it is not a substitute for your own judgment or for calling for
+help.
 
 ## 9. Changes to This Policy
 
