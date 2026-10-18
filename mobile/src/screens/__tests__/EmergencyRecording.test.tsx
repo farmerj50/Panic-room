@@ -470,6 +470,40 @@ describe('social share availability', () => {
     expect(mockOverlayProps?.providers).toEqual([TIKTOK]);
   });
 
+  test('a failed check at activation is retried, so the prompt can still show once the network is back', async () => {
+    // Mount sees nothing; the activation check fails (no signal); the first
+    // retry, 3 s later, succeeds.
+    mockListConnections
+      .mockResolvedValueOnce({ connections: [] })
+      .mockRejectedValueOnce(new Error('Network request failed'))
+      .mockResolvedValue({ connections: [TIKTOK] });
+    await startEmergency();
+    await advance(3500);
+    expect(mockOverlayProps?.providers).toEqual([TIKTOK]);
+  });
+
+  test('keeps retrying with growing gaps while the check fails, and stops after exit', async () => {
+    mockListConnections.mockResolvedValueOnce({ connections: [] }).mockRejectedValue(new Error('Network request failed'));
+    await startEmergency();
+    const afterActivation = mockListConnections.mock.calls.length;
+    await advance(3000 + 10000);
+    expect(mockListConnections.mock.calls.length).toBe(afterActivation + 2);
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('emergency-exit-btn'));
+    });
+    const atExit = mockListConnections.mock.calls.length;
+    await advance(200000);
+    expect(mockListConnections.mock.calls.length).toBe(atExit);
+  });
+
+  test('does not retry once the check succeeds', async () => {
+    mockListConnections.mockResolvedValue({ connections: [TIKTOK] });
+    await startEmergency();
+    const calls = mockListConnections.mock.calls.length;
+    await advance(120000);
+    expect(mockListConnections.mock.calls.length).toBe(calls);
+  });
+
   test('Share re-checks connections when none are loaded, then opens sharing', async () => {
     mockListConnections.mockResolvedValueOnce({ connections: [] }).mockResolvedValueOnce({ connections: [] }).mockResolvedValue({ connections: [TIKTOK] });
     await startEmergency();
