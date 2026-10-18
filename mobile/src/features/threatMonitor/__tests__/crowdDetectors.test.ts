@@ -3,7 +3,7 @@ import { THREAT_DETECTORS } from '../threat/detectors';
 import { CROWD_DETECTORS, radiatingFrom } from '../threat/detectors/crowdDetectors';
 import { ThreatAssessmentEngine } from '../threat/ThreatAssessmentEngine';
 import type { ThreatType } from '../threat/types';
-import { surfacedTypes } from '../threat/validation/evaluate';
+import { evaluate, surfacedTypes } from '../threat/validation/evaluate';
 import { CROWD_SCENARIOS } from '../threat/validation/scenarios';
 
 // Crowd scenes run through the real tracker and crowd metrics (see
@@ -104,3 +104,18 @@ describe('crowd threat detectors', () => {
     expect(found!.recommendedActions).toContain('Move diagonally toward the edge of the crowd');
   });
 });
+
+describe('evaluation report', () => {
+  it('reports exact-class metrics separately from related-category metrics', () => {
+    // A scatter usually also raises panic: tolerated as related, not as exact.
+    const report = evaluate([scenario('dispersal-cluster')], 'train', 5);
+    const related = report.perCategory.find((c) => c.category === 'crowd_panic')!;
+    const exact = report.perCategoryExact.find((c) => c.category === 'crowd_panic')!;
+    expect(related.falsePositives).toBe(0);
+    expect(exact.falsePositives).toBeGreaterThan(0);
+    expect(report.perCategoryExact.find((c) => c.category === 'sudden_dispersal')!.recall).toBe(
+      report.perCategory.find((c) => c.category === 'sudden_dispersal')!.recall,
+    );
+  });
+});
+

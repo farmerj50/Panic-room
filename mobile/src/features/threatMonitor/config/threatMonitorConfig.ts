@@ -8,6 +8,28 @@ export function isAiMonitorEnabled(): boolean {
   return process.env.EXPO_PUBLIC_AI_MONITOR_ENABLED === '1' && Platform.OS === 'android' && isBesVisionAvailable;
 }
 
+// Threat candidates (Phase 2: falls and crowd events) are for AI development
+// and test builds only: they need EXPO_PUBLIC_AI_THREATS_ENABLED=1 on top of
+// the AI Monitor flag. Production builds set neither. Fight and assault
+// detection is not enabled by any flag (see threat/detectors).
+export function isThreatDetectionEnabled(): boolean {
+  return isAiMonitorEnabled() && process.env.EXPO_PUBLIC_AI_THREATS_ENABLED === '1';
+}
+
+// How detected events are kept and shown (see threat/events/ThreatEventLog).
+export const THREAT_EVENT_CONFIG = {
+  // An ongoing event with no fresh evidence for this long is shown as ended.
+  staleMs: 5_000,
+  // The same kind of event within this long of the last one updates it
+  // instead of raising a new alert.
+  cooldownMs: 60_000,
+  // Ended events drop off the list after this long.
+  expireMs: 10 * 60_000,
+  maxEvents: 20,
+  // The engine needs a few seconds of video before "no threat" means anything.
+  warmUpMs: 3_000,
+} as const;
+
 export const MONITOR_CONFIG = {
   // Validation builds only: simulate a slow model (EXPO_PUBLIC_AI_MONITOR_SLOW_MS).
   debugSlowInferenceMs: Number(process.env.EXPO_PUBLIC_AI_MONITOR_SLOW_MS) || 0,

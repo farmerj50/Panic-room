@@ -28,7 +28,10 @@ export type CategoryMetrics = {
 export type EvaluationReport = {
   split: SplitName;
   clips: number;
+  // Related categories not counted against each other (see ALSO_ACCEPTABLE).
   perCategory: CategoryMetrics[];
+  // Strict: raising any type other than the clip's own label is a false positive.
+  perCategoryExact: CategoryMetrics[];
   // Look-alike clips ('none') that raised anything at all.
   lookAlikeAlerts: Array<{ scenario: string; seed: number; raised: ThreatType[] }>;
   misses: Array<{ scenario: string; seed: number; expected: ScenarioLabel; raised: ThreatType[] }>;
@@ -56,14 +59,14 @@ export function evaluate(scenarios: Scenario[], split: SplitName, seedsPerScenar
     }
   }
 
-  const perCategory = THREAT_TYPES.map((category) => {
+  const metricsFor = (tolerateRelated: boolean) => THREAT_TYPES.map((category) => {
     let positives = 0;
     let truePositives = 0;
     let falsePositives = 0;
     let negatives = 0;
     for (const r of results) {
       const isPositive = r.scenario.label === category;
-      const tolerated = (ALSO_ACCEPTABLE[r.scenario.label] ?? []).includes(category);
+      const tolerated = tolerateRelated && (ALSO_ACCEPTABLE[r.scenario.label] ?? []).includes(category);
       if (isPositive) {
         positives += 1;
         if (r.raised.has(category)) truePositives += 1;
@@ -87,7 +90,8 @@ export function evaluate(scenarios: Scenario[], split: SplitName, seedsPerScenar
   return {
     split,
     clips: results.length,
-    perCategory,
+    perCategory: metricsFor(true),
+    perCategoryExact: metricsFor(false),
     lookAlikeAlerts: results.filter((r) => r.scenario.label === 'none' && r.raised.size).map((r) => ({ scenario: r.scenario.id, seed: r.seed, raised: [...r.raised] })),
     misses: results
       .filter((r) => r.scenario.label !== 'none' && !r.raised.has(r.scenario.label as ThreatType))

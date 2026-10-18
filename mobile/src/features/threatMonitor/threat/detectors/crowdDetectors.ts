@@ -11,6 +11,9 @@ import {
 } from '../crowd/crowdFeatures';
 import type { DetectorObservation, ThreatDetector } from '../types';
 
+// Indicator labels describe what the image shows, never physical distance,
+// pressure or real-world speed (all of these are estimated from boxes).
+//
 // Crowd-level threats from how many people move together over several
 // seconds. They check crowd size themselves, over the last few seconds:
 // after a scatter the view may already be empty, and that must not cut the
@@ -54,7 +57,6 @@ export const CROWD_THREAT_CONFIG = {
   },
 };
 
-const pct = (v: number) => `${Math.round(v * 100)}%`;
 const median = (v: number[]) => {
   if (!v.length) return 0;
   const s = [...v].sort((a, b) => a - b);
@@ -218,10 +220,10 @@ export const crowdSurgeDetector: ThreatDetector = {
         trackIds: [],
         strength,
         indicators: [
-          { id: 'surge-packed', label: `Tightly packed crowd (about ${now.spacing.toFixed(1)} body heights between neighbors)`, value: now.spacing, weight: 0.35 },
+          { id: 'surge-packed', label: 'People appear tightly packed (estimated from the image)', value: now.spacing, weight: 0.35 },
           { id: 'surge-flow', label: 'Many people pushed the same way at once', value: now.coherence, weight: 0.3 },
-          ...(compressing ? [{ id: 'surge-compress', label: `Space between people shrank to ${pct(compression)} of what it was`, value: compression, weight: 0.25 }] : []),
-          ...(lurch ? [{ id: 'surge-lurch', label: `The whole crowd lurched ${ratio.toFixed(1)}× faster`, value: ratio, weight: 0.25 }] : []),
+          ...(compressing ? [{ id: 'surge-compress', label: 'Gaps between people appear to have closed up', value: compression, weight: 0.25 }] : []),
+          ...(lurch ? [{ id: 'surge-lurch', label: 'The crowd suddenly moved together, faster than walking pace', value: ratio, weight: 0.25 }] : []),
         ],
       },
     ];

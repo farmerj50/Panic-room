@@ -4,7 +4,8 @@ import type { MonitorFrame } from '../models/types';
 
 const DENSITY_LABEL = { low: 'Low', medium: 'Medium', high: 'High' } as const;
 
-// Phase 1 measurements only — no threat labels.
+// Image-based measurements (box sizes and movement on screen), never
+// physical distances, crowd pressure or real-world speed.
 export default function CrowdMetricsPanel({ frame }: { frame: MonitorFrame | null }) {
   const m = frame?.crowdMetrics;
   return (
@@ -12,7 +13,7 @@ export default function CrowdMetricsPanel({ frame }: { frame: MonitorFrame | nul
       <Metric label="People" value={frame ? String(frame.peopleCount) : '—'} testID="ai-monitor-people-count" />
       <Metric label="Estimated density" value={m ? DENSITY_LABEL[m.estimatedVisualDensity] : '—'} />
       <Metric
-        label="Fast movement"
+        label="Fast on screen"
         value={!m ? '—' : m.motionReliable ? String(m.rapidMovementCount) : 'Phone moving'}
       />
       <Metric label="Analysis" value={frame ? `${frame.inferenceMs} ms` : '—'} />

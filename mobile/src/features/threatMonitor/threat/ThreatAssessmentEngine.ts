@@ -167,7 +167,9 @@ export class ThreatAssessmentEngine {
       .map((t) => this.toCandidate(t, reliability))
       .sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || b.lastSeenAt - a.lastSeenAt);
 
-    return { timestamp: now, candidates, recentlyResolved: this.resolved, sourceReliability: reliability, unavailable };
+    const building = [...new Set([...this.tracks.values()].filter((t) => !t.shown && t.evidence > 0).map((t) => t.type))];
+
+    return { timestamp: now, candidates, recentlyResolved: this.resolved, sourceReliability: reliability, unavailable, building };
   }
 
   private missingRequirement(detector: ThreatDetector, reliability: SourceReliability, frame: MonitorFrame): string | null {

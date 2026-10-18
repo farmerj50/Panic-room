@@ -83,4 +83,6 @@ export type ThreatAssessment = {
   sourceReliability: SourceReliability;
   // Types whose detectors were skipped and why (e.g. pose not available).
   unavailable: Array<{ type: ThreatType; reason: string }>;
+  // Types with some evidence building up that isn't enough to show yet.
+  building: ThreatType[];
 };

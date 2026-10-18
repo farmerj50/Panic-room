@@ -100,3 +100,26 @@ the same way; distances toward/away from the camera come from box size with
 an assumed lens (`CROWD_FEATURES.focal`); crowd motion is ignored while the
 phone turns faster than 0.1 rad/s (gyroscope).
 
+### Exact-class vs related-category metrics (M9)
+
+All 32 scenarios (pose + crowd), 20 seeds each, 640 clips per split. "Related"
+doesn't count related types against each other (assault ↔ fall/fight, panic
+↔ dispersal, surge → panic); "exact" counts any type other than the clip's own
+label as a false positive.
+
+Evaluation split:
+
+| Category | Recall | Precision (related / exact) | FP clips (related / exact) | FPR (related / exact) |
+|---|---|---|---|---|
+| Fall | 0.78 | 1.00 / 0.69 | 0 / 14 | 0.00 / 0.02 |
+| Crowd panic | 0.82 | 0.66 / 0.38 | 17 / 53 | 0.03 / 0.09 |
+| Sudden dispersal | 0.50 | 1.00 / 1.00 | 0 / 0 | 0.00 / 0.00 |
+| Crowd surge | 0.68 | 0.93 / 0.93 | 2 / 2 | 0.00 / 0.00 |
+| Fight, assault | disabled | — | 0 / 0 | 0.00 |
+
+Exact-only false positives are related events seen in the same clip: falls
+raised in assault-victim-falls clips (the victim does fall), and panic raised
+in dispersal and surge clips (people do run). Validation split: fall
+1.00 / 0.67, panic 0.60 / 0.37, dispersal 1.00 / 1.00, surge 0.84 / 0.84
+(precision related / exact), recall as in the M8 table.
+

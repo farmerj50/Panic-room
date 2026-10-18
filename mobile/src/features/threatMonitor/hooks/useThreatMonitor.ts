@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, type NativeSyntheticEvent } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 
 import { useEmergencyContext } from '../../../context/EmergencyContext';
 import { trackEvent } from '../../../services/analyticsService';
-import { MONITOR_CONFIG } from '../config/threatMonitorConfig';
+import { MONITOR_CONFIG, THREAT_EVENT_CONFIG, isThreatDetectionEnabled } from '../config/threatMonitorConfig';
 import { acquireForMonitor, onEmergencyClaim, releaseForMonitor } from '../services/CameraOwnershipService';
 import type { MonitorFrame } from '../models/types';
 import { computeCrowdMetrics } from '../services/CrowdMetricsService';
 import { PersonTracker } from '../services/PersonTrackingService';
 import { NOT_YET_SUPPORTED, THREAT_DETECTORS } from '../threat/detectors';
+import { detectionState, detectorStatuses } from '../threat/events/detectionState';
+import { sessionThreatEvents, type ThreatEvent } from '../threat/events/ThreatEventLog';
 import { PoseCarry, attachPoses, toPose } from '../threat/pose/poseAssociation';
 import { ThreatAssessmentEngine } from '../threat/ThreatAssessmentEngine';
 import type { ThreatAssessment } from '../threat/types';
@@ -38,6 +40,13 @@ export function useThreatMonitor() {
   const poseCarryRef = useRef(new PoseCarry());
   const engineRef = useRef(new ThreatAssessmentEngine(THREAT_DETECTORS, { notYetSupported: NOT_YET_SUPPORTED }));
   const [assessment, setAssessment] = useState<ThreatAssessment | null>(null);
+  // Threat candidates only in AI development/test builds (see config).
+  const threatsEnabled = useMemo(() => isThreatDetectionEnabled(), []);
+  const [threatFailed, setThreatFailed] = useState(false);
+  const threatFailedRef = useRef(false);
+  const firstFrameAtRef = useRef<number | null>(null);
+  const [watchedMs, setWatchedMs] = useState(0);
+  const [events, setEvents] = useState<ThreatEvent[]>(() => sessionThreatEvents.list());
 
   const stop = useCallback((reason: StopReason = 'user') => {
     if (!activeRef.current) return;
@@ -50,6 +59,7 @@ export function useThreatMonitor() {
     engineRef.current.reset();
     poseCarryRef.current.reset();
     setAssessment(null);
+    sessionThreatEvents.endAll(Date.now(), 'stopped');
     if (reason !== 'error') {
       setStatus('idle');
       setMessage(reason === 'emergency' ? 'Stopped — Emergency is using the camera.' : null);
@@ -74,6 +84,10 @@ export function useThreatMonitor() {
     framesRef.current = 0;
     trackerRef.current.reset();
     engineRef.current.reset();
+    threatFailedRef.current = false;
+    setThreatFailed(false);
+    firstFrameAtRef.current = null;
+    setWatchedMs(0);
     setMessage(null);
     setStatus('starting');
     setActive(true);
@@ -104,6 +118,18 @@ export function useThreatMonitor() {
   }, [stop]);
   // Unmount.
   useEffect(() => () => stop('blur'), [stop]);
+
+  // Events: follow the shared log, and age them even while no frames arrive.
+  useEffect(() => {
+    const unsubscribe = sessionThreatEvents.subscribe(() => setEvents(sessionThreatEvents.list()));
+    sessionThreatEvents.sweep(Date.now());
+    setEvents(sessionThreatEvents.list());
+    const timer = setInterval(() => sessionThreatEvents.sweep(Date.now()), 1000);
+    return () => {
+      unsubscribe();
+      clearInterval(timer);
+    };
+  }, []);
 
   const onCameraState = useCallback(
     (event: NativeSyntheticEvent<CameraStateEvent>) => {
@@ -153,9 +179,46 @@ export function useThreatMonitor() {
       frameAspect: aspect,
     };
     setFrame(monitorFrame);
+    firstFrameAtRef.current ??= e.timestamp;
+    setWatchedMs(e.timestamp - firstFrameAtRef.current);
+    if (!threatsEnabled || threatFailedRef.current) return;
     // Advisory only: the assessment is shown to the user, never acted on.
-    setAssessment(engineRef.current.update(monitorFrame));
-  }, []);
+    // A failure here stops threat analysis but never people detection.
+    try {
+      const next = engineRef.current.update(monitorFrame);
+      setAssessment(next);
+      sessionThreatEvents.ingest(next, Date.now());
+    } catch (error) {
+      console.warn('[AIMonitor] threat analysis failed', error);
+      threatFailedRef.current = true;
+      setThreatFailed(true);
+      setAssessment(null);
+      sessionThreatEvents.endAll(Date.now(), 'stopped');
+    }
+  }, [threatsEnabled]);
+
+  const running = status === 'running';
+  const detection = useMemo(
+    () =>
+      threatsEnabled && status === 'paused'
+        ? { kind: 'off' as const, title: 'Analysis paused', detail: 'Nothing is analyzed while paused.' }
+        : detectionState({
+            running,
+            threatsEnabled,
+            failed: threatFailed,
+            assessment,
+            frame,
+            watchedMs,
+            warmUpMs: THREAT_EVENT_CONFIG.warmUpMs,
+            notYetSupported: NOT_YET_SUPPORTED,
+          }),
+    [status, running, threatsEnabled, threatFailed, assessment, frame, watchedMs],
+  );
+  const detectors = useMemo(
+    () => detectorStatuses(threatFailed ? null : assessment, { running, threatsEnabled, notYetSupported: NOT_YET_SUPPORTED }),
+    [assessment, running, threatsEnabled, threatFailed],
+  );
+  const clearEvents = useCallback(() => sessionThreatEvents.clear(), []);
 
   return {
     status,
@@ -165,6 +228,11 @@ export function useThreatMonitor() {
     frameSize,
     // Phase 2: explainable threat candidates for the dashboard (advisory only).
     assessment,
+    threatsEnabled,
+    detection,
+    detectors,
+    events,
+    clearEvents,
     start,
     pause,
     resume,

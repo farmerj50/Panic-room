@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useCameraPermissions } from 'expo-camera';
@@ -8,6 +8,7 @@ import PermissionCard from '../../../components/PermissionCard';
 import CrowdMetricsPanel from '../components/CrowdMetricsPanel';
 import DetectionOverlay from '../components/DetectionOverlay';
 import MonitorControls from '../components/MonitorControls';
+import ThreatDashboard from '../components/ThreatDashboard';
 import { useThreatMonitor } from '../hooks/useThreatMonitor';
 import { claimForEmergency } from '../services/CameraOwnershipService';
 import { BesVisionView } from '../services/besVision';
@@ -21,8 +22,9 @@ const STATUS_LABEL = {
   error: 'Stopped',
 } as const;
 
-// AI Monitor (beta): live on-device people detection. Phase 1 only observes —
-// it never classifies threats or raises alerts.
+// AI Monitor (beta): live on-device people detection, plus (in AI
+// development/test builds only) the threat dashboard. It only observes and
+// advises — nothing here triggers Emergency, calls or alerts anyone.
 export default function AIThreatMonitorScreen() {
   const navigation = useNavigation<any>();
   const [permission, requestPermission] = useCameraPermissions();
@@ -87,8 +89,21 @@ export default function AIThreatMonitorScreen() {
         </View>
       </View>
 
-      <View style={styles.body}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.body} testID="ai-monitor-scroll">
         <CrowdMetricsPanel frame={monitor.status === 'running' ? monitor.frame : null} />
+
+        {/* Threat dashboard: AI development/test builds only. Without the
+            threat flag the screen stays the Phase 1 people monitor. */}
+        {monitor.threatsEnabled && (
+          <ThreatDashboard
+            threatsEnabled
+            detection={monitor.detection}
+            detectors={monitor.detectors}
+            events={monitor.events}
+            reliability={monitor.status === 'running' ? monitor.assessment?.sourceReliability ?? null : null}
+            onClearEvents={monitor.clearEvents}
+          />
+        )}
 
         {monitor.message && (
           <Text style={styles.message} testID="ai-monitor-message">
@@ -137,7 +152,7 @@ export default function AIThreatMonitorScreen() {
         <Text style={styles.privacy} testID="ai-monitor-privacy-note">
           Processed on this phone. Nothing is recorded or uploaded.
         </Text>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -153,7 +168,7 @@ const styles = StyleSheet.create({
   cameraBox: {
     backgroundColor: '#000',
     borderRadius: 20,
-    flex: 1,
+    height: 280,
     marginHorizontal: 16,
     overflow: 'hidden',
   },
@@ -174,7 +189,8 @@ const styles = StyleSheet.create({
   dot: { backgroundColor: '#8e88a8', borderRadius: 4, height: 8, width: 8 },
   dotOn: { backgroundColor: '#34d399' },
   statusText: { color: '#fff', fontSize: 13, fontWeight: '800' },
-  body: { gap: 12, padding: 16 },
+  scroll: { flex: 1 },
+  body: { gap: 12, padding: 16, paddingBottom: 32 },
   message: { color: '#fbbf24', fontSize: 14, fontWeight: '700' },
   link: { color: '#c9b8ff', fontSize: 14, fontWeight: '700' },
   sos: { alignItems: 'center', backgroundColor: '#ef445b', borderRadius: 14, paddingVertical: 14 },
