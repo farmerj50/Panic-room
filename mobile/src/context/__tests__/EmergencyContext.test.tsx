@@ -38,7 +38,10 @@ jest.mock('../../services/corePermissions', () => ({
   requestMicrophonePermission: (...args: unknown[]) => mockRequestMicrophonePermission(...args),
 }));
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { EmergencyProvider, useEmergencyContext } from '../EmergencyContext';
+import { __resetPendingEmergenciesForTests, pendingCreateIds } from '../../services/pendingEmergencies';
 import { Contact } from '../../types/contact';
 
 const CONTACT: Contact = { id: 'c1', name: 'Alex', phoneNumber: '+15551234567', isPriority: true };
@@ -68,11 +71,16 @@ async function activate(result: { current: Ctx }, params: Parameters<Ctx['activa
   return out;
 }
 
+const sentId = (call = 0) => (mockCreateEmergency.mock.calls[call][0] as { id: string }).id;
+
 describe('EmergencyContext.activateEmergencySilently', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
+    __resetPendingEmergenciesForTests();
+    await AsyncStorage.clear();
     mockGetContactsFromBackend.mockResolvedValue([CONTACT]);
-    mockCreateEmergency.mockResolvedValue({ id: 'em-1' });
+    // The server echoes the phone's id (idempotent create on it).
+    mockCreateEmergency.mockImplementation(async (d: { id?: string }) => ({ id: d.id ?? 'em-1' }));
     mockNotifyEmergencyContacts.mockResolvedValue({ sent: true, notifiedCount: 1, providerConfigured: true });
     mockGetMicrophoneStatus.mockResolvedValue('denied');
     mockRequestMicrophonePermission.mockResolvedValue('granted');
@@ -83,7 +91,8 @@ describe('EmergencyContext.activateEmergencySilently', () => {
 
     const activationResult = await activate(result, { reason: 'covert-hidden-sos' });
 
-    expect(activationResult).toEqual({ ok: true, emergencyId: 'em-1', reused: false });
+    expect(activationResult).toEqual({ ok: true, emergencyId: sentId(), reused: false });
+    expect(sentId()).toMatch(/^[0-9a-f-]{36}$/);
     expect(mockCreateEmergency).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(mockNotifyEmergencyContacts).toHaveBeenCalledTimes(1));
   });
@@ -109,8 +118,8 @@ describe('EmergencyContext.activateEmergencySilently', () => {
   });
 
   test('a rapid double-call only creates one EmergencyEvent', async () => {
-    let releaseCreate!: (v: { id: string }) => void;
-    mockCreateEmergency.mockReturnValue(new Promise((resolve) => { releaseCreate = resolve; }));
+    let releaseCreate!: () => void;
+    mockCreateEmergency.mockImplementation((d: { id: string }) => new Promise((resolve) => { releaseCreate = () => resolve({ id: d.id }); }));
 
     const { result } = await renderCtx();
 
@@ -119,7 +128,8 @@ describe('EmergencyContext.activateEmergencySilently', () => {
     await act(async () => {
       const first = result.current.activateEmergencySilently({ reason: 'covert-hidden-sos' });
       const second = result.current.activateEmergencySilently({ reason: 'covert-hidden-sos' });
-      releaseCreate({ id: 'em-1' });
+      await new Promise((r) => setTimeout(r, 0));
+      releaseCreate();
       [firstResult, secondResult] = await Promise.all([first, second]);
     });
 
@@ -136,28 +146,51 @@ describe('EmergencyContext.activateEmergencySilently', () => {
 
     const second = await activate(result, { reason: 'covert-hidden-sos' });
 
-    expect(second).toEqual({ ok: true, emergencyId: 'em-1', reused: true });
+    expect(second).toEqual({ ok: true, emergencyId: sentId(), reused: true });
     expect(mockCreateEmergency).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(mockNotifyEmergencyContacts).toHaveBeenCalledTimes(2));
   });
 
-  test('two consecutive createEmergency failures return CREATE_FAILED', async () => {
-    mockCreateEmergency.mockRejectedValue(new Error('network down'));
-
+  test('with no connection, activation still succeeds on the phone; contacts are alerted only once it reaches the server', async () => {
+    mockCreateEmergency.mockRejectedValue(new Error('Network request failed'));
     const { result } = await renderCtx();
 
     const activationResult = await activate(result, { reason: 'covert-hidden-sos' });
 
-    expect(activationResult).toEqual({ ok: false, error: 'CREATE_FAILED' });
-    expect(mockCreateEmergency).toHaveBeenCalledTimes(2);
-  }, 10000);
+    expect(activationResult.ok).toBe(true);
+    const id = (activationResult as { emergencyId: string }).emergencyId;
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(await pendingCreateIds()).toEqual(new Set([id]));
+    expect(mockNotifyEmergencyContacts).not.toHaveBeenCalled(); // never claimed as sent
+
+    // Signal returns: the retry (3 s) uses the same id — idempotent, no second emergency.
+    mockCreateEmergency.mockImplementation(async (d: { id: string }) => ({ id: d.id }));
+    await waitFor(() => expect(mockNotifyEmergencyContacts).toHaveBeenCalledTimes(1), { timeout: 6000 });
+    expect(new Set(mockCreateEmergency.mock.calls.map(([d]) => (d as { id: string }).id))).toEqual(new Set([id]));
+    expect(mockNotifyEmergencyContacts.mock.calls[0][0]).toEqual(expect.objectContaining({ emergencyId: id, message: expect.stringContaining('sent when signal returned') }));
+    expect(await pendingCreateIds()).toEqual(new Set());
+  }, 15000);
+
+  test('an emergency ended before signal returned is not announced late', async () => {
+    mockCreateEmergency.mockRejectedValue(new Error('Network request failed'));
+    const { result } = await renderCtx();
+    await activate(result, { reason: 'covert-hidden-sos' });
+    act(() => result.current.resolveEmergency());
+    mockCreateEmergency.mockImplementation(async (d: { id: string }) => ({ id: d.id }));
+    await waitFor(() => expect(mockCreateEmergency.mock.calls.length).toBeGreaterThanOrEqual(2), { timeout: 6000 });
+    await new Promise((r) => setTimeout(r, 200));
+    expect(mockNotifyEmergencyContacts).not.toHaveBeenCalled();
+  }, 15000);
 });
 
 describe('EmergencyContext.runCoreActivation mic-permission guard', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
+    __resetPendingEmergenciesForTests();
+    await AsyncStorage.clear();
     mockGetContactsFromBackend.mockResolvedValue([CONTACT]);
-    mockCreateEmergency.mockResolvedValue({ id: 'em-1' });
+    // The server echoes the phone's id (idempotent create on it).
+    mockCreateEmergency.mockImplementation(async (d: { id?: string }) => ({ id: d.id ?? 'em-1' }));
     mockNotifyEmergencyContacts.mockResolvedValue({ sent: true, notifiedCount: 1, providerConfigured: true });
     mockGetMicrophoneStatus.mockResolvedValue('denied');
     mockRequestMicrophonePermission.mockResolvedValue('granted');

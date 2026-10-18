@@ -31,9 +31,9 @@ import {
   revokeLiveView,
   rotateLiveView,
   shareLiveView,
-  updateEmergency,
   type LiveViewLinkStatus,
 } from '../services/emergencyService';
+import { endEmergency, subscribeToPendingEmergencies } from '../services/pendingEmergencies';
 import { describeSmsResult } from '../utils/smsStatus';
 import {
   clearRecordingJournal,
@@ -359,6 +359,11 @@ function EmergencyLiveScreen() {
   const [locationUnavailable, setLocationUnavailable] = useState(false);
   const [statusMessage, setStatusMessage] = useState('Emergency activation starting.');
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
+  // Offline-first activation: 'local' while this emergency exists only on the
+  // phone (no signal), 'synced' once it reached the server after that. Null
+  // when it was on the server from the start (nothing to say).
+  const [serverSync, setServerSync] = useState<'local' | 'synced' | null>(null);
+  const serverSyncUnsubRef = useRef<(() => void) | null>(null);
   // Voice-call outcome gets its own line: it used to share notificationStatus
   // with the SMS result, which arrives later and overwrote it.
   const [callStatus, setCallStatus] = useState<string | null>(null);
@@ -435,17 +440,27 @@ function EmergencyLiveScreen() {
   const allConnectionsRef = useRef<SocialConnection[]>([]);
   // null until a load succeeds — a failed load never produces a message.
   const [allConnections, setAllConnections] = useState<SocialConnection[] | null>(null);
-  const refreshShareableProviders = useCallback(async () => {
-    try {
-      const result = await listConnections();
-      allConnectionsRef.current = result.connections;
-      setAllConnections(result.connections);
-      const shareable = result.connections.filter((c) => c.status === 'connected' && c.enabledForEmergency);
-      setShareableProviders(shareable);
-      return shareable;
-    } catch {
-      return null;
-    }
+  // One request at a time: a retry, an activation and a Share tap that
+  // overlap all share the check already in flight.
+  const connectionsInFlightRef = useRef<Promise<SocialConnection[] | null> | null>(null);
+  const refreshShareableProviders = useCallback((): Promise<SocialConnection[] | null> => {
+    if (connectionsInFlightRef.current) return connectionsInFlightRef.current;
+    const run = (async () => {
+      try {
+        const result = await listConnections();
+        allConnectionsRef.current = result.connections;
+        setAllConnections(result.connections);
+        const shareable = result.connections.filter((c) => c.status === 'connected' && c.enabledForEmergency);
+        setShareableProviders(shareable);
+        return shareable;
+      } catch {
+        return null;
+      }
+    })().finally(() => {
+      connectionsInFlightRef.current = null;
+    });
+    connectionsInFlightRef.current = run;
+    return run;
   }, []);
 
   const { user } = useAuth();
@@ -530,6 +545,7 @@ function EmergencyLiveScreen() {
   useEffect(
     () => () => {
       if (shareRetryTimerRef.current) clearTimeout(shareRetryTimerRef.current);
+      serverSyncUnsubRef.current?.();
     },
     [],
   );
@@ -699,12 +715,13 @@ function EmergencyLiveScreen() {
 
     const emergencyIdForUpload = activeEmergencyIdRef.current;
     activeEmergencyIdRef.current = null;
-    // Best-effort, like the uploads below: without this the server kept
-    // every past emergency as ACTIVE forever (Evidence showed them all as
-    // still active). Status is display-only server-side.
-    if (emergencyIdForUpload) {
-      updateEmergency(emergencyIdForUpload, { status: 'RESOLVED' }).catch(() => {});
-    }
+    // Without this the server kept every past emergency as ACTIVE forever
+    // (Evidence showed them all as still active). Never waits on the network:
+    // an emergency not yet on the server is created already resolved later,
+    // and a failed status update is retried (pendingEmergencies).
+    serverSyncUnsubRef.current?.();
+    serverSyncUnsubRef.current = null;
+    if (emergencyIdForUpload) void endEmergency(emergencyIdForUpload);
     if (emergencyIdForUpload && audioUri) {
       // Same durable queue as video: kept on the device until uploaded.
       enqueueClip({
@@ -743,6 +760,7 @@ function EmergencyLiveScreen() {
     setLocation(null);
     setLocationUnavailable(false);
     setNotificationStatus(null);
+    setServerSync(null);
     setCallStatus(null);
     setStorageNotice(null);
     setLiveViewEnabled(false);
@@ -1280,7 +1298,7 @@ function EmergencyLiveScreen() {
         // Exited while the create request was in flight: stopEmergencyAssets
         // never saw this id, so close it out here rather than leave an
         // orphaned ACTIVE event in the user's Evidence history.
-        if (result.ok) updateEmergency(result.emergencyId, { status: 'RESOLVED' }).catch(() => {});
+        if (result.ok) void endEmergency(result.emergencyId);
         return;
       }
 
@@ -1289,15 +1307,40 @@ function EmergencyLiveScreen() {
         // Keep this emergency's uploaded clips on the device while it's on
         // screen (the social-share preview plays them).
         retainClipsFor(result.emergencyId);
-        // Live View decides the clip length; never blocks activation.
-        getLiveViewStatus(result.emergencyId)
-          .then((liveView) => {
+        // Live View decides the clip length; never blocks activation. It
+        // needs the emergency on the server, so without signal it's checked
+        // once the emergency gets there.
+        const loadLiveView = (id: string) =>
+          getLiveViewStatus(id)
+            .then((liveView) => {
+              if (!isCurrentSession()) return;
+              segmentIntervalMsRef.current = liveView.enabled ? LIVE_VIEW_SEGMENT_MS : DEFAULT_SEGMENT_MS;
+              setLiveViewEnabled(liveView.enabled);
+              setLiveViewLinks(liveView.links);
+            })
+            .catch(() => {});
+        if (result.serverConfirmed) {
+          setServerSync(null);
+          void loadLiveView(result.emergencyId);
+        } else {
+          setServerSync('local');
+          if (orderedContacts.length > 0) {
+            setNotificationStatus('No connection — trusted contacts have not been alerted yet. Bes will alert them as soon as it reconnects.');
+          }
+          serverSyncUnsubRef.current?.();
+          serverSyncUnsubRef.current = subscribeToPendingEmergencies((event) => {
+            if (event.type !== 'synced' || event.id !== result.emergencyId) return;
+            serverSyncUnsubRef.current?.();
+            serverSyncUnsubRef.current = null;
             if (!isCurrentSession()) return;
-            segmentIntervalMsRef.current = liveView.enabled ? LIVE_VIEW_SEGMENT_MS : DEFAULT_SEGMENT_MS;
-            setLiveViewEnabled(liveView.enabled);
-            setLiveViewLinks(liveView.links);
-          })
-          .catch(() => {});
+            if (event.serverId !== event.id && activeEmergencyIdRef.current === event.id) {
+              activeEmergencyIdRef.current = event.serverId;
+              retainClipsFor(event.serverId);
+            }
+            setServerSync('synced');
+            void loadLiveView(event.serverId);
+          });
+        }
       } else {
         setNotificationStatus('Backend event failed — recording and dialer still active.');
       }
@@ -1560,7 +1603,22 @@ function EmergencyLiveScreen() {
 
               <View style={styles.statusPanel}>
                 <Text style={styles.statusText} testID="emergency-status-text" accessibilityLabel="emergency-status-text">{statusMessage}</Text>
-                {notificationStatus && <Text style={styles.notificationText}>{notificationStatus}</Text>}
+                {serverSync && (
+                  <Text
+                    style={serverSync === 'local' ? styles.storageText : styles.notificationText}
+                    testID="emergency-sync-status"
+                    accessibilityLabel={`emergency-sync-${serverSync}`}
+                  >
+                    {serverSync === 'local'
+                      ? 'Recording on this phone — no connection to Bes yet. Evidence uploads automatically once connected.'
+                      : 'Connected — evidence recorded without signal is uploading.'}
+                  </Text>
+                )}
+                {notificationStatus && (
+                  <Text style={styles.notificationText} testID="emergency-notification-text" accessibilityLabel="emergency-notification-text">
+                    {notificationStatus}
+                  </Text>
+                )}
                 {callStatus && (
                   <Text style={styles.notificationText} testID="emergency-call-status-text" accessibilityLabel="emergency-call-status-text">
                     {callStatus}

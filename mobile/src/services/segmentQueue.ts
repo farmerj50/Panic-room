@@ -13,6 +13,9 @@
 //   is only removed by an explicit owner action (discardUnuploadedClips).
 // - Uploads run one at a time in the background with backoff (5s, 15s, 60s,
 //   then every 5 min), and resume on app foreground and at the next launch.
+// - Clips of an emergency recorded without signal wait until that emergency
+//   exists on the server (see pendingEmergencies) — the server would reject
+//   them as "not found" before then.
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Directory, File, Paths } from 'expo-file-system';
@@ -20,6 +23,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 import { trackEvent } from './analyticsService';
 import { ApiError } from './apiClient';
 import { addVideoSegment, createRecording, updateEmergency } from './emergencyService';
+import { pendingCreateIds, registerEmergencyIdRemap } from './pendingEmergencies';
 import { uploadFile } from './uploadService';
 
 export type ClipKind = 'video' | 'audio';
@@ -474,7 +478,9 @@ export function runClipQueue(): Promise<void> {
 async function drainQueue(): Promise<void> {
   for (;;) {
     const list = await locked(load);
-    const next = list.find((r) => r.state === 'pending');
+    const waitingForServer = await pendingCreateIds();
+    const next = list.find((r) => r.state === 'pending' && !waitingForServer.has(r.emergencyId));
+    // Clips of emergencies not yet on the server resume once it's created.
     if (!next) return;
     next.attempts += 1;
     const outcome = await uploadOne(next);
@@ -496,6 +502,28 @@ async function drainQueue(): Promise<void> {
     }
   }
 }
+
+// An older server ignored the phone's emergency id and returned its own:
+// move this emergency's queued clips and journal entries over to it.
+registerEmergencyIdRemap((from, to) =>
+  locked(async () => {
+    const list = await load();
+    let changed = false;
+    for (const record of list) {
+      if (record.emergencyId === from) {
+        record.emergencyId = to;
+        changed = true;
+      }
+    }
+    if (changed) await persist();
+    const entries = await loadJournal();
+    if (entries.some((e) => e.emergencyId === from)) {
+      journal = entries.map((e) => (e.emergencyId === from ? { ...e, emergencyId: to } : e));
+      await persistJournal();
+    }
+    if (retained.delete(from)) retained.add(to);
+  }),
+);
 
 // App launch / foreground: retry now instead of waiting for the backoff.
 export function resumeClipQueue(): Promise<void> {

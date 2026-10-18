@@ -81,10 +81,12 @@ jest.mock('../analyticsService', () => ({ trackEvent: (...args: unknown[]) => mo
 const mockUploadFile = jest.fn();
 const mockAddVideoSegment = jest.fn();
 const mockUpdateEmergency = jest.fn();
+const mockCreateEmergency = jest.fn();
 jest.mock('../uploadService', () => ({ uploadFile: (...args: unknown[]) => mockUploadFile(...args) }));
 jest.mock('../emergencyService', () => ({
   addVideoSegment: (...args: unknown[]) => mockAddVideoSegment(...args),
   updateEmergency: (...args: unknown[]) => mockUpdateEmergency(...args),
+  createEmergency: (...args: unknown[]) => mockCreateEmergency(...args),
   createRecording: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../apiClient', () => {
@@ -116,6 +118,7 @@ import {
   retainClipsFor,
   runClipQueue,
 } from '../segmentQueue';
+import { __resetPendingEmergenciesForTests, registerPendingEmergency, syncPendingEmergencies } from '../pendingEmergencies';
 
 const EMERGENCY = '11111111-2222-3333-4444-555555555555';
 const DIR = 'file:///doc/emergency-segments';
@@ -151,6 +154,8 @@ beforeEach(async () => {
   mockMtime.clear();
   await AsyncStorage.clear();
   __resetClipQueueForTests();
+  __resetPendingEmergenciesForTests();
+  mockCreateEmergency.mockReset().mockImplementation(async (d: { id: string }) => ({ id: d.id }));
   mockUploadFile.mockReset().mockResolvedValue({ key: 'user1/abc.mp4' });
   mockAddVideoSegment.mockReset().mockResolvedValue({});
   mockTrackEvent.mockReset();
@@ -534,4 +539,28 @@ test('if the queue was never saved, the moved clip is rebuilt from its filename 
   await flush();
   expect(mockAddVideoSegment).toHaveBeenCalledWith(EMERGENCY, expect.objectContaining({ sequence: 10 }));
   expect(mockFiles.has(record.localUri)).toBe(false); // uploaded, then cleaned up
+});
+
+describe('an emergency recorded without signal', () => {
+  test('its clips wait in the queue (kept, not lost or conflict) until the emergency is on the server', async () => {
+    await registerPendingEmergency({ id: EMERGENCY, activatedAt: STARTED });
+    await enqueueVideo(1);
+    await runClipQueue();
+    expect(mockAddVideoSegment).not.toHaveBeenCalled();
+    expect((await stored())[0].state).toBe('pending');
+
+    await syncPendingEmergencies();
+    await runClipQueue();
+    expect(mockCreateEmergency).toHaveBeenCalledWith(expect.objectContaining({ id: EMERGENCY, activatedAt: STARTED }));
+    expect(mockAddVideoSegment).toHaveBeenCalledWith(EMERGENCY, expect.objectContaining({ sequence: 1 }));
+  });
+
+  test('if an older server returns its own id, queued clips follow it', async () => {
+    await registerPendingEmergency({ id: EMERGENCY, activatedAt: STARTED });
+    await enqueueVideo(1);
+    mockCreateEmergency.mockResolvedValue({ id: 'server-9' });
+    await syncPendingEmergencies();
+    await runClipQueue();
+    expect(mockAddVideoSegment).toHaveBeenCalledWith('server-9', expect.objectContaining({ sequence: 1 }));
+  });
 });

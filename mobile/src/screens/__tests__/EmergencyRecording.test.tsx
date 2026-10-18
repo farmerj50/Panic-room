@@ -81,7 +81,7 @@ jest.mock('../../context/TourContext', () => ({
 }));
 
 let mockCallMode = 'none';
-const mockRunCoreActivation = jest.fn().mockResolvedValue({ ok: true, emergencyId: 'e1', location: null });
+const mockRunCoreActivation = jest.fn().mockResolvedValue({ ok: true, emergencyId: 'e1', location: null, serverConfirmed: true });
 const mockContacts = [
   { id: 'c1', name: 'Sam', phoneNumber: '+15551230001', isPriority: true },
   { id: 'c2', name: 'Riley', phoneNumber: '+15551230002', isPriority: false },
@@ -131,6 +131,18 @@ jest.mock('../../services/emergencyService', () => ({
   shareLiveView: (...args: unknown[]) => mockShareLiveView(...args),
   rotateLiveView: (...args: unknown[]) => mockRotateLiveView(...args),
   revokeLiveView: (...args: unknown[]) => mockRevokeLiveView(...args),
+}));
+
+const mockEndEmergency = jest.fn().mockResolvedValue(undefined);
+let mockSyncListeners: Array<(e: unknown) => void> = [];
+jest.mock('../../services/pendingEmergencies', () => ({
+  endEmergency: (...args: unknown[]) => mockEndEmergency(...args),
+  subscribeToPendingEmergencies: (l: (e: unknown) => void) => {
+    mockSyncListeners.push(l);
+    return () => {
+      mockSyncListeners = mockSyncListeners.filter((x) => x !== l);
+    };
+  },
 }));
 
 const mockEnqueueClip = jest.fn();
@@ -496,6 +508,20 @@ describe('social share availability', () => {
     expect(mockListConnections.mock.calls.length).toBe(atExit);
   });
 
+  test('overlapping checks share one request (no duplicates)', async () => {
+    let resolveSlow: (v: unknown) => void = () => {};
+    mockListConnections.mockResolvedValueOnce({ connections: [] }).mockImplementationOnce(() => new Promise((r) => (resolveSlow = r)));
+    render(<EmergencyScreen />);
+    await advance(7000); // activation check is now in flight
+    const inFlight = mockListConnections.mock.calls.length;
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('emergency-share-btn')); // would re-check: joins the one in flight
+    });
+    expect(mockListConnections.mock.calls.length).toBe(inFlight);
+    await act(async () => resolveSlow({ connections: [TIKTOK] }));
+    expect(mockOverlayProps?.providers).toEqual([TIKTOK]);
+  });
+
   test('does not retry once the check succeeds', async () => {
     mockListConnections.mockResolvedValue({ connections: [TIKTOK] });
     await startEmergency();
@@ -659,3 +685,62 @@ describe('social sharing setup note (emergency screen)', () => {
     expect(mockRecordings.length).toBeGreaterThanOrEqual(2);
   });
 });
+
+describe('offline-first activation (no signal)', () => {
+  const liveViewMock = () => jest.requireMock('../../services/emergencyService').getLiveViewStatus as jest.Mock;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    mockRecordings.length = 0;
+    mockFreeBytes = 50 * 1024 * MB;
+    mockLiveView.enabled = false;
+    mockSyncListeners = [];
+    mockEndEmergency.mockClear();
+    liveViewMock().mockClear();
+    mockEnqueueClip.mockReset();
+    mockEnqueueClip.mockImplementation(async (clip: { sourceUri: string }) => ({ id: clip.sourceUri, localUri: clip.sourceUri }));
+    mockRunCoreActivation.mockResolvedValue({ ok: true, emergencyId: 'local-1', location: null, serverConfirmed: false });
+  });
+
+  afterEach(() => {
+    mockRunCoreActivation.mockResolvedValue({ ok: true, emergencyId: 'e1', location: null, serverConfirmed: true });
+    jest.useRealTimers();
+  });
+
+  test('records on the phone, says so, and never claims contacts were alerted', async () => {
+    await startEmergency();
+    expect(screen.getByLabelText('emergency-sync-local')).toBeTruthy();
+    expect(screen.getByTestId('emergency-notification-text').props.children).toMatch(/have not been alerted yet/);
+    expect(screen.getByTestId('emergency-share-btn')).toBeTruthy(); // sharing is still offered
+    expect(liveViewMock()).not.toHaveBeenCalled(); // needs the server
+  });
+
+  test('clips recorded without signal go into the durable upload queue under the local id', async () => {
+    await startEmergency();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('emergency-exit-btn'));
+    });
+    await advance(1000);
+    const videoClips = mockEnqueueClip.mock.calls.filter(([c]) => c.kind === 'video');
+    expect(videoClips.length).toBeGreaterThanOrEqual(1);
+    expect(videoClips.every(([c]) => c.emergencyId === 'local-1')).toBe(true);
+    expect(mockEndEmergency).toHaveBeenCalledWith('local-1');
+  });
+
+  test('once it reaches the server: status updates and Live View is loaded', async () => {
+    await startEmergency();
+    await act(async () => {
+      for (const l of mockSyncListeners) l({ type: 'synced', id: 'local-1', serverId: 'local-1', endedBeforeSync: false });
+    });
+    expect(screen.getByLabelText('emergency-sync-synced')).toBeTruthy();
+    expect(liveViewMock()).toHaveBeenCalledWith('local-1');
+  });
+
+  test('online activation shows no sync line at all', async () => {
+    mockRunCoreActivation.mockResolvedValue({ ok: true, emergencyId: 'e1', location: null, serverConfirmed: true });
+    await startEmergency();
+    expect(screen.queryByTestId('emergency-sync-status')).toBeNull();
+    expect(liveViewMock()).toHaveBeenCalledWith('e1');
+  });
+});
+

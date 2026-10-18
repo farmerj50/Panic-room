@@ -8,6 +8,7 @@ import {
   subscribeToClipQueue,
   type QueueSummary,
 } from '../services/segmentQueue';
+import { pendingEmergencyCount, resumePendingEmergencies, subscribeToPendingEmergencies } from '../services/pendingEmergencies';
 import { formatMegabytes } from '../services/storageMonitor';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -16,19 +17,32 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 // never deleted automatically — only with the explicit, confirmed action here.
 export default function PendingEvidenceNotice() {
   const [summary, setSummary] = useState<QueueSummary | null>(null);
+  // Emergencies recorded without signal that haven't reached Bes yet.
+  const [offlineEmergencies, setOfflineEmergencies] = useState(0);
 
   const refresh = useCallback(() => {
     getClipQueueSummary().then(setSummary).catch(() => {});
+    pendingEmergencyCount().then(setOfflineEmergencies).catch(() => {});
   }, []);
 
   useEffect(() => {
     refresh();
-    return subscribeToClipQueue(refresh);
+    const offClips = subscribeToClipQueue(refresh);
+    const offEmergencies = subscribeToPendingEmergencies(refresh);
+    return () => {
+      offClips();
+      offEmergencies();
+    };
   }, [refresh]);
 
   if (!summary) return null;
   const unsent = summary.waiting + summary.conflict;
-  if (unsent === 0 && summary.lost === 0 && summary.incomplete === 0) return null;
+  if (unsent === 0 && summary.lost === 0 && summary.incomplete === 0 && offlineEmergencies === 0) return null;
+  const uploadNow = () => {
+    void resumePendingEmergencies()
+      .then(() => resumeClipQueue())
+      .then(refresh);
+  };
 
   const confirmDiscard = () => {
     Alert.alert(
@@ -43,6 +57,12 @@ export default function PendingEvidenceNotice() {
 
   return (
     <View style={styles.card} testID="pending-evidence-notice" accessible accessibilityLabel="pending-evidence-notice">
+      {offlineEmergencies > 0 && (
+        <Text style={styles.text} testID="pending-evidence-offline-emergencies">
+          {offlineEmergencies === 1 ? '1 emergency' : `${offlineEmergencies} emergencies`} recorded without a connection {offlineEmergencies === 1 ? "hasn't" : "haven't"} reached Bes yet.
+          {offlineEmergencies === 1 ? ' It uploads' : ' They upload'} automatically once you're online.
+        </Text>
+      )}
       {unsent > 0 && (
         <Text style={styles.text}>
           {plural(unsent, 'recording')} waiting to upload ({formatMegabytes(summary.bytes)}). They stay on this phone until
@@ -62,14 +82,16 @@ export default function PendingEvidenceNotice() {
         <Text style={styles.muted}>{plural(summary.lost, 'recording')} could not be recovered after the app closed unexpectedly.</Text>
       )}
       <View style={styles.actions}>
-        {summary.waiting > 0 && (
-          <TouchableOpacity onPress={() => { void resumeClipQueue().then(refresh); }} testID="pending-evidence-retry-btn">
+        {(summary.waiting > 0 || offlineEmergencies > 0) && (
+          <TouchableOpacity onPress={uploadNow} testID="pending-evidence-retry-btn">
             <Text style={styles.action}>Upload now</Text>
           </TouchableOpacity>
         )}
-        <TouchableOpacity onPress={confirmDiscard} testID="pending-evidence-delete-btn">
-          <Text style={styles.danger}>Delete unsent recordings</Text>
-        </TouchableOpacity>
+        {unsent + summary.lost + summary.incomplete > 0 && (
+          <TouchableOpacity onPress={confirmDiscard} testID="pending-evidence-delete-btn">
+            <Text style={styles.danger}>Delete unsent recordings</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );

@@ -4,15 +4,31 @@ import { RecordingPresets, useAudioRecorder } from 'expo-audio';
 import { Contact } from '../types/contact';
 import { getContactsFromBackend } from '../services/contactService';
 import { journalRecordingStarted } from '../services/segmentQueue';
-import { createEmergency, notifyEmergencyContacts } from '../services/emergencyService';
+import { notifyEmergencyContacts } from '../services/emergencyService';
 import { isTourActive } from '../services/tourModeState';
 import { getCurrentLocation, getLastKnownLocation, watchLocation } from '../services/locationService';
 import { getMicrophoneStatus, requestMicrophonePermission } from '../services/corePermissions';
 import { mapUrl } from '../utils/mapUrl';
 import { setPendingHiddenSos } from '../hooks/useAppStateEmergencyGuard';
 import { recordLocationPoint, setActiveGpsEmergency } from '../services/locationQueue';
+import {
+  isOnServer,
+  newEmergencyId as createLocalEmergencyId,
+  registerPendingEmergency,
+  subscribeToPendingEmergencies,
+  syncPendingEmergencies,
+} from '../services/pendingEmergencies';
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// How long activation waits for the first server create before carrying on
+// offline (later attempts continue in the background).
+export const SERVER_CREATE_WAIT_MS = 4000;
+
+const clockTime = (iso: string) => {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
 
 type LatLng = { latitude: number; longitude: number };
 type NotifyResponse = {
@@ -77,7 +93,9 @@ export type CoreActivationParams = {
 };
 
 export type CoreActivationResult =
-  | { ok: true; emergencyId: string; location: LatLng | null }
+  // serverConfirmed false: recording on this phone, not yet on the server
+  // (no signal) — it's created there automatically once it can be.
+  | { ok: true; emergencyId: string; location: LatLng | null; serverConfirmed: boolean }
   | { ok: false; error: 'CREATE_FAILED' };
 
 export type SilentActivationParams = {
@@ -198,6 +216,17 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
     } catch {}
   };
 
+  // An older server ignored the phone's id and returned its own: follow it.
+  useEffect(
+    () =>
+      subscribeToPendingEmergencies((event) => {
+        if (event.type !== 'synced' || event.serverId === event.id) return;
+        if (emergencyIdRef.current === event.id) setEmergencyId(event.serverId);
+        if (gpsEmergencyIdRef.current === event.id) gpsEmergencyIdRef.current = event.serverId;
+      }),
+    [],
+  );
+
   const triggerEmergency = useCallback(() => setIsEmergency(true), []);
 
   const resolveEmergency = useCallback(() => {
@@ -259,21 +288,28 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
         // goes to createEmergency and the initial notify message.
       }
 
-      let newEmergencyId: string;
-      try {
-        params.onStatus?.('Creating emergency event.');
-        const emergency = await createEmergency({
-          latitude: currentLocation?.latitude,
-          longitude: currentLocation?.longitude,
-        });
-        newEmergencyId = emergency.id;
-        setEmergencyId(emergency.id);
-        if (locationSubRef.current) gpsEmergencyIdRef.current = emergency.id;
-        void setActiveGpsEmergency(emergency.id);
-        if (currentLocation) void recordLocationPoint(emergency.id, currentLocation);
-      } catch {
-        return { ok: false, error: 'CREATE_FAILED' };
-      }
+      // Offline-first: the emergency exists on this phone from this moment,
+      // with or without signal. Its server create is recorded on the device
+      // BEFORE anything is queued against it, then retried until it succeeds
+      // (pendingEmergencies) — idempotent on this id, so never twice.
+      const newEmergencyId = createLocalEmergencyId();
+      const activatedAt = new Date().toISOString();
+      await registerPendingEmergency({
+        id: newEmergencyId,
+        activatedAt,
+        latitude: currentLocation?.latitude,
+        longitude: currentLocation?.longitude,
+      });
+      setEmergencyId(newEmergencyId);
+      if (locationSubRef.current) gpsEmergencyIdRef.current = newEmergencyId;
+      void setActiveGpsEmergency(newEmergencyId);
+      if (currentLocation) void recordLocationPoint(newEmergencyId, currentLocation);
+
+      params.onStatus?.('Creating emergency event.');
+      // One immediate attempt, bounded so a slow or dead network never holds
+      // up recording; later attempts continue in the background.
+      await Promise.race([syncPendingEmergencies(), wait(SERVER_CREATE_WAIT_MS)]);
+      const serverConfirmed = await isOnServer(newEmergencyId);
 
       if (params.startAudio) {
         if (!params.skipMicPermissionPrompt) {
@@ -298,12 +334,18 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      // Trusted contacts are alerted by the server, so only once the
+      // emergency is there. Without signal they're alerted when it arrives —
+      // but only if this emergency is still active then (an emergency that
+      // already ended isn't announced late). Never reported as sent before.
       const contactsToNotify = orderedContactsRef.current;
-      if (contactsToNotify.length > 0) {
+      const sendAlert = (emergencyId: string, late: boolean) =>
         notifyEmergencyContacts({
-          emergencyId: newEmergencyId,
-          contacts: contactsToNotify,
-          message: `Bes emergency activated. Location: ${mapUrl(currentLocation)}`,
+          emergencyId,
+          contacts: orderedContactsRef.current.length > 0 ? orderedContactsRef.current : contactsToNotify,
+          message: late
+            ? `Bes emergency activated at ${clockTime(activatedAt)} (sent when signal returned). Location: ${mapUrl(currentLocation)}`
+            : `Bes emergency activated. Location: ${mapUrl(currentLocation)}`,
         })
           .then((response) => params.onNotifyResult?.(response))
           .catch((error) => {
@@ -314,9 +356,20 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
               error: error instanceof Error ? error.message : 'Notify failed',
             });
           });
+      if (contactsToNotify.length > 0) {
+        if (serverConfirmed) {
+          sendAlert(newEmergencyId, false);
+        } else {
+          const unsubscribe = subscribeToPendingEmergencies((event) => {
+            if (event.type !== 'synced' || event.id !== newEmergencyId) return;
+            unsubscribe();
+            const stillActive = isEmergencyRef.current && [newEmergencyId, event.serverId].includes(emergencyIdRef.current ?? '');
+            if (stillActive && !event.endedBeforeSync) sendAlert(event.serverId, true);
+          });
+        }
       }
 
-      return { ok: true, emergencyId: newEmergencyId, location: currentLocation };
+      return { ok: true, emergencyId: newEmergencyId, location: currentLocation, serverConfirmed };
     },
     [audioRecorder],
   );

@@ -9,6 +9,9 @@
 //   than dropping new ones; the thinned count is reported to the server.
 // - Live points go out immediately; failures retry with backoff, on app
 //   foreground and at the next launch (see resumeLocationQueue).
+// - Points of an emergency recorded without signal wait until that emergency
+//   exists on the server (see pendingEmergencies); sending them earlier would
+//   be rejected as "not found" and dropped.
 // Never throws to callers — GPS upload must not affect the emergency flow.
 import './naclSetup';
 import nacl from 'tweetnacl';
@@ -16,6 +19,7 @@ import { decodeBase64, decodeUTF8, encodeBase64, encodeUTF8 } from 'tweetnacl-ut
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { ApiError, apiRequest } from './apiClient';
+import { pendingCreateIds, registerEmergencyIdRemap } from './pendingEmergencies';
 import { getItemAsync, setItemAsync } from './secureStorage';
 
 export type QueuedPoint = {
@@ -173,8 +177,10 @@ export async function recordLocationPoint(
 
 async function flushOnce(): Promise<void> {
   const state = await locked(load);
+  const waitingForServer = await pendingCreateIds();
   let hadFailure = false;
   for (const emergencyId of Object.keys(state)) {
+    if (waitingForServer.has(emergencyId)) continue; // flushed once it's created
     const queue = state[emergencyId];
     while (queue.points.length > 0 || queue.thinned > 0) {
       const batch = queue.points.slice(0, BATCH_SIZE);
@@ -232,6 +238,24 @@ export function flushLocationQueue(): Promise<void> {
   }
   return flushing;
 }
+
+// An older server ignored the phone's emergency id: move its queued points.
+registerEmergencyIdRemap((from, to) =>
+  locked(async () => {
+    const current = await load();
+    if (current[from]) {
+      const into = current[to] ?? { points: [], thinned: 0 };
+      current[to] = { points: [...into.points, ...current[from].points], thinned: into.thinned + current[from].thinned };
+      delete current[from];
+      await save(current);
+    }
+    if (lastRecorded[from]) {
+      lastRecorded[to] = lastRecorded[from];
+      delete lastRecorded[from];
+    }
+    if ((await getActiveGpsEmergency()) === from) await setActiveGpsEmergency(to);
+  }),
+);
 
 // App launch / foreground: retry anything left from an outage or a restart.
 export function resumeLocationQueue(): Promise<void> {
