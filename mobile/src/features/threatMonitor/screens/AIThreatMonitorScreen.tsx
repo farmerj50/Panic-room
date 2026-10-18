@@ -9,6 +9,7 @@ import CrowdMetricsPanel from '../components/CrowdMetricsPanel';
 import DetectionOverlay from '../components/DetectionOverlay';
 import MonitorControls from '../components/MonitorControls';
 import ThreatDashboard from '../components/ThreatDashboard';
+import { isAiMonitorEnabled } from '../config/threatMonitorConfig';
 import { useThreatMonitor } from '../hooks/useThreatMonitor';
 import { claimForEmergency } from '../services/CameraOwnershipService';
 import { BesVisionView } from '../services/besVision';
@@ -26,6 +27,28 @@ const STATUS_LABEL = {
 // development/test builds only) the threat dashboard. It only observes and
 // advises — nothing here triggers Emergency, calls or alerts anyone.
 export default function AIThreatMonitorScreen() {
+  // The screen is registered in every build; without the rollout flag it
+  // never touches the camera, even if something navigates here directly.
+  if (!isAiMonitorEnabled()) return <MonitorUnavailable />;
+  return <AIMonitor />;
+}
+
+function MonitorUnavailable() {
+  const navigation = useNavigation<any>();
+  return (
+    <SafeAreaView style={styles.safe} testID="ai-monitor-unavailable">
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton} testID="ai-monitor-back-btn">
+          <Text style={styles.headerButtonText}>{'<'}</Text>
+        </TouchableOpacity>
+        <Text style={styles.title}>AI Monitor</Text>
+      </View>
+      <Text style={styles.unavailable}>AI Monitor isn’t available in this version of Bes.</Text>
+    </SafeAreaView>
+  );
+}
+
+function AIMonitor() {
   const navigation = useNavigation<any>();
   const [permission, requestPermission] = useCameraPermissions();
   const monitor = useThreatMonitor();
@@ -197,4 +220,5 @@ const styles = StyleSheet.create({
   sosText: { color: '#fff', fontSize: 16, fontWeight: '900' },
   disabled: { opacity: 0.6 },
   privacy: { color: '#a8a0bf', fontSize: 13, textAlign: 'center' },
+  unavailable: { color: '#a8a0bf', fontSize: 15, fontWeight: '700', padding: 24, textAlign: 'center' },
 });

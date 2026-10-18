@@ -28,6 +28,7 @@ jest.mock('../services/besVision', () => {
 jest.mock('../config/threatMonitorConfig', () => ({
   ...jest.requireActual('../config/threatMonitorConfig'),
   isThreatDetectionEnabled: () => mockThreats,
+  isAiMonitorEnabled: () => true,
 }));
 // A scripted engine: each test decides what the analysis "sees".
 jest.mock('../threat/ThreatAssessmentEngine', () => ({

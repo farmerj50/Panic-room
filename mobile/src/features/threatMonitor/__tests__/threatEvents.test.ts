@@ -15,7 +15,7 @@ const reliability = (level: SourceReliability['level'] = 'good'): SourceReliabil
   reasons: level === 'good' ? [] : ['Few frames analyzed'],
 });
 
-const candidate = (id: string, type: ThreatType, opts: { severity?: Severity; confidence?: number; indicator?: string } = {}): ThreatCandidate => ({
+const candidate = (id: string, type: ThreatType, opts: { severity?: Severity; confidence?: number; indicator?: string; trackIds?: number[] } = {}): ThreatCandidate => ({
   id,
   type,
   status: 'emerging',
@@ -24,7 +24,7 @@ const candidate = (id: string, type: ThreatType, opts: { severity?: Severity; co
   calibrated: false,
   firstSeenAt: 0,
   lastSeenAt: 0,
-  trackIds: [1],
+  trackIds: opts.trackIds ?? [1],
   indicators: [{ id: opts.indicator ?? 'i1', label: `${opts.indicator ?? 'i1'} label`, weight: 0.5 }],
   sourceReliability: reliability(),
   recommendedActions: [`advice for ${type}`],
@@ -63,6 +63,37 @@ describe('ThreatEventLog', () => {
     const events = log.list();
     expect(events).toHaveLength(1);
     expect(events[0]).toEqual(expect.objectContaining({ status: 'ongoing', repeats: 1, candidateIds: ['c1', 'c2'] }));
+  });
+
+  it('keeps falls of different people separate, even within the cooldown', () => {
+    const log = new ThreatEventLog(CONFIG);
+    log.ingest(assessment([candidate('c1', 'fall', { trackIds: [3] })]), T0);
+    log.ingest(assessment([candidate('c2', 'fall', { trackIds: [8] })]), T0 + 2_000);
+    expect(log.list().map((e) => e.trackIds)).toEqual([[8], [3]]);
+  });
+
+  it('merges a repeat fall by the same person within the cooldown', () => {
+    const log = new ThreatEventLog(CONFIG);
+    log.ingest(assessment([candidate('c1', 'fall', { trackIds: [3] })]), T0);
+    log.ingest(assessment([], { recentlyResolved: [candidate('c1', 'fall')] }), T0 + 1_000);
+    log.ingest(assessment([candidate('c2', 'fall', { trackIds: [3] })]), T0 + 20_000);
+    expect(log.list()).toHaveLength(1);
+    expect(log.list()[0].repeats).toBe(1);
+  });
+
+  it('never merges events from different monitoring sessions (track IDs restart)', () => {
+    const log = new ThreatEventLog(CONFIG);
+    log.ingest(assessment([candidate('c1', 'fall', { trackIds: [1] })]), T0, 'session-1');
+    log.endAll(T0 + 1_000);
+    log.ingest(assessment([candidate('c1', 'fall', { trackIds: [1] })]), T0 + 5_000, 'session-2');
+    log.ingest(assessment([candidate('c9', 'crowd_panic')]), T0 + 6_000, 'session-2');
+    log.ingest(assessment([candidate('c10', 'crowd_panic')]), T0 + 7_000, 'session-3');
+    expect(log.list().map((e) => `${e.type}@${e.sessionId}`).sort()).toEqual([
+      'crowd_panic@session-2',
+      'crowd_panic@session-3',
+      'fall@session-1',
+      'fall@session-2',
+    ]);
   });
 
   it('raises a new event once the cooldown has passed', () => {

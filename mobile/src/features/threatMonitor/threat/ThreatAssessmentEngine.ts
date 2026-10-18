@@ -48,6 +48,8 @@ type Track = {
 
 let nextCandidateId = 1;
 
+export const POOR_INPUT_REASON = 'Camera input is too poor to judge';
+
 // Turns the per-frame MonitorFrame stream into explainable, multi-frame
 // threat candidates. Detectors only measure; this engine decides when
 // evidence is sustained enough to surface, how confident and severe it is,
@@ -87,7 +89,9 @@ export class ThreatAssessmentEngine {
 
     const observations: DetectorObservation[] = [];
     for (const detector of this.detectors) {
-      const missing = this.missingRequirement(detector, reliability, frame);
+      // Poor input (too few frames, phone mostly moving) never produces a
+      // judgment: no detector runs, existing evidence only decays.
+      const missing = reliability.level === 'poor' ? POOR_INPUT_REASON : this.missingRequirement(detector, reliability, frame);
       if (missing) {
         for (const type of detector.types) unavailable.push({ type, reason: missing });
         continue;
@@ -141,10 +145,14 @@ export class ThreatAssessmentEngine {
       const sustained =
         track.supportingFrames >= ENGINE_CONFIG.minSupportingFrames &&
         track.lastSupportAt - track.firstSeenAt >= ENGINE_CONFIG.minEvidenceMs;
-      if (!track.shown && sustained && track.evidence >= ENGINE_CONFIG.emergeAt) track.shown = true;
+      // A candidate only appears or escalates on a frame that brought new
+      // evidence, never on its own while input is missing or unusable.
+      const fresh = supported.has(key);
+      if (fresh && !track.shown && sustained && track.evidence >= ENGINE_CONFIG.emergeAt) track.shown = true;
       // Escalate only if the evidence keeps going: shown first as emerging,
       // active once it has lasted twice as long and is strong.
       if (
+        fresh &&
         track.shown &&
         track.evidence >= ENGINE_CONFIG.activateAt &&
         track.lastSupportAt - track.firstSeenAt >= ENGINE_CONFIG.minEvidenceMs * 2

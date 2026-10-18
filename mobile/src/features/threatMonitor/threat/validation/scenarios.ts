@@ -10,12 +10,27 @@ import { actions, actor, type ActorAt } from './syntheticPoses';
 
 export type ScenarioLabel = ThreatType | 'none';
 
+// A generated clip: frames, plus when the labelled event starts (absent for
+// look-alikes).
+export type Clip = MonitorFrame[] & { onsetMs?: number };
+
 export type Scenario = {
   id: string;
   label: ScenarioLabel;
   activity: string;
-  build: (seed: number) => MonitorFrame[];
+  // Other threat types that genuinely occur in this clip too (a victim who is
+  // knocked down also falls; people scattering also break into a run).
+  // Raising them is a legitimate overlapping event, not a false alarm, and
+  // not raising them is not a miss.
+  alsoPresent?: ThreatType[];
+  build: (seed: number) => Clip;
 };
+
+export function withOnset(frames: MonitorFrame[], onsetSec: number | undefined): Clip {
+  const clip = frames as Clip;
+  if (onsetSec != null && frames.length) clip.onsetMs = frames[0].timestamp + Math.round(onsetSec * 1000);
+  return clip;
+}
 
 export const SPLITS = {
   train: { from: 1, to: 99 },
@@ -46,16 +61,22 @@ function variation(seed: number) {
   };
 }
 
-function scene(seed: number, durationSec: number, cast: Array<(fps: number, v: ReturnType<typeof variation>) => (t: number) => SyntheticPerson>) {
+function scene(
+  seed: number,
+  durationSec: number,
+  cast: Array<(fps: number, v: ReturnType<typeof variation>) => (t: number) => SyntheticPerson>,
+  onset?: (v: ReturnType<typeof variation>) => number,
+): Clip {
   const v = variation(seed);
   const people = cast.map((c) => c(v.fps, v));
-  return syntheticSequence(durationSec, v.fps, (t) =>
+  const onsetSec = onset?.(v);
+  return withOnset(syntheticSequence(durationSec, v.fps, (t) =>
     people.map((p) => {
       const person = p(t);
       // Pose occasionally missing (model miss, occlusion).
       return v.r() < v.dropout ? { ...person, pose: undefined } : person;
     }),
-  );
+  ), onsetSec);
 }
 
 const withNoise = (at: ActorAt, v: ReturnType<typeof variation>): ActorAt => (t) => ({ ...at(t), noise: v.noise });
@@ -72,7 +93,7 @@ export const POSE_SCENARIOS: Scenario[] = [
     id: 'fall-forward',
     label: 'fall',
     activity: 'person trips and falls, stays down',
-    build: (seed) => scene(seed, 7, [cast(1, (v) => actions.fall(0.4 + v.shift, 1.5 + v.timing, v.facing))]),
+    build: (seed) => scene(seed, 7, [cast(1, (v) => actions.fall(0.4 + v.shift, 1.5 + v.timing, v.facing))], (v) => 1.5 + v.timing),
   },
   {
     id: 'fall-while-walking',
@@ -85,37 +106,40 @@ export const POSE_SCENARIOS: Scenario[] = [
           const at = 2 + v.timing;
           return (t) => (t < at ? walk(t) : actions.fall(walk(at).hipX, at, v.facing, 0.5)(t));
         }),
-      ]),
+      ], (v) => 2 + v.timing),
   },
   {
     id: 'mutual-fight',
     label: 'physical_confrontation',
     activity: 'two people exchanging punches',
+    alsoPresent: ['assault'],
     build: (seed) =>
       scene(seed, 7, [
         cast(1, (v) => actions.punching(0.35 + v.shift, 1, { start: 0.8 + v.timing, period: 0.5 })),
         cast(2, (v) => actions.punching(0.35 + v.shift + REACH, -1, { start: 1.0 + v.timing, period: 0.6 })),
-      ]),
+      ], (v) => 0.8 + v.timing),
   },
   {
     id: 'one-sided-attack',
     label: 'assault',
     activity: 'one person repeatedly punching another who does not fight back',
+    alsoPresent: ['physical_confrontation'],
     build: (seed) =>
       scene(seed, 7, [
         cast(1, (v) => actions.punching(0.35 + v.shift, 1, { start: 0.8 + v.timing, period: 0.5 })),
         cast(2, (v) => actions.stand(0.35 + v.shift + REACH, -1)),
-      ]),
+      ], (v) => 0.8 + v.timing),
   },
   {
     id: 'attack-victim-falls',
     label: 'assault',
     activity: 'person is punched and knocked down',
+    alsoPresent: ['fall', 'physical_confrontation'],
     build: (seed) =>
       scene(seed, 8, [
         cast(1, (v) => actions.punching(0.35 + v.shift, 1, { start: 0.8 + v.timing, period: 0.5 })),
         cast(2, (v) => actions.fall(0.35 + v.shift + REACH, 2.6 + v.timing, 1, 0.5)),
-      ]),
+      ], (v) => 0.8 + v.timing),
   },
 
   // ── Look-alikes (should produce nothing) ───────────────────────────────

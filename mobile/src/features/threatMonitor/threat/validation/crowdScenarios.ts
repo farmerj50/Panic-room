@@ -1,5 +1,5 @@
 import type { MonitorFrame } from '../../models/types';
-import type { Scenario } from './scenarios';
+import { withOnset, type Clip, type Scenario } from './scenarios';
 import { changeAt, packedBlock, placePeople, renderCrowd, rng, walker, type CrowdCamera, type Walker } from './syntheticCrowd';
 
 // Labelled synthetic crowd scenes: the three crowd threats and the everyday
@@ -62,17 +62,24 @@ const mill = (c: Ctx) => heading(c.r() * Math.PI * 2, c.r() * 0.5);
 const wideStandingCrowd = (c: Ctx) =>
   placePeople(c.r, c.int(30, 45), { x0: -14, x1: 14, z0: 6, z1: 14 }, 0.8).map((p) => walker(p.x, p.z, () => still, c.duration, 0.04, c.r() * 6));
 
-function build(c: Ctx, walkers: Walker[]): MonitorFrame[] {
-  return renderCrowd(walkers, c.camera, c.duration, c.fps, Math.floor(c.r() * 1e6));
+function build(c: Ctx, walkers: Walker[], hasEvent: boolean): Clip {
+  return withOnset(renderCrowd(walkers, c.camera, c.duration, c.fps, Math.floor(c.r() * 1e6)), hasEvent ? c.onset : undefined);
 }
 
-const scenario = (id: string, label: Scenario['label'], activity: string, make: (c: Ctx) => Walker[]): Scenario => ({
+const scenario = (
+  id: string,
+  label: Scenario['label'],
+  activity: string,
+  make: (c: Ctx) => Walker[],
+  alsoPresent?: Scenario['alsoPresent'],
+): Scenario => ({
   id,
   label,
   activity,
+  ...(alsoPresent ? { alsoPresent } : {}),
   build: (seed) => {
     const c = context(seed);
-    return build(c, make(c));
+    return build(c, make(c), label !== 'none');
   },
 });
 
@@ -91,6 +98,7 @@ export const CROWD_SCENARIOS: Scenario[] = [
       const v = c.r() < 0.85 ? heading(c.r() * Math.PI * 2, c.between(3, 5.5)) : mill(c);
       return walker(p.x, p.z, changeAt(c.onset + c.r() * 0.8, mill(c), v), c.duration, 0.05, c.r() * 6);
     }),
+    ['sudden_dispersal'],
   ),
   scenario('dispersal-cluster', 'sudden_dispersal', 'a standing group suddenly scatters outward', (c) => {
     const center = { x: c.between(-1, 1), z: c.between(8, 11) };
@@ -101,7 +109,7 @@ export const CROWD_SCENARIOS: Scenario[] = [
       const p = { x: center.x + Math.cos(a) * d, z: center.z + Math.sin(a) * d };
       return walker(p.x, p.z, changeAt(c.onset + c.r() * 0.6, still, heading(a + (c.r() - 0.5) * 0.8, c.between(2.5, 5))), c.duration, 0.04, c.r() * 6);
     });
-  }),
+  }, ['crowd_panic']),
   scenario('dispersal-from-point', 'sudden_dispersal', 'people near something in a plaza move sharply away from it', (c) => {
     const people = placePeople(c.r, c.int(10, 14), c.area(7, 14), 1.0);
     const source = people[Math.floor(c.r() * people.length)];
@@ -113,7 +121,7 @@ export const CROWD_SCENARIOS: Scenario[] = [
       const v = flees ? heading(Math.atan2(dz, dx) + (c.r() - 0.5) * 0.6, c.between(2.5, 5)) : still;
       return walker(p.x, p.z, changeAt(c.onset + c.r() * 0.6, still, d < 0.01 ? still : v), c.duration, 0.04, c.r() * 6);
     });
-  }),
+  }, ['crowd_panic']),
   scenario('surge-lurch', 'crowd_surge', 'a packed crowd is suddenly pushed forward together', (c) => {
     const dir = [Math.PI / 2, -Math.PI / 2, 0, Math.PI][c.int(0, 3)];
     const gap = c.between(0.5, 0.7);
@@ -221,7 +229,7 @@ export const CROWD_SCENARIOS: Scenario[] = [
       const rate = c.between(0.12, 0.25) * (c.r() < 0.5 ? 1 : -1);
       c.camera.rotationAt = (t) => (t > c.onset ? rate : 0);
       c.camera.panAt = (t) => Math.max(0, t - c.onset) * rate;
-      return build(c, wideStandingCrowd(c));
+      return build(c, wideStandingCrowd(c), false);
     },
   },
   {
@@ -233,7 +241,7 @@ export const CROWD_SCENARIOS: Scenario[] = [
       const rate = c.between(0.5, 1.2) * (c.r() < 0.5 ? 1 : -1);
       c.camera.rotationAt = (t) => (t > c.onset && t < c.onset + 1.5 ? rate : 0);
       c.camera.panAt = (t) => Math.min(1.5, Math.max(0, t - c.onset)) * rate;
-      return build(c, wideStandingCrowd(c));
+      return build(c, wideStandingCrowd(c), false);
     },
   },
 ];

@@ -187,7 +187,7 @@ export function useThreatMonitor() {
     try {
       const next = engineRef.current.update(monitorFrame);
       setAssessment(next);
-      sessionThreatEvents.ingest(next, Date.now());
+      sessionThreatEvents.ingest(next, Date.now(), monitorFrame.sessionId);
     } catch (error) {
       console.warn('[AIMonitor] threat analysis failed', error);
       threatFailedRef.current = true;

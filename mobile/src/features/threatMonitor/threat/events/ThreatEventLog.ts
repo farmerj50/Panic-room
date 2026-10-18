@@ -15,6 +15,8 @@ export type ThreatEventEndReason = 'resolved' | 'stale' | 'stopped';
 export type ThreatEvent = {
   id: string;
   type: ThreatType;
+  sessionId: string; // the monitoring session it was seen in
+  trackIds: number[]; // session-scoped temporary IDs (no identity)
   status: ThreatEventStatus;
   endReason?: ThreatEventEndReason;
   severity: Severity; // highest seen
@@ -43,25 +45,38 @@ const EVIDENCE_RANK: Record<EvidenceStrength, number> = { weak: 1, moderate: 2, 
 
 let nextEventId = 1;
 
+// Crowd types describe the whole scene; the others are about specific people.
+const SCENE_TYPES: ReadonlySet<ThreatType> = new Set(['crowd_panic', 'sudden_dispersal', 'crowd_surge']);
+
 export class ThreatEventLog {
   private events: ThreatEvent[] = [];
   private listeners = new Set<() => void>();
 
   constructor(private readonly config: Config = THREAT_EVENT_CONFIG) {}
 
-  // Feed one engine assessment. `now` is wall-clock time.
-  ingest(assessment: ThreatAssessment, now: number) {
+  // Feed one engine assessment from monitoring session `sessionId`. `now`
+  // is wall-clock time.
+  ingest(assessment: ThreatAssessment, now: number, sessionId = 'default') {
     const seen = new Set<string>();
     for (const c of assessment.candidates) {
       let event =
-        this.events.find((e) => e.candidateIds.includes(c.id)) ??
-        // Same kind within the cooldown: the same occurrence (or a repeat of
-        // it), not a new alert.
-        this.events.find((e) => e.type === c.type && now - e.lastSeenAt <= this.config.cooldownMs);
+        this.events.find((e) => e.sessionId === sessionId && e.candidateIds.includes(c.id)) ??
+        // The same occurrence coming back within the cooldown (not a new
+        // alert): same session, same kind, and for person-level events the
+        // same person. Unrelated events of the same kind stay separate.
+        this.events.find(
+          (e) =>
+            e.sessionId === sessionId &&
+            e.type === c.type &&
+            now - e.lastSeenAt <= this.config.cooldownMs &&
+            (SCENE_TYPES.has(c.type) || c.trackIds.some((id) => e.trackIds.includes(id))),
+        );
       if (!event) {
         event = {
           id: `event-${nextEventId++}`,
           type: c.type,
+          sessionId,
+          trackIds: [],
           status: 'ongoing',
           severity: c.severity,
           evidence: evidenceStrength(c.confidence),
@@ -81,6 +96,7 @@ export class ThreatEventLog {
         event.repeats += 1;
       }
       if (!event.candidateIds.includes(c.id)) event.candidateIds.push(c.id);
+      event.trackIds = [...new Set([...event.trackIds, ...c.trackIds])].sort((a, b) => a - b);
       seen.add(event.id);
       event.lastSeenAt = now;
       if (SEVERITY_RANK[c.severity] > SEVERITY_RANK[event.severity]) {
@@ -141,7 +157,7 @@ export class ThreatEventLog {
   list(): ThreatEvent[] {
     return [...this.events]
       .sort((a, b) => (a.status === b.status ? b.lastSeenAt - a.lastSeenAt : a.status === 'ongoing' ? -1 : 1))
-      .map((e) => ({ ...e, indicators: [...e.indicators], candidateIds: [...e.candidateIds] }));
+      .map((e) => ({ ...e, indicators: [...e.indicators], candidateIds: [...e.candidateIds], trackIds: [...e.trackIds] }));
   }
 
   subscribe(listener: () => void): () => void {

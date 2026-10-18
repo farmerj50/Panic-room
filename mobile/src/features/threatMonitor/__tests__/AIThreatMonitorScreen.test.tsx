@@ -35,6 +35,11 @@ jest.mock('../services/besVision', () => {
   };
 });
 
+jest.mock('../config/threatMonitorConfig', () => ({
+  ...jest.requireActual('../config/threatMonitorConfig'),
+  isAiMonitorEnabled: () => true,
+}));
+
 import AIThreatMonitorScreen from '../screens/AIThreatMonitorScreen';
 import { __resetCameraOwnershipForTests, claimForEmergency, isMonitorActive } from '../services/CameraOwnershipService';
 

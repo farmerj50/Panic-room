@@ -12,11 +12,12 @@ export const FALL_CONFIG = {
 };
 
 // A fall: a body that goes from upright to horizontal quickly, with the hips
-// dropping, and stays down. Pose-based only.
+// dropping, and stays down. Pose-based only, and only while the phone is
+// steady: rolling the phone tilts a standing person in the image.
 export const fallDetector: ThreatDetector = {
   id: 'fall-pose',
   types: ['fall'],
-  requires: ['pose'],
+  requires: ['pose', 'reliableMotion'],
   evaluate({ window }) {
     const latest = window[window.length - 1];
     if (!latest) return [];
