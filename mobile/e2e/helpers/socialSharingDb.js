@@ -6,7 +6,9 @@
 // so nothing can actually be published.
 const path = require('path');
 
-const BACKEND = path.join(__dirname, '..', '..', '..', 'backend');
+// E2E_BACKEND_DIR: run the specs from another checkout (e.g. a release
+// worktree) against the local dev backend's database.
+const BACKEND = process.env.E2E_BACKEND_DIR || path.join(__dirname, '..', '..', '..', 'backend');
 require(path.join(BACKEND, 'node_modules', 'dotenv')).config({ path: path.join(BACKEND, '.env'), quiet: true });
 const prisma = require(path.join(BACKEND, 'src', 'config', 'db'));
 const { encrypt, hashLookup } = require(path.join(BACKEND, 'src', 'services', 'cryptoService'));
