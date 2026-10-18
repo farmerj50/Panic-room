@@ -25,9 +25,11 @@ import {
 //
 // Posting always takes two explicit taps — "Share Emergency" on the prompt,
 // then "Share to …" on the review screen. The prompt's countdown expiring
-// only hides it.
+// only hides it. The countdown starts once the prompt is actually on screen
+// and tappable (laid out), not when it's scheduled — a busy phone mid-
+// emergency can take a moment to draw it.
 
-export const SHARE_PROMPT_SECONDS = 5;
+export const SHARE_PROMPT_SECONDS = 10;
 const NO_VIDEO_RETRY_DELAY_MS = 3000;
 
 const PROVIDER_LABELS: Record<SocialProvider, string> = { tiktok: 'TikTok', instagram: 'Instagram' };
@@ -116,6 +118,9 @@ export default function SocialShareOverlay({
   const [pickSelection, setPickSelection] = useState<SocialProvider | null>(null);
 
   const promptShownRef = useRef(false);
+  // The prompt has been laid out (visible and usable): only then does its
+  // countdown run.
+  const [promptVisible, setPromptVisible] = useState(false);
   // Bumped whenever the user leaves the flow, so late async results from an
   // abandoned review/progress step never move the UI.
   const flowRef = useRef(0);
@@ -125,18 +130,19 @@ export default function SocialShareOverlay({
     if (promptShownRef.current || !recording || providers.length === 0) return;
     promptShownRef.current = true;
     setCountdown(SHARE_PROMPT_SECONDS);
+    setPromptVisible(false);
     setPhase('prompt');
   }, [recording, providers.length]);
 
   useEffect(() => {
-    if (phase !== 'prompt') return;
+    if (phase !== 'prompt' || !promptVisible) return;
     if (countdown <= 0) {
       setPhase('hidden'); // timeout = dismiss. Never shares.
       return;
     }
     const t = setTimeout(() => setCountdown((v) => v - 1), 1000);
     return () => clearTimeout(t);
-  }, [phase, countdown]);
+  }, [phase, countdown, promptVisible]);
 
   const close = useCallback(() => {
     flowRef.current += 1;
@@ -276,7 +282,7 @@ export default function SocialShareOverlay({
     <View style={styles.backdrop} testID="social-share-overlay">
       <View style={styles.card}>
         {phase === 'prompt' && (
-          <View testID="social-share-prompt">
+          <View testID="social-share-prompt" onLayout={() => setPromptVisible(true)}>
             <Text style={styles.title}>Share this emergency?</Text>
             <Text style={styles.subtitle}>
               Post your live video to {providers.map((p) => PROVIDER_LABELS[p.provider]).join(' or ')}. Nothing is
