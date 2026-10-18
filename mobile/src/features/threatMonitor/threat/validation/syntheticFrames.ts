@@ -1,4 +1,4 @@
-import type { CrowdMetrics, MonitorFrame, TrackedPerson } from '../../models/types';
+import type { CrowdMetrics, MonitorFrame, Pose, TrackedPerson } from '../../models/types';
 
 // Builds MonitorFrame sequences for unit tests and offline validation of the
 // threat engine and detectors, without a camera.
@@ -13,6 +13,7 @@ export type SyntheticPerson = {
   vy?: number;
   confidence?: number;
   suddenChange?: boolean;
+  pose?: Pose;
 };
 
 export function syntheticFrame(
@@ -30,6 +31,7 @@ export function syntheticFrame(
       confidence: p.confidence ?? 0.8,
       boundingBox: { x: p.x, y: p.y, width: p.width ?? 0.1, height: p.height ?? 0.3 },
       motion: { direction: speed < 0.05 ? 'still' : 'right', speed, suddenChange: p.suddenChange ?? false, vx, vy },
+      ...(p.pose ? { pose: p.pose } : {}),
     };
   });
   const motionReliable = options.motionReliable ?? true;
@@ -48,6 +50,7 @@ export function syntheticFrame(
     detections,
     crowdMetrics,
     inferenceMs: 40,
+    frameAspect: 4 / 3,
   };
 }
 

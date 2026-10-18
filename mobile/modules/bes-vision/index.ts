@@ -27,7 +27,14 @@ export type DetectionsEvent = {
   // -1 when the phone has no gyroscope.
   rotationRate: number;
   detections: NativeDetection[];
+  // Body pose (when enabled): keypoints as [x, y, score], 17 per person in
+  // COCO order, normalized to the upright frame. Not matched to detections.
+  poses?: NativePose[];
+  poseRan?: boolean;
+  poseMs?: number;
 };
+
+export type NativePose = { score: number; keypoints: Array<[number, number, number]> };
 
 export type BesVisionViewProps = ViewProps & {
   active: boolean;
@@ -36,6 +43,8 @@ export type BesVisionViewProps = ViewProps & {
   targetFps?: number;
   scoreThreshold?: number;
   model?: DetectorModel;
+  poseEnabled?: boolean;
+  poseEvery?: number;
   // Validation only (adds latency to every inference).
   debugSlowInferenceMs?: number;
   onCameraState?: (event: NativeSyntheticEvent<CameraStateEvent>) => void;
@@ -45,7 +54,7 @@ export type BesVisionViewProps = ViewProps & {
 type BesVisionNativeModule = {
   releaseCamera(): Promise<boolean>;
   listTestImages(): Promise<string[]>;
-  detectImage(name: string, scoreThreshold?: number, sensorRotation?: number, model?: DetectorModel): Promise<Omit<DetectionsEvent, 'sessionId' | 'timestamp' | 'targetFps' | 'rotationRate'>>;
+  detectImage(name: string, scoreThreshold?: number, sensorRotation?: number, model?: DetectorModel): Promise<Omit<DetectionsEvent, 'sessionId' | 'timestamp' | 'targetFps' | 'rotationRate' | 'poseRan'>>;
 };
 
 // Android only. Elsewhere the module is absent and the AI Monitor is hidden.

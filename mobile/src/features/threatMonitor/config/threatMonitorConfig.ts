@@ -21,6 +21,9 @@ export const MONITOR_CONFIG = {
   // Candidate detector. Lite2 measured 79% recall / 0.41 false positives per
   // image at 0.3 on the COCO sample (Lite0: 70% / 0.35); confirm on phones.
   model: 'lite2' as 'lite0' | 'lite2',
+  // Body pose for the threat engine (Phase 2), on every 2nd analyzed frame.
+  poseEnabled: true,
+  poseEvery: 2,
   // Emergency waits at most this long for the monitor camera to close.
   emergencyHandoffTimeoutMs: 1000,
 } as const;

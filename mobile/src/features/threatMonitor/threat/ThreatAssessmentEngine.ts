@@ -60,7 +60,11 @@ export class ThreatAssessmentEngine {
 
   constructor(
     private readonly detectors: readonly ThreatDetector[],
-    private readonly options: { poseCoverage?: (window: readonly MonitorFrame[]) => number } = {},
+    private readonly options: {
+      poseCoverage?: (window: readonly MonitorFrame[]) => number;
+      // Types with no enabled detector yet, reported as unavailable (with why).
+      notYetSupported?: Partial<Record<ThreatType, string>>;
+    } = {},
   ) {}
 
   reset() {
@@ -77,7 +81,7 @@ export class ThreatAssessmentEngine {
     this.window.push(frame);
     while (this.window.length && now - this.window[0].timestamp > ENGINE_CONFIG.windowMs) this.window.shift();
 
-    const poseCoverage = this.options.poseCoverage?.(this.window) ?? 0;
+    const poseCoverage = (this.options.poseCoverage ?? defaultPoseCoverage)(this.window);
     const reliability = computeSourceReliability(this.window, poseCoverage);
     const unavailable: ThreatAssessment['unavailable'] = [];
 
@@ -94,6 +98,10 @@ export class ThreatAssessmentEngine {
         // One faulty detector must never take the monitor down.
         console.warn(`[ThreatEngine] detector ${detector.id} failed`, error);
       }
+    }
+
+    for (const [type, reason] of Object.entries(this.options.notYetSupported ?? {})) {
+      if (reason) unavailable.push({ type: type as ThreatType, reason });
     }
 
     const supported = new Set<string>();
@@ -210,6 +218,21 @@ function mergeIndicators(existing: ThreatIndicator[], incoming: ThreatIndicator[
     byId.set(i.id, prev ? { ...i, weight: Math.max(prev.weight, i.weight) } : i);
   }
   return [...byId.values()];
+}
+
+// Share of person detections in the last 2 s that carry a body pose.
+export function defaultPoseCoverage(window: readonly MonitorFrame[]): number {
+  const last = window.length ? window[window.length - 1].timestamp : 0;
+  let total = 0;
+  let withPose = 0;
+  for (const f of window) {
+    if (last - f.timestamp > 2000) continue;
+    for (const d of f.detections) {
+      total += 1;
+      if (d.pose) withPose += 1;
+    }
+  }
+  return total ? withPose / total : 0;
 }
 
 const severityRank = (s: Severity) => (s === 'high' ? 3 : s === 'moderate' ? 2 : 1);

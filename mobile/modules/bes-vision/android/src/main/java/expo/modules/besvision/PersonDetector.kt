@@ -117,6 +117,9 @@ class PersonDetector(
 
   // ImageAnalysis is configured for RGBA_8888, so the single plane copies
   // straight into a reused bitmap when there's no row padding.
+  // Reused RGBA bitmap of the camera frame (not yet rotated). Analysis thread only.
+  fun frameBitmap(image: ImageProxy): Bitmap = toBitmap(image)
+
   private fun toBitmap(image: ImageProxy): Bitmap {
     val plane = image.planes[0]
     if (plane.pixelStride == 4 && plane.rowStride == image.width * 4) {

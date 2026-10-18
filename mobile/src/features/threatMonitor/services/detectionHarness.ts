@@ -17,7 +17,9 @@ export async function runDetectionHarness(
       try {
         const r = await detectTestImage(name, scoreThreshold, 0, model);
         const boxes = r.detections.map((d) => [d.x, d.y, d.width, d.height, d.score].map(round));
-        console.log(`[BesVisionHarness] ${JSON.stringify({ model, name, people: r.detections.length, inferenceMs: r.inferenceMs, boxes })}`);
+        console.log(
+          `[BesVisionHarness] ${JSON.stringify({ model, name, people: r.detections.length, inferenceMs: r.inferenceMs, boxes, poses: r.poses?.length ?? 0, poseMs: r.poseMs })}`,
+        );
       } catch (e) {
         console.log(`[BesVisionHarness] ${JSON.stringify({ model, name, error: e instanceof Error ? e.message : String(e) })}`);
       }

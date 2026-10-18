@@ -68,6 +68,7 @@ class BesVisionModule : Module() {
       require(file.path.startsWith(dir.canonicalPath + File.separator)) { "Invalid test image" }
       val bitmap = BitmapFactory.decodeFile(file.path) ?: throw IllegalArgumentException("Unreadable image")
       val detector = PersonDetector(context, (scoreThreshold ?: 0.5).toFloat(), model ?: PersonDetector.DEFAULT_MODEL)
+      val poseEstimator = PoseEstimator(context)
       // sensorRotation simulates a camera frame: the image is rotated back the
       // way a sensor delivers it, then detect() must undo that rotation — the
       // same math the live ImageProxy path relies on.
@@ -78,6 +79,7 @@ class BesVisionModule : Module() {
       }
       try {
         val result = detector.detect(input, rotation)
+        val poses = poseEstimator.estimate(input, rotation)
         mapOf(
           "frameWidth" to result.frameWidth,
           "frameHeight" to result.frameHeight,
@@ -85,9 +87,14 @@ class BesVisionModule : Module() {
           "detections" to result.people.map {
             mapOf("x" to it.x, "y" to it.y, "width" to it.width, "height" to it.height, "score" to it.score)
           },
+          "poses" to poses.poses.map { p ->
+            mapOf("score" to p.score, "keypoints" to p.keypoints.map { k -> listOf(k.x, k.y, k.score) })
+          },
+          "poseMs" to poses.inferenceMs,
         )
       } finally {
         detector.close()
+        poseEstimator.close()
         if (input !== bitmap) input.recycle()
         bitmap.recycle()
       }
@@ -102,6 +109,8 @@ class BesVisionModule : Module() {
       Prop("scoreThreshold") { view: BesVisionView, value: Double? -> view.setScoreThreshold(value ?: 0.3) }
       Prop("debugSlowInferenceMs") { view: BesVisionView, value: Int? -> view.setDebugSlowInferenceMs(value ?: 0) }
       Prop("model") { view: BesVisionView, value: String? -> view.setModel(value ?: PersonDetector.DEFAULT_MODEL) }
+      Prop("poseEnabled") { view: BesVisionView, value: Boolean? -> view.setPoseEnabled(value ?: false) }
+      Prop("poseEvery") { view: BesVisionView, value: Int? -> view.setPoseEvery(value ?: 2) }
       Prop("targetFps") { view: BesVisionView, fps: Int? -> view.setTargetFps(fps ?: 8) }
 
       OnViewDidUpdateProps { view -> view.applyProps() }

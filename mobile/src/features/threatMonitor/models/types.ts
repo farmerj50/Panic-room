@@ -18,12 +18,19 @@ export type TrackMotion = {
   vy?: number;
 };
 
+// 17 body keypoints in COCO order (nose, eyes, ears, shoulders, elbows,
+// wrists, hips, knees, ankles), normalized to the upright frame. Body pose
+// only — no face landmarks, no identity.
+export type Keypoint = { x: number; y: number; score: number };
+export type Pose = { score: number; keypoints: Keypoint[] };
+
 export type TrackedPerson = {
   trackId: number;
   class: 'person';
   confidence: number;
   boundingBox: BoundingBox;
   motion: TrackMotion;
+  pose?: Pose;
 };
 
 export type DensityLevel = 'low' | 'medium' | 'high';
@@ -44,4 +51,7 @@ export type MonitorFrame = {
   detections: TrackedPerson[];
   crowdMetrics: CrowdMetrics;
   inferenceMs: number;
+  // Frame height / width, so body-relative distances can be measured in one
+  // unit (x is normalized to width, y to height). Defaults to 4/3 (portrait).
+  frameAspect?: number;
 };

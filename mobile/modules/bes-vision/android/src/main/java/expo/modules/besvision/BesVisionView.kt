@@ -66,6 +66,10 @@ class BesVisionView(context: Context, appContext: AppContext) : ExpoView(context
   private var targetFps = 8
   @Volatile private var scoreThreshold = 0.3f
   @Volatile private var model = PersonDetector.DEFAULT_MODEL
+  // Body pose (AI Phase 2): off unless the threat monitor asks for it, and
+  // run on every `poseEvery`-th analyzed frame that has people in it.
+  @Volatile private var poseEnabled = false
+  @Volatile private var poseEvery = 2
   // Validation only: adds this much time to every inference, to prove that
   // releasing the camera never waits on a slow model. 0 in normal use.
   @Volatile private var debugSlowInferenceMs = 0
@@ -123,6 +127,9 @@ class BesVisionView(context: Context, appContext: AppContext) : ExpoView(context
       Thread(r, "bes-vision-analysis").apply { priority = Thread.NORM_PRIORITY - 1 }
     }
     var detector: PersonDetector? = null
+    var pose: PoseEstimator? = null
+    var poseFailed = false
+    var analyzedFrames = 0L
     var closed = false
     var lastAnalyzedAt = 0L
   }
@@ -156,6 +163,14 @@ class BesVisionView(context: Context, appContext: AppContext) : ExpoView(context
 
   fun setModel(value: String) {
     model = value
+  }
+
+  fun setPoseEnabled(value: Boolean) {
+    poseEnabled = value
+  }
+
+  fun setPoseEvery(value: Int) {
+    poseEvery = value.coerceIn(1, 10)
   }
 
   fun setTargetFps(value: Int) {
@@ -313,7 +328,22 @@ class BesVisionView(context: Context, appContext: AppContext) : ExpoView(context
         return
       }
 
-      val result = det.detect(image)
+      val bitmap = det.frameBitmap(image)
+      val rotation = image.imageInfo.rotationDegrees
+      val result = det.detect(bitmap, rotation)
+      run.analyzedFrames += 1
+      // Pose only when asked, people are present, and on every Nth frame.
+      // A pose model failure never stops person detection.
+      var poses: PoseResult? = null
+      if (poseEnabled && !run.poseFailed && result.people.isNotEmpty() && run.analyzedFrames % poseEvery == 0L) {
+        try {
+          val estimator = run.pose ?: PoseEstimator(context).also { run.pose = it }
+          poses = estimator.estimate(bitmap, rotation)
+        } catch (e: Throwable) {
+          Log.e(TAG, "Pose model failed", e)
+          run.poseFailed = true
+        }
+      }
       if (debugSlowInferenceMs > 0) Thread.sleep(debugSlowInferenceMs.toLong())
       // Drop results that finished after Stop / a new session started.
       if (!accepting.get() || session != sessionId) return
@@ -328,6 +358,11 @@ class BesVisionView(context: Context, appContext: AppContext) : ExpoView(context
         "detections" to result.people.map {
           mapOf("x" to it.x, "y" to it.y, "width" to it.width, "height" to it.height, "score" to it.score)
         },
+        "poses" to (poses?.poses?.map { p ->
+          mapOf("score" to p.score, "keypoints" to p.keypoints.map { k -> listOf(k.x, k.y, k.score) })
+        } ?: emptyList<Any>()),
+        "poseRan" to (poses != null),
+        "poseMs" to (poses?.inferenceMs ?: 0L),
       )
       mainHandler.post {
         if (session == sessionId && accepting.get()) onDetections(payload)
@@ -460,7 +495,13 @@ class BesVisionView(context: Context, appContext: AppContext) : ExpoView(context
         } catch (e: Throwable) {
           Log.w(TAG, "Detector close failed", e)
         }
+        try {
+          run.pose?.close()
+        } catch (e: Throwable) {
+          Log.w(TAG, "Pose model close failed", e)
+        }
         run.detector = null
+        run.pose = null
       }
     } finally {
       run.executor.shutdown()

@@ -9,7 +9,8 @@ import { acquireForMonitor, onEmergencyClaim, releaseForMonitor } from '../servi
 import type { MonitorFrame } from '../models/types';
 import { computeCrowdMetrics } from '../services/CrowdMetricsService';
 import { PersonTracker } from '../services/PersonTrackingService';
-import { THREAT_DETECTORS } from '../threat/detectors';
+import { NOT_YET_SUPPORTED, THREAT_DETECTORS } from '../threat/detectors';
+import { PoseCarry, attachPoses, toPose } from '../threat/pose/poseAssociation';
 import { ThreatAssessmentEngine } from '../threat/ThreatAssessmentEngine';
 import type { ThreatAssessment } from '../threat/types';
 import type { CameraStateEvent, DetectionsEvent } from '../services/besVision';
@@ -34,7 +35,8 @@ export function useThreatMonitor() {
   const startedAtRef = useRef(0);
   const framesRef = useRef(0);
   const trackerRef = useRef(new PersonTracker());
-  const engineRef = useRef(new ThreatAssessmentEngine(THREAT_DETECTORS));
+  const poseCarryRef = useRef(new PoseCarry());
+  const engineRef = useRef(new ThreatAssessmentEngine(THREAT_DETECTORS, { notYetSupported: NOT_YET_SUPPORTED }));
   const [assessment, setAssessment] = useState<ThreatAssessment | null>(null);
 
   const stop = useCallback((reason: StopReason = 'user') => {
@@ -46,6 +48,7 @@ export function useThreatMonitor() {
     setFrame(null);
     trackerRef.current.reset();
     engineRef.current.reset();
+    poseCarryRef.current.reset();
     setAssessment(null);
     if (reason !== 'error') {
       setStatus('idle');
@@ -136,7 +139,9 @@ export function useThreatMonitor() {
     if (!activeRef.current || e.sessionId !== sessionIdRef.current) return;
     framesRef.current += 1;
     const aspect = e.frameHeight / e.frameWidth;
-    const people = trackerRef.current.update(e.detections, e.timestamp, aspect);
+    const tracked = trackerRef.current.update(e.detections, e.timestamp, aspect);
+    const withPoses = attachPoses(tracked, (e.poses ?? []).map(toPose));
+    const people = poseCarryRef.current.apply(withPoses, e.timestamp, Boolean(e.poseRan));
     setFrameSize({ width: e.frameWidth, height: e.frameHeight });
     const monitorFrame = {
       timestamp: e.timestamp,
@@ -145,6 +150,7 @@ export function useThreatMonitor() {
       detections: people,
       crowdMetrics: computeCrowdMetrics(people, { deviceRotationRate: e.rotationRate >= 0 ? e.rotationRate : null }),
       inferenceMs: e.inferenceMs,
+      frameAspect: aspect,
     };
     setFrame(monitorFrame);
     // Advisory only: the assessment is shown to the user, never acted on.
@@ -169,6 +175,8 @@ export function useThreatMonitor() {
       targetFps: MONITOR_CONFIG.targetFps,
       scoreThreshold: MONITOR_CONFIG.scoreThreshold,
       model: MONITOR_CONFIG.model,
+      poseEnabled: MONITOR_CONFIG.poseEnabled,
+      poseEvery: MONITOR_CONFIG.poseEvery,
       debugSlowInferenceMs: MONITOR_CONFIG.debugSlowInferenceMs,
       onCameraState,
       onDetections,
