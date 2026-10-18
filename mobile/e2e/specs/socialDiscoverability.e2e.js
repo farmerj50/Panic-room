@@ -138,13 +138,24 @@ async function exitEmergency({ waitForTab = true } = {}) {
 
     // Connect "later" — the old build kept the stale empty list here.
     await db.seedFakeSocialConnections(EMAIL);
-    await startEmergency();
-    await byId('social-share-prompt').waitForDisplayed({ timeout: 15000 });
+    await tabBar.emergencyBtn.click();
+    await emergencyPage.waitForLiveScreen(30000);
+    // Look for the 5-second prompt right away (see socialSharing.e2e.js).
+    await byId('social-share-prompt').waitForExist({ timeout: 30000, interval: 250 });
     await shot('prompt-after-late-connection');
   });
 
   it('a rejected token gives a reconnect message; the next emergency shows the reconnect note; recording never stops', async () => {
-    await byId('social-share-prompt-share').click();
+    // Open sharing with the manual Share button — never rely on the previous
+    // test's 5-second prompt still being on screen.
+    const flowOpen = async () =>
+      (await byId('social-share-pick').isExisting().catch(() => false)) || (await byId('social-share-publish').isExisting().catch(() => false));
+    if (await byId('social-share-prompt-share').isExisting().catch(() => false)) {
+      await byId('social-share-prompt-share').click().catch(() => {});
+      await driver.pause(1000);
+    }
+    if (!(await flowOpen())) await scrollTo('emergency-share-btn').click();
+    await driver.waitUntil(flowOpen, { timeout: 15000, timeoutMsg: 'share flow did not open' });
     // With two accounts the picker comes first; choose TikTok.
     if (await byId('social-share-pick').isExisting().catch(() => false)) {
       await byId('social-share-pick-tiktok').click().catch(() => {});

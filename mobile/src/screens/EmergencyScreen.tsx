@@ -72,6 +72,8 @@ import { trackEvent } from '../services/analyticsService';
 import { setRemindAfterEmergency } from '../services/socialSharingPrompts';
 
 const SOCIAL_PROVIDER_LABELS: Record<SocialProvider, string> = { tiktok: 'TikTok', instagram: 'Instagram' };
+// Retry schedule for the connected-accounts check after a failure at activation.
+export const SHARE_RETRY_DELAYS_MS = [3000, 10000, 30000, 60000];
 
 type CameraFacing = 'front' | 'back';
 
@@ -505,6 +507,32 @@ function EmergencyLiveScreen() {
       Alert.alert('Not connected', 'Connect TikTok or Instagram in Settings → Social Sharing to share emergency video. Recording continues.', buttons);
     }
   }, [isPremium, refreshShareableProviders, remindAfterEmergency, shareableProviders]);
+
+  // Social sharing only. If the connected-accounts check fails at activation
+  // (no signal, a token-refresh race), keep retrying while this emergency is
+  // on screen, so the auto prompt and setup note still appear once the
+  // network is back. Never touches recording, evidence, GPS or contacts.
+  const shareRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadShareableProvidersWithRetry = useCallback(
+    (isCurrent: () => boolean, attempt = 0) => {
+      if (shareRetryTimerRef.current) clearTimeout(shareRetryTimerRef.current);
+      shareRetryTimerRef.current = null;
+      void refreshShareableProviders().then((result) => {
+        if (result !== null || !isCurrent()) return;
+        const delay = SHARE_RETRY_DELAYS_MS[Math.min(attempt, SHARE_RETRY_DELAYS_MS.length - 1)];
+        shareRetryTimerRef.current = setTimeout(() => {
+          if (isCurrent()) loadShareableProvidersWithRetry(isCurrent, attempt + 1);
+        }, delay);
+      });
+    },
+    [refreshShareableProviders],
+  );
+  useEffect(
+    () => () => {
+      if (shareRetryTimerRef.current) clearTimeout(shareRetryTimerRef.current);
+    },
+    [],
+  );
 
   // A share that failed because the account needs reconnecting: reload so the
   // note switches to "reconnect", even if an earlier note was dismissed.
@@ -1188,11 +1216,11 @@ function EmergencyLiveScreen() {
     setSharedTo([]);
     setSetupNoteDismissed(false);
     setupNoteTrackedRef.current = false;
-    void refreshShareableProviders();
 
     triggerEmergency();
 
     const isCurrentSession = () => sessionRef.current === sessionId && !stopping.current;
+    loadShareableProvidersWithRetry(isCurrentSession);
 
     try {
       let camOk = false;
