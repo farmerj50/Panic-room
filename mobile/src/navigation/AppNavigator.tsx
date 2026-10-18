@@ -39,6 +39,7 @@ import SettingsScreen from '../screens/SettingsScreen';
 import DeleteAccountScreen from '../screens/DeleteAccountScreen';
 import CovertMessageDemoScreen from '../screens/CovertMessageDemoScreen';
 import SocialSharingScreen from '../screens/SocialSharingScreen';
+import AIThreatMonitorScreen from '../features/threatMonitor/screens/AIThreatMonitorScreen';
 import OnboardingNavigator from './OnboardingNavigator';
 import { useEvidenceQueues } from '../hooks/useEvidenceQueues';
 
@@ -425,6 +426,7 @@ function AuthenticatedNavigatorInner({
             <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
             <Stack.Screen name="CovertMessageDemo" component={CovertMessageDemoScreen} />
             <Stack.Screen name="SocialSharing" component={SocialSharingScreen} />
+            <Stack.Screen name="AIMonitor" component={AIThreatMonitorScreen} />
             <Stack.Screen name="Onboarding" component={OnboardingNavigator} />
           </Stack.Navigator>
         </NavigationContainer>

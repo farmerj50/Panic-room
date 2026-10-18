@@ -19,10 +19,12 @@ let mockFailStarts = 0;
 let mockStartError = 'Starting video recording failed - could not create video file.';
 let mockStartCalls = 0;
 let mockCameraMounts = 0;
+// Mounts that fail with onMountError (camera briefly held by something else).
+let mockMountErrors = 0;
 
 jest.mock('expo-camera', () => {
   const React = require('react');
-  const CameraView = React.forwardRef((props: { onCameraReady?: () => void }, ref: unknown) => {
+  const CameraView = React.forwardRef((props: { onCameraReady?: () => void; onMountError?: (e: { message: string }) => void }, ref: unknown) => {
     React.useImperativeHandle(ref, () => ({
       recordAsync: jest.fn(() => {
         mockStartCalls += 1;
@@ -45,6 +47,11 @@ jest.mock('expo-camera', () => {
     }));
     React.useEffect(() => {
       mockCameraMounts += 1;
+      if (mockMountErrors > 0) {
+        mockMountErrors -= 1;
+        const e = setTimeout(() => props.onMountError?.({ message: 'Camera component could not be rendered' }), 10);
+        return () => clearTimeout(e);
+      }
       const t = setTimeout(() => props.onCameraReady?.(), 10);
       return () => clearTimeout(t);
     }, []);
@@ -163,6 +170,18 @@ jest.mock('../../services/storageMonitor', () => ({
   getFreeBytes: () => mockFreeBytes,
 }));
 
+// The AI Monitor hand-off: records how many cameras were mounted when
+// Emergency claimed the camera.
+const mockClaimAtMounts: number[] = [];
+let mockClaimDelayMs = 0;
+jest.mock('../../features/threatMonitor/services/CameraOwnershipService', () => ({
+  claimForEmergency: jest.fn(() => {
+    mockClaimAtMounts.push(mockCameraMounts);
+    if (!mockClaimDelayMs) return Promise.resolve({ outcome: 'released' });
+    return new Promise((resolve) => setTimeout(() => resolve({ outcome: 'released' }), mockClaimDelayMs));
+  }),
+}));
+
 import EmergencyScreen from '../EmergencyScreen';
 
 const MB = 1024 * 1024;
@@ -194,6 +213,9 @@ describe('continuous emergency recording', () => {
     mockStartCalls = 0;
     mockCameraMounts = 0;
     mockStartError = 'Starting video recording failed - could not create video file.';
+    mockMountErrors = 0;
+    mockClaimAtMounts.length = 0;
+    mockClaimDelayMs = 0;
     mockFreeBytes = 50 * 1024 * MB;
     mockLiveView.enabled = false;
     mockLiveView.links = [];
@@ -207,6 +229,38 @@ describe('continuous emergency recording', () => {
   afterEach(() => {
     jest.useRealTimers();
     jest.restoreAllMocks();
+  });
+
+  test('claims the camera from the AI Monitor before mounting its own', async () => {
+    await startEmergency();
+    expect(mockClaimAtMounts).toEqual([0]);
+  });
+
+  test('still records when the AI Monitor takes the full second to let go', async () => {
+    mockClaimDelayMs = 1000;
+    render(<EmergencyScreen />);
+    await advance(8000);
+    expect(mockClaimAtMounts).toEqual([0]);
+    expect(mockRecordings).toHaveLength(1);
+  });
+
+  test('remounts the camera when it is briefly unavailable, then records', async () => {
+    mockMountErrors = 2;
+    render(<EmergencyScreen />);
+    await advance(9000);
+    expect(mockCameraMounts).toBe(3);
+    expect(mockRecordings).toHaveLength(1);
+    expect(screen.queryByText(/could not be rendered|could not start/)).toBeNull();
+  });
+
+  test('reports the camera error after the remount attempts run out', async () => {
+    mockMountErrors = 10;
+    render(<EmergencyScreen />);
+    await advance(12000);
+    // first mount + 3 retries + the start flow's existing not-ready remount
+    expect(mockCameraMounts).toBe(5);
+    expect(mockRecordings).toHaveLength(0);
+    expect(screen.getByText(/could not be rendered/)).toBeTruthy();
   });
 
   test('recording restarts automatically when the camera stops on its own (5-minute cap)', async () => {

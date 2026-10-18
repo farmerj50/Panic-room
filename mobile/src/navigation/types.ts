@@ -15,6 +15,7 @@ export type RootStackParamList = {
   DeleteAccount: undefined;
   CovertMessageDemo: undefined;
   SocialSharing: undefined;
+  AIMonitor: undefined;
   Contacts: { tourMode?: boolean } | undefined;
   LinkedAccounts: undefined;
   Evidence: undefined;

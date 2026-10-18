@@ -70,6 +70,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSubscription } from '../context/SubscriptionContext';
 import { trackEvent } from '../services/analyticsService';
 import { setRemindAfterEmergency } from '../services/socialSharingPrompts';
+import { claimForEmergency } from '../features/threatMonitor/services/CameraOwnershipService';
 
 const SOCIAL_PROVIDER_LABELS: Record<SocialProvider, string> = { tiktok: 'TikTok', instagram: 'Instagram' };
 // Retry schedule for the connected-accounts check after a failure at activation.
@@ -94,6 +95,9 @@ const MAX_START_ATTEMPTS = 3;
 const START_RETRY_MS = 750;
 const STORAGE_FULL_NOTICE =
   'Storage full — video paused and new audio may not be saved. Recordings already made are kept. Free up space now to resume.';
+// Remounts tried when the camera preview fails to start (e.g. still held).
+const CAMERA_MOUNT_RETRIES = 3;
+const CAMERA_MOUNT_RETRY_MS = 750;
 
 // In-session view of a finished segment (the social-share resolver reads
 // these). The durable upload itself is owned by segmentQueue.ts: the clip is
@@ -578,6 +582,20 @@ function EmergencyLiveScreen() {
   const handleCameraReady = useCallback(() => {
     cameraReadyResolverRef.current?.();
     cameraReadyResolverRef.current = null;
+  }, []);
+
+  // The camera can be briefly unavailable (e.g. the AI Monitor is still
+  // letting go of it). Remount a few times before giving up; the ready gate
+  // is left as is, so the start flow's bounded wait still resolves on the
+  // retried mount.
+  const mountRetriesRef = useRef(0);
+  const handleMountError = useCallback((message?: string) => {
+    if (mountRetriesRef.current < CAMERA_MOUNT_RETRIES) {
+      mountRetriesRef.current += 1;
+      setTimeout(() => setCameraSessionKey((v) => v + 1), CAMERA_MOUNT_RETRY_MS);
+      return;
+    }
+    setStatusMessage(message || 'Camera preview could not start.');
   }, []);
 
   // Bounded wait — expo-camera's own docs say to wait for onCameraReady
@@ -1259,6 +1277,11 @@ function EmergencyLiveScreen() {
           // Only mount the CameraView after we know permission is granted.
           // Mounting before this causes the browser to fire its own
           // getUserMedia request which logs a second "Permission denied" error.
+          // Emergency always gets the camera: the AI Monitor (if running)
+          // releases it first; this waits at most ~1 s and never throws.
+          await claimForEmergency();
+          if (!isCurrentSession()) return;
+          mountRetriesRef.current = 0;
           setCameraSessionKey((v) => v + 1);
           resetCameraReadyGate();
           setCameraMounted(true);
@@ -1566,7 +1589,7 @@ function EmergencyLiveScreen() {
                         testID="emergency-camera-view"
                         accessibilityLabel="emergency-camera-view"
                         onCameraReady={handleCameraReady}
-                        onMountError={(e) => setStatusMessage(e.message || 'Camera preview could not start.')}
+                        onMountError={(e) => handleMountError(e.message)}
                       />
                       <TouchableOpacity
                         activeOpacity={0.82}

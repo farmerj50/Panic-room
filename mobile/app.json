@@ -61,7 +61,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Bes records video evidence during emergencies.",
+          "cameraPermission": "Bes uses the camera to record video evidence during emergencies and, when you turn it on, for AI Monitor.",
           "microphonePermission": "Bes records audio during emergencies.",
           "recordAudioAndroid": true,
           "barcodeScannerEnabled": false
