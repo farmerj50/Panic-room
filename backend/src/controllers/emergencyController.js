@@ -81,33 +81,83 @@ function serializeEmergencyEvent(event, req) {
   };
 }
 
+// Offline-first activation: the phone generates the emergency's id when the
+// person activates it — with or without signal — and keeps recording against
+// it. The create is idempotent on that id, so the phone can retry it until
+// it succeeds without ever producing a second emergency.
+const CLIENT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// How far back an offline activation time is accepted (the phone may only
+// reconnect days later); anything older or in the future falls back to now.
+const MAX_OFFLINE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+function clientTime(value, notBefore) {
+  const parsed = parseValidDate(value);
+  if (!parsed.ok) return null;
+  const t = parsed.date.getTime();
+  const now = Date.now();
+  if (t > now + CLOCK_SKEW_MS || t < now - MAX_OFFLINE_AGE_MS) return null;
+  if (notBefore && t < notBefore.getTime()) return null;
+  return parsed.date;
+}
+
 exports.createEmergencyEvent = async (req, res, next) => {
   try {
-    const { latitude, longitude, status, audioUrl, videoUrl, contactNotified } = req.body;
+    const { id, activatedAt, endedAt, latitude, longitude, status, audioUrl, videoUrl, contactNotified } = req.body;
     const parsedLatitude = toNullableNumber(latitude);
     const parsedLongitude = toNullableNumber(longitude);
     if (status !== undefined && !VALID_STATUSES.has(status)) {
       return res.status(400).json({ error: "status must be 'ACTIVE' or 'RESOLVED'" });
     }
+    if (id !== undefined && (typeof id !== "string" || !CLIENT_ID_RE.test(id))) {
+      return res.status(400).json({ error: "id must be a UUID v4" });
+    }
 
-    const event = await prisma.emergencyEvent.create({
-      data: {
-        userId: req.user.id,
-        latitude: null,
-        longitude: null,
-        latitudeEncrypted: parsedLatitude === null ? null : encrypt(parsedLatitude),
-        longitudeEncrypted: parsedLongitude === null ? null : encrypt(parsedLongitude),
-        status: status || "ACTIVE",
-        endedAt: status === "RESOLVED" ? new Date() : null,
-        audioUrl: audioUrl ? encrypt(audioUrl) : null,
-        videoUrl: videoUrl ? encrypt(videoUrl) : null,
-        contactNotified: contactNotified || false,
-      },
-      include: { videoSegments: { orderBy: { sequence: "asc" } } },
-    });
+    const include = { videoSegments: { orderBy: { sequence: "asc" } } };
+    if (id) {
+      const existing = await prisma.emergencyEvent.findUnique({ where: { id }, include });
+      if (existing) {
+        // A retry of a create that already succeeded: the same emergency.
+        if (existing.userId !== req.user.id) return res.status(409).json({ error: "Emergency id already in use" });
+        return res.status(200).json(serializeEmergencyEvent(existing, req));
+      }
+    }
+
+    const startedAt = clientTime(activatedAt);
+    const resolved = status === "RESOLVED";
+    const resolvedAt = resolved ? clientTime(endedAt, startedAt) ?? new Date() : null;
+
+    let event;
+    try {
+      event = await prisma.emergencyEvent.create({
+        data: {
+          ...(id ? { id } : {}),
+          ...(startedAt ? { createdAt: startedAt } : {}),
+          userId: req.user.id,
+          latitude: null,
+          longitude: null,
+          latitudeEncrypted: parsedLatitude === null ? null : encrypt(parsedLatitude),
+          longitudeEncrypted: parsedLongitude === null ? null : encrypt(parsedLongitude),
+          status: status || "ACTIVE",
+          endedAt: resolvedAt,
+          audioUrl: audioUrl ? encrypt(audioUrl) : null,
+          videoUrl: videoUrl ? encrypt(videoUrl) : null,
+          contactNotified: contactNotified || false,
+        },
+        include,
+      });
+    } catch (error) {
+      // Two retries of the same create racing each other: the loser returns
+      // the row the winner just wrote.
+      if (id && error?.code === "P2002") {
+        const winner = await prisma.emergencyEvent.findUnique({ where: { id }, include });
+        if (winner && winner.userId === req.user.id) return res.status(200).json(serializeEmergencyEvent(winner, req));
+        return res.status(409).json({ error: "Emergency id already in use" });
+      }
+      throw error;
+    }
 
     // Live View links are best-effort: activation never fails because of them.
-    if (liveView.isLiveViewEnabled()) {
+    if (!resolved && liveView.isLiveViewEnabled()) {
       await liveView
         .ensureLinks(event)
         .catch((error) => console.error("Live View link issue failed:", error?.message || error));
