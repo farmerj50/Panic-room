@@ -148,9 +148,12 @@ async function startAndWaitRunning() {
       await driver.pause(1500);
       await $('android=new UiSelector().resourceId("ai-monitor-back-btn")').click();
       await tabBar.homeBtn.click();
+      await $('android=new UiScrollable(new UiSelector().scrollable(true)).scrollToBeginning(5)').isExisting().catch(() => {});
+      // Look the logo up after scrolling and press its position: an element
+      // fetched before the scroll can point at a stale spot.
       const logo = $('android=new UiSelector().resourceId("home-logo-btn")');
-      await $('android=new UiScrollable(new UiSelector().scrollable(true)).scrollToBeginning(5)');
-      await driver.execute('mobile: longClickGesture', { elementId: await logo.elementId, duration: 1200 });
+      const r = await driver.getElementRect(await logo.elementId);
+      await driver.execute('mobile: longClickGesture', { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), duration: 1200 });
       await emergencyPage.countdownScreen.waitForDisplayed({ timeout: 15000 });
       await expectEmergencyRecordsThenExit(null);
     }
@@ -180,7 +183,8 @@ async function startAndWaitRunning() {
       await startAndWaitRunning();
       await driver.pause(1500);
       await driver.openNotifications();
-      const sos = $('//*[contains(@text, "ACTIVATE SOS")]');
+      // The action button — the notification body also contains "ACTIVATE SOS".
+      const sos = $('//android.widget.Button[contains(@text, "ACTIVATE SOS")]');
       await sos.waitForDisplayed({ timeout: 10000 });
       await sos.click();
       await emergencyPage.countdownScreen.waitForDisplayed({ timeout: 15000 });
