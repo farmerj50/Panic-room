@@ -4,7 +4,7 @@ import { useIsFocused } from '@react-navigation/native';
 
 import { useEmergencyContext } from '../../../context/EmergencyContext';
 import { trackEvent } from '../../../services/analyticsService';
-import { MONITOR_CONFIG, THREAT_EVENT_CONFIG, isThreatDetectionEnabled } from '../config/threatMonitorConfig';
+import { MONITOR_CONFIG, THREAT_EVENT_CONFIG, isAiTestHooksEnabled, isThreatDetectionEnabled } from '../config/threatMonitorConfig';
 import { acquireForMonitor, onEmergencyClaim, releaseForMonitor } from '../services/CameraOwnershipService';
 import type { MonitorFrame } from '../models/types';
 import { computeCrowdMetrics } from '../services/CrowdMetricsService';
@@ -42,6 +42,8 @@ export function useThreatMonitor() {
   const [assessment, setAssessment] = useState<ThreatAssessment | null>(null);
   // Threat candidates only in AI development/test builds (see config).
   const threatsEnabled = useMemo(() => isThreatDetectionEnabled(), []);
+  const testHooks = useMemo(() => isAiTestHooksEnabled(), []);
+  const forceFailRef = useRef(false);
   const [threatFailed, setThreatFailed] = useState(false);
   const threatFailedRef = useRef(false);
   const firstFrameAtRef = useRef<number | null>(null);
@@ -85,6 +87,7 @@ export function useThreatMonitor() {
     trackerRef.current.reset();
     engineRef.current.reset();
     threatFailedRef.current = false;
+    forceFailRef.current = false;
     setThreatFailed(false);
     firstFrameAtRef.current = null;
     setWatchedMs(0);
@@ -185,6 +188,7 @@ export function useThreatMonitor() {
     // Advisory only: the assessment is shown to the user, never acted on.
     // A failure here stops threat analysis but never people detection.
     try {
+      if (forceFailRef.current) throw new Error('Simulated threat analysis failure (test build)');
       const next = engineRef.current.update(monitorFrame);
       setAssessment(next);
       sessionThreatEvents.ingest(next, Date.now(), monitorFrame.sessionId);
@@ -220,6 +224,27 @@ export function useThreatMonitor() {
   );
   const clearEvents = useCallback(() => sessionThreatEvents.clear(), []);
 
+  // Test builds only (see isAiTestHooksEnabled).
+  const testReplay = useCallback(
+    (scenarioId: string) => {
+      if (!testHooks) return;
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { SCENARIOS } = require('../threat/validation/scenarios') as typeof import('../threat/validation/scenarios');
+      const clip = SCENARIOS.find((s) => s.id === scenarioId)?.build(1);
+      if (!clip?.length) return;
+      // The clip ends now, in its own session.
+      const engine = new ThreatAssessmentEngine(THREAT_DETECTORS);
+      const endsAt = Date.now();
+      const last = clip[clip.length - 1].timestamp;
+      const sessionId = `replay-${endsAt}`;
+      for (const f of clip) sessionThreatEvents.ingest(engine.update(f), endsAt - (last - f.timestamp), sessionId);
+    },
+    [testHooks],
+  );
+  const testFailAnalysis = useCallback(() => {
+    if (testHooks) forceFailRef.current = true;
+  }, [testHooks]);
+
   return {
     status,
     message,
@@ -233,6 +258,7 @@ export function useThreatMonitor() {
     detectors,
     events,
     clearEvents,
+    testHooks: testHooks ? { replay: testReplay, failAnalysis: testFailAnalysis } : null,
     start,
     pause,
     resume,

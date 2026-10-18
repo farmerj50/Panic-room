@@ -16,6 +16,14 @@ export function isThreatDetectionEnabled(): boolean {
   return isAiMonitorEnabled() && process.env.EXPO_PUBLIC_AI_THREATS_ENABLED === '1';
 }
 
+// Emulator/e2e builds only (EXPO_PUBLIC_AI_TEST_HOOKS=1, on top of the threat
+// flag): buttons that replay a synthetic clip through the real engine and
+// event log, or simulate an analysis failure. The emulator camera can't show
+// real falls or crowds.
+export function isAiTestHooksEnabled(): boolean {
+  return isThreatDetectionEnabled() && process.env.EXPO_PUBLIC_AI_TEST_HOOKS === '1';
+}
+
 // How detected events are kept and shown (see threat/events/ThreatEventLog).
 export const THREAT_EVENT_CONFIG = {
   // An ongoing event with no fresh evidence for this long is shown as ended.

@@ -115,19 +115,6 @@ function AIMonitor() {
       <ScrollView style={styles.scroll} contentContainerStyle={styles.body} testID="ai-monitor-scroll">
         <CrowdMetricsPanel frame={monitor.status === 'running' ? monitor.frame : null} />
 
-        {/* Threat dashboard: AI development/test builds only. Without the
-            threat flag the screen stays the Phase 1 people monitor. */}
-        {monitor.threatsEnabled && (
-          <ThreatDashboard
-            threatsEnabled
-            detection={monitor.detection}
-            detectors={monitor.detectors}
-            events={monitor.events}
-            reliability={monitor.status === 'running' ? monitor.assessment?.sourceReliability ?? null : null}
-            onClearEvents={monitor.clearEvents}
-          />
-        )}
-
         {monitor.message && (
           <Text style={styles.message} testID="ai-monitor-message">
             {monitor.message}
@@ -154,6 +141,7 @@ function AIMonitor() {
           </>
         )}
 
+        {/* Controls and SOS sit above the dashboard: never pushed down by events. */}
         <MonitorControls
           status={monitor.status}
           onStart={onStart}
@@ -171,6 +159,36 @@ function AIMonitor() {
         >
           <Text style={styles.sosText}>SOS — Emergency</Text>
         </TouchableOpacity>
+
+        {/* Threat dashboard: AI development/test builds only. Without the
+            threat flag the screen stays the Phase 1 people monitor. */}
+        {monitor.threatsEnabled && (
+          <ThreatDashboard
+            threatsEnabled
+            detection={monitor.detection}
+            detectors={monitor.detectors}
+            events={monitor.events}
+            reliability={monitor.status === 'running' ? monitor.assessment?.sourceReliability ?? null : null}
+            onClearEvents={monitor.clearEvents}
+          />
+        )}
+
+        {monitor.testHooks && (
+          <View style={styles.testTools} testID="ai-test-tools">
+            <Text style={styles.testTitle}>Test build tools</Text>
+            {(
+              [
+                ['ai-test-replay-fall', 'Replay fall clip', () => monitor.testHooks?.replay('fall-forward')],
+                ['ai-test-replay-panic', 'Replay crowd panic clip', () => monitor.testHooks?.replay('panic-flee-one-way')],
+                ['ai-test-fail-analysis', 'Simulate analysis failure', () => monitor.testHooks?.failAnalysis()],
+              ] as const
+            ).map(([id, label, onPress]) => (
+              <TouchableOpacity key={id} onPress={onPress} testID={id} accessibilityLabel={id} style={styles.testBtn}>
+                <Text style={styles.testBtnText}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         <Text style={styles.privacy} testID="ai-monitor-privacy-note">
           Processed on this phone. Nothing is recorded or uploaded.
@@ -220,5 +238,9 @@ const styles = StyleSheet.create({
   sosText: { color: '#fff', fontSize: 16, fontWeight: '900' },
   disabled: { opacity: 0.6 },
   privacy: { color: '#a8a0bf', fontSize: 13, textAlign: 'center' },
+  testTools: { borderColor: 'rgba(255,255,255,0.15)', borderRadius: 12, borderStyle: 'dashed', borderWidth: 1, gap: 6, padding: 10 },
+  testTitle: { color: '#8e88a8', fontSize: 12, fontWeight: '800' },
+  testBtn: { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 10, paddingVertical: 8, alignItems: 'center' },
+  testBtnText: { color: '#c9b8ff', fontSize: 13, fontWeight: '800' },
   unavailable: { color: '#a8a0bf', fontSize: 15, fontWeight: '700', padding: 24, textAlign: 'center' },
 });
