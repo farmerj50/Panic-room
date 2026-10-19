@@ -31,6 +31,9 @@ export type TrackedPerson = {
   boundingBox: BoundingBox;
   motion: TrackMotion;
   pose?: Pose;
+  // When this temporary track was first seen (ms) and how many frames matched it.
+  firstSeenAt?: number;
+  hits?: number;
 };
 
 export type DensityLevel = 'low' | 'medium' | 'high';

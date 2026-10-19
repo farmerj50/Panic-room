@@ -24,6 +24,17 @@ export function isAiTestHooksEnabled(): boolean {
   return isThreatDetectionEnabled() && process.env.EXPO_PUBLIC_AI_TEST_HOOKS === '1';
 }
 
+// 1.0.37 milestone, off until verified on phones (no build profile sets them):
+// a front/back camera flip, and per-person "getting closer / moving away in
+// camera view" with an opt-in in-app alert. Rollback = leave the flag unset.
+export function isAiCameraFlipEnabled(): boolean {
+  return isAiMonitorEnabled() && process.env.EXPO_PUBLIC_AI_CAMERA_FLIP_ENABLED === '1';
+}
+
+export function isAiProximityEnabled(): boolean {
+  return isAiMonitorEnabled() && process.env.EXPO_PUBLIC_AI_PROXIMITY_ENABLED === '1';
+}
+
 // How detected events are kept and shown (see threat/events/ThreatEventLog).
 export const THREAT_EVENT_CONFIG = {
   // An ongoing event with no fresh evidence for this long is shown as ended.

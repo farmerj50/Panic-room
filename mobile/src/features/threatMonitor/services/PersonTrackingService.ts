@@ -27,6 +27,7 @@ type Track = {
   speed: number;
   suddenChange: boolean;
   hits: number;
+  firstSeen: number;
   lastSeen: number;
   seenThisFrame: boolean;
 };
@@ -110,6 +111,7 @@ export class PersonTracker {
         speed: 0,
         suddenChange: false,
         hits: 1,
+        firstSeen: timestamp,
         lastSeen: timestamp,
         seenThisFrame: true,
       });
@@ -122,6 +124,8 @@ export class PersonTracker {
         class: 'person' as const,
         confidence: t.score,
         boundingBox: t.box,
+        firstSeenAt: t.firstSeen,
+        hits: t.hits,
         motion: {
           direction: directionOf(t.vx, t.vy * frameAspect, t.speed),
           speed: t.speed,
