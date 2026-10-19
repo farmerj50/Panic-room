@@ -18,11 +18,14 @@
 
 # Terms of Service
 
-**Last updated: August 3, 2026**
+**Last updated: October 19, 2026**
 
 These Terms of Service ("Terms") govern your use of the Bes mobile
-application and related services (the "Service"), operated by [YOUR FULL
-LEGAL NAME] ("Bes," "we," "us," or "our"). By creating an account or using
+application and related services (the "Service"), operated by Bes
+("Bes," "we," "us," or "our").
+<!-- OWNER: if Bes is operated by a registered business or under your legal
+name, state that exact name here; it should match the business name in the
+Twilio toll-free verification and the Google Play developer account. --> By creating an account or using
 the Service, you agree to these Terms.
 
 ## 1. Critical Safety Disclaimer — Read This First
@@ -44,8 +47,8 @@ the Service, you agree to these Terms.
 
 ## 2. Eligibility
 
-You must be at least 13 years old [attorney to confirm correct minimum
-age] to use the Service. By using the Service, you represent that you meet
+You must be at least 13 years old to use the Service.
+<!-- Attorney to confirm the correct minimum age. --> By using the Service, you represent that you meet
 this requirement.
 
 ## 3. Your Account
@@ -91,15 +94,30 @@ Recordings and event details you capture are available to you in the
 Evidence section of the app for as long as your account exists, subject to
 Section 5 of the Privacy Policy.
 
-### Emergency Text Alerts
-Bes can text your trusted contacts when you activate an emergency, but only
-contacts who accept an invitation themselves. You may invite only people
-whose phone numbers you are entitled to share and who you believe want to
-be your emergency contact. Contacts can opt out at any time by replying
-**STOP**. Message and data rates may apply to recipients. Text delivery
-depends on carriers and our messaging provider and is never guaranteed, so
-never rely on it as your only way to get help. See
-[Emergency Text Alerts](/sms-alerts).
+### Emergency Text Alerts (SMS program terms)
+- **Program:** Bes Emergency Text Alerts. When a Bes user activates an
+  emergency, Bes texts that user's trusted contacts an alert with the user's
+  first name and, when available, a location link and a private live view
+  link.
+- **Who receives messages:** only people who accepted an invitation
+  themselves, for the phone number they accepted it for. You may invite only
+  people whose phone numbers you are entitled to share and who you believe
+  want to be your emergency contact. Consent is not a condition of any
+  purchase.
+- **Message frequency varies.** Messages are sent only when a Bes user who
+  added you activates an emergency. There are no marketing or recurring
+  messages.
+- **Message and data rates may apply.**
+- **Opt out:** reply **STOP** to any Bes alert to stop all messages. Reply
+  **START** to resume.
+- **Help:** reply **HELP** for help, or email **support@bes-app.com**.
+- **Delivery:** text delivery depends on mobile carriers and our messaging
+  provider (Twilio) and is never guaranteed; carriers are not liable for
+  delayed or undelivered messages. Never rely on these texts as your only way
+  to get help.
+- **Privacy:** phone numbers and SMS opt-in information are handled as
+  described in our [Privacy Policy](/legal/privacy) and are never shared for
+  marketing. Full program details: [Emergency Text Alerts](/sms-alerts).
 
 ### Live View Links
 When available, Bes creates a private browser link for each trusted contact
@@ -154,10 +172,10 @@ ANY LOSS OF DATA, ARISING FROM YOUR USE OF (OR INABILITY TO USE) THE
 SERVICE — INCLUDING, WITHOUT LIMITATION, ANY HARM RESULTING FROM A FAILED,
 DELAYED, OR INCOMPLETE EMERGENCY NOTIFICATION, RECORDING, OR MESSAGE.
 
-[This section requires careful attorney drafting given the app's safety
+<!-- This section requires careful attorney drafting given the app's safety
 use case — some jurisdictions limit how far liability can be disclaimed
 for gross negligence or in consumer-protection contexts. Do not treat the
-above as sufficient without review.]
+above as sufficient without review. -->
 
 ## 10. Indemnification
 
@@ -179,8 +197,8 @@ after changes take effect constitutes acceptance of the updated Terms.
 ## 13. Governing Law
 
 These Terms are governed by the laws of the State of Georgia, without
-regard to its conflict-of-laws principles. [Attorney to confirm venue and
-whether an arbitration clause is desired.]
+regard to its conflict-of-laws principles.
+<!-- Attorney to confirm venue and whether an arbitration clause is desired. -->
 
 ## 14. Contact
 

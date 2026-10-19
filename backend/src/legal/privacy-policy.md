@@ -18,7 +18,7 @@
 
 # Privacy Policy
 
-**Last updated: October 18, 2026**
+**Last updated: October 19, 2026**
 
 This Privacy Policy describes how Bes ("Bes," "we," "us," or "our") collects,
 uses, and protects information when you use the Bes mobile application and
@@ -149,8 +149,9 @@ required by law or with your explicit direction.
 
 We retain your account and emergency-event data for as long as your account
 is active. You may request deletion of your account and associated data at
-any time (see Section 7). [ADD: any specific retention period you intend to
-enforce, e.g. "recordings older than X days are automatically deleted."]
+any time (see Section 7).
+<!-- ADD: any specific retention period you intend to enforce, e.g.
+"recordings older than X days are automatically deleted." -->
 
 ### Emergency text alerts to trusted contacts
 
@@ -163,7 +164,15 @@ they are then deleted automatically. If a contact replies **STOP**, we keep
 a hashed record of that phone number so it is never texted again unless
 they reply **START**. We send these texts through our messaging provider
 (Twilio) only during an emergency, and we never use them for marketing.
-See [Emergency Text Alerts](/sms-alerts).
+Message frequency varies; message and data rates may apply. Contacts can
+reply **STOP** to opt out or **HELP** for help, or email
+**support@bes-app.com**.
+
+**No mobile information will be shared with third parties or affiliates for
+marketing or promotional purposes. Text messaging opt-in data and consent
+records are not shared with any third parties**, except our messaging
+provider (Twilio), which uses them only to deliver the alerts. See
+[Emergency Text Alerts](/sms-alerts).
 
 ### Live view links for trusted contacts
 
@@ -193,15 +202,17 @@ you. Expired link records are deleted after 30 days.
 
 If you are located in a jurisdiction with statutory privacy rights (e.g.,
 GDPR, CCPA), you may have additional rights; contact us at the address above
-to exercise them. [Attorney should confirm which regimes actually apply
-based on where you operate and where your users are located.]
+to exercise them.
+<!-- Attorney should confirm which regimes actually apply based on where you
+operate and where your users are located. -->
 
 ## 7. Children's Privacy
 
 Bes is not directed to children under 13, and we do not knowingly collect
-information from children under 13. [Attorney should confirm the correct
-minimum age given the app's target audience and any state-specific rules
-for safety/support services used by minors.]
+information from children under 13.
+<!-- Attorney should confirm the correct minimum age given the app's target
+audience and any state-specific rules for safety/support services used by
+minors. -->
 
 ## 8. Emergency Feature Limitations
 
