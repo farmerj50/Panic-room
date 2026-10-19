@@ -173,3 +173,28 @@ describe('PersonTracker', () => {
     expect(directionOf(0.01, 0, 0.01)).toBe('still');
   });
 });
+
+describe('track age and hits (proximity input)', () => {
+  const box = { x: 0.4, y: 0.3, width: 0.1, height: 0.3, score: 0.8 };
+
+  it('reports when a track was first seen and how often it matched', () => {
+    const tracker = new PersonTracker();
+    let out = tracker.update([box], 0);
+    for (let f = 1; f <= 4; f++) out = tracker.update([box], f * FRAME_MS);
+    expect(out[0].firstSeenAt).toBe(0);
+    expect(out[0].hits).toBe(5);
+  });
+
+  it('starts a new track, with fresh history, after an occlusion longer than the grace period', () => {
+    const tracker = new PersonTracker();
+    const moved = { ...box, x: 0.8 };
+    tracker.update([box], 0);
+    const before = tracker.update([box], FRAME_MS)[0];
+    tracker.update([], 2 * FRAME_MS);
+    tracker.update([moved], 2 * FRAME_MS + 1500);
+    const after = tracker.update([moved], 3 * FRAME_MS + 1500)[0];
+    expect(after.trackId).not.toBe(before.trackId);
+    expect(after.firstSeenAt).toBe(2 * FRAME_MS + 1500);
+    expect(after.hits).toBe(2);
+  });
+});

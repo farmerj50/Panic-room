@@ -8,16 +8,34 @@ type Props = {
   onPause: () => void;
   onResume: () => void;
   onStop: () => void;
+  // Camera flip, when that feature is on.
+  onFlip?: (() => void) | null;
+  flipping?: boolean;
+  facing?: 'back' | 'front';
 };
 
-export default function MonitorControls({ status, onStart, onPause, onResume, onStop }: Props) {
+export default function MonitorControls({ status, onStart, onPause, onResume, onStop, onFlip, flipping, facing }: Props) {
   const on = status === 'starting' || status === 'running' || status === 'paused';
+  // Flipping waits while the camera starts, while paused and during a flip.
+  const flipDisabled = flipping || (status !== 'running' && status !== 'idle');
+  const flipButton = onFlip ? (
+    <TouchableOpacity
+      style={[styles.btn, flipDisabled && styles.disabled]}
+      onPress={onFlip}
+      disabled={flipDisabled}
+      testID="ai-monitor-flip-btn"
+      accessibilityLabel={`ai-monitor-flip-btn-${facing ?? 'back'}`}
+    >
+      <Text style={styles.text}>{facing === 'front' ? 'Back camera' : 'Front camera'}</Text>
+    </TouchableOpacity>
+  ) : null;
   if (!on) {
     return (
       <View style={styles.row}>
         <TouchableOpacity style={[styles.btn, styles.primary]} onPress={onStart} testID="ai-monitor-start-btn" accessibilityLabel="ai-monitor-start-btn">
           <Text style={styles.primaryText}>Start monitoring</Text>
         </TouchableOpacity>
+        {flipButton}
       </View>
     );
   }
@@ -41,6 +59,7 @@ export default function MonitorControls({ status, onStart, onPause, onResume, on
       <TouchableOpacity style={styles.btn} onPress={onStop} testID="ai-monitor-stop-btn" accessibilityLabel="ai-monitor-stop-btn">
         <Text style={styles.text}>Stop</Text>
       </TouchableOpacity>
+      {flipButton}
     </View>
   );
 }

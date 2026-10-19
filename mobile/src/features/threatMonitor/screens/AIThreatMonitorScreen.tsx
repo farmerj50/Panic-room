@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -8,12 +8,16 @@ import PermissionCard from '../../../components/PermissionCard';
 import CrowdMetricsPanel from '../components/CrowdMetricsPanel';
 import DetectionOverlay from '../components/DetectionOverlay';
 import MonitorControls from '../components/MonitorControls';
+import ProximityAlertSettings from '../components/ProximityAlertSettings';
 import ThreatDashboard from '../components/ThreatDashboard';
 import { isAiMonitorEnabled } from '../config/threatMonitorConfig';
 import { useThreatMonitor } from '../hooks/useThreatMonitor';
 import { claimForEmergency } from '../services/CameraOwnershipService';
 import { BesVisionView } from '../services/besVision';
 import { runDetectionHarness } from '../services/detectionHarness';
+
+// How long the getting-closer banner stays up.
+const PROXIMITY_BANNER_MS = 5000;
 
 const STATUS_LABEL = {
   idle: 'Off',
@@ -56,6 +60,14 @@ function AIMonitor() {
   const [viewSize, setViewSize] = useState({ width: 0, height: 0 });
 
   const granted = permission?.granted === true;
+  const { proximityAlert, dismissProximityAlert } = monitor;
+
+  useEffect(() => {
+    if (!proximityAlert) return;
+    const timer = setTimeout(dismissProximityAlert, PROXIMITY_BANNER_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proximityAlert]);
 
   // Release the camera first, then hand over to Emergency's countdown.
   const onSos = async () => {
@@ -99,7 +111,13 @@ function AIMonitor() {
           <BesVisionView style={StyleSheet.absoluteFill} testID="ai-monitor-camera" {...monitor.cameraProps} />
         )}
         {monitor.status === 'running' && monitor.frame && (
-          <DetectionOverlay people={monitor.frame.detections} frameSize={monitor.frameSize} viewSize={viewSize} />
+          <DetectionOverlay
+            people={monitor.frame.detections}
+            frameSize={monitor.frameSize}
+            viewSize={viewSize}
+            mirrored={monitor.facing === 'front'}
+            proximity={monitor.proximityEnabled ? monitor.proximity : null}
+          />
         )}
         {!monitor.cameraProps.active && (
           <View style={styles.cameraIdle}>
@@ -110,6 +128,16 @@ function AIMonitor() {
           <View style={[styles.dot, monitor.status === 'running' && styles.dotOn]} />
           <Text style={styles.statusText}>{STATUS_LABEL[monitor.status]}</Text>
         </View>
+        {monitor.flipping && (
+          <View style={styles.flipNote} testID="ai-monitor-switching">
+            <Text style={styles.statusText}>Switching camera…</Text>
+          </View>
+        )}
+        {proximityAlert && monitor.status === 'running' && (
+          <TouchableOpacity style={styles.banner} onPress={dismissProximityAlert} testID="ai-proximity-banner" accessibilityLabel="ai-proximity-banner">
+            <Text style={styles.bannerText}>Someone is getting closer in camera view (#{proximityAlert.trackId})</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.body} testID="ai-monitor-scroll">
@@ -148,6 +176,9 @@ function AIMonitor() {
           onPause={monitor.pause}
           onResume={monitor.resume}
           onStop={() => monitor.stop('user')}
+          onFlip={monitor.flip}
+          flipping={monitor.flipping}
+          facing={monitor.facing}
         />
 
         <TouchableOpacity
@@ -159,6 +190,10 @@ function AIMonitor() {
         >
           <Text style={styles.sosText}>SOS — Emergency</Text>
         </TouchableOpacity>
+
+        {monitor.proximityEnabled && (
+          <ProximityAlertSettings settings={monitor.proximitySettings} onChange={monitor.setProximitySettings} />
+        )}
 
         {/* Threat dashboard: AI development/test builds only. Without the
             threat flag the screen stays the Phase 1 people monitor. */}
@@ -227,6 +262,17 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 12,
   },
+  flipNote: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    position: 'absolute',
+    right: 12,
+    top: 12,
+  },
+  banner: { backgroundColor: 'rgba(251,191,36,0.95)', borderRadius: 12, bottom: 12, left: 12, padding: 10, position: 'absolute', right: 12 },
+  bannerText: { color: '#1a1300', fontSize: 14, fontWeight: '800', textAlign: 'center' },
   dot: { backgroundColor: '#8e88a8', borderRadius: 4, height: 8, width: 8 },
   dotOn: { backgroundColor: '#34d399' },
   statusText: { color: '#fff', fontSize: 13, fontWeight: '800' },
