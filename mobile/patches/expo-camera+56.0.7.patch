@@ -1,0 +1,25 @@
+diff --git a/node_modules/expo-camera/android/src/main/java/expo/modules/camera/CameraViewModule.kt b/node_modules/expo-camera/android/src/main/java/expo/modules/camera/CameraViewModule.kt
+index 21382f8..434043d 100644
+--- a/node_modules/expo-camera/android/src/main/java/expo/modules/camera/CameraViewModule.kt
++++ b/node_modules/expo-camera/android/src/main/java/expo/modules/camera/CameraViewModule.kt
+@@ -456,7 +456,9 @@ class CameraViewModule : Module() {
+           throw Exceptions.MissingPermissions(Manifest.permission.RECORD_AUDIO)
+         }
+ 
+-        view.record(options, promise, cacheDirectory)
++        // Bes: record evidence outside the cache — Android purges app caches under
++        // storage pressure, which deleted clips mid-recording.
++        view.record(options, promise, recordingDirectory)
+       }.runOnQueue(Queues.MAIN)
+ 
+       AsyncFunction("toggleRecording") { view: ExpoCameraView ->
+@@ -480,6 +482,9 @@ class CameraViewModule : Module() {
+   private val cacheDirectory: File
+     get() = appContext.cacheDirectory
+ 
++  private val recordingDirectory: File
++    get() = File(appContext.persistentFilesDirectory, "bes-recording")
++
+   private val permissionsManager: Permissions
+     get() = appContext.permissions ?: throw Exceptions.PermissionsModuleNotFound()
+ 

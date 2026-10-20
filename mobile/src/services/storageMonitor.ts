@@ -12,14 +12,17 @@ export const WARN_BELOW_BYTES = 1024 * MB;
 export const REDUCED_QUALITY_BELOW_BYTES = 250 * MB;
 export const PAUSE_VIDEO_BELOW_BYTES = 100 * MB;
 export const RESUME_VIDEO_ABOVE_BYTES = 150 * MB;
+// Effectively full: even audio may not be saved.
+export const FULL_BELOW_BYTES = 10 * MB;
 
 export type StorageLevel = 'ok' | 'low' | 'reduced' | 'critical';
 
-// null when the platform can't tell us (e.g. web) — treated as "ok".
+// null when the platform can't tell us (e.g. web) — treated as "ok". 0 is a
+// real answer (a full disk) and must not be mistaken for "unknown".
 export function getFreeBytes(): number | null {
   try {
     const free = Paths.availableDiskSpace;
-    return typeof free === 'number' && Number.isFinite(free) && free > 0 ? free : null;
+    return typeof free === 'number' && Number.isFinite(free) && free >= 0 ? free : null;
   } catch {
     return null;
   }
@@ -39,6 +42,12 @@ export function shouldRecordVideo(freeBytes: number | null, currentlyPaused: boo
   if (freeBytes === null) return true;
   if (currentlyPaused) return freeBytes > RESUME_VIDEO_ABOVE_BYTES;
   return freeBytes >= PAUSE_VIDEO_BELOW_BYTES;
+}
+
+// expo-camera / CameraX refusing to record because the disk is full.
+export function isInsufficientStorageError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /insufficient storage|no space left|ENOSPC|disk is full/i.test(message);
 }
 
 export function formatMegabytes(bytes: number) {

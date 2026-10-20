@@ -30,6 +30,7 @@ import {
   recordLocationPoint,
   thinPoints,
 } from '../locationQueue';
+import { __resetPendingEmergenciesForTests, registerPendingEmergency, syncPendingEmergencies } from '../pendingEmergencies';
 
 const EMERGENCY = 'e-1';
 const T0 = Date.parse('2026-10-10T12:00:00Z');
@@ -41,6 +42,7 @@ beforeEach(async () => {
   await AsyncStorage.clear();
   mockSecure.clear();
   __resetLocationQueueForTests();
+  __resetPendingEmergenciesForTests();
   mockApiRequest.mockReset().mockResolvedValue({ accepted: 1 });
   jest.spyOn(console, 'warn').mockImplementation(() => {});
 });
@@ -123,3 +125,31 @@ test('a full queue thins old points instead of dropping new ones, and sends the 
   const all = bodies.flatMap((b) => b.points);
   expect(all[all.length - 1].recordedAt).toBe(new Date(T0 + MAX_POINTS_PER_EMERGENCY * 15_000).toISOString());
 }, 60_000);
+
+describe('an emergency recorded without signal', () => {
+  test('its points are kept (not sent, not dropped) until it exists on the server', async () => {
+    await registerPendingEmergency({ id: EMERGENCY, activatedAt: new Date(T0).toISOString() });
+    await recordLocationPoint(EMERGENCY, NYC, T0);
+    await flushLocationQueue();
+    expect(mockApiRequest).not.toHaveBeenCalled();
+    expect(await pendingLocationCount()).toBe(1);
+
+    mockApiRequest.mockImplementation(async (path: string, init: { body: string }) =>
+      path === '/api/emergency' ? { id: JSON.parse(init.body).id } : { accepted: 1 },
+    );
+    await syncPendingEmergencies();
+    await flushLocationQueue();
+    expect(mockApiRequest).toHaveBeenCalledWith(`/api/emergency/${EMERGENCY}/locations`, expect.objectContaining({ method: 'POST' }));
+    expect(await pendingLocationCount()).toBe(0);
+  });
+
+  test('if an older server returns its own id, the points follow it', async () => {
+    await registerPendingEmergency({ id: EMERGENCY, activatedAt: new Date(T0).toISOString() });
+    await recordLocationPoint(EMERGENCY, NYC, T0);
+    mockApiRequest.mockImplementation(async (path: string) => (path === '/api/emergency' ? { id: 'server-9' } : { accepted: 1 }));
+    await syncPendingEmergencies();
+    await flushLocationQueue();
+    expect(mockApiRequest).toHaveBeenCalledWith('/api/emergency/server-9/locations', expect.anything());
+    expect(mockApiRequest).not.toHaveBeenCalledWith(`/api/emergency/${EMERGENCY}/locations`, expect.anything());
+  });
+});

@@ -75,8 +75,24 @@ describe('SocialShareOverlay', () => {
     expect(screen.queryByTestId('social-share-overlay')).toBeNull();
   });
 
+  test('the prompt lasts 10 seconds, counted from when it is on screen', async () => {
+    renderOverlay();
+    expect(SHARE_PROMPT_SECONDS).toBe(10);
+    // Not laid out yet (still being drawn): the countdown hasn't started.
+    await act(async () => {
+      jest.advanceTimersByTime(4000);
+    });
+    expect(screen.getByTestId('social-share-countdown')).toHaveTextContent('Continuing without sharing in 10…');
+    fireEvent(screen.getByTestId('social-share-prompt'), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 300, height: 200 } } });
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(screen.getByTestId('social-share-countdown')).toHaveTextContent('Continuing without sharing in 9…');
+  });
+
   test('countdown expiry only hides the prompt — nothing is posted or cut', async () => {
     const { props } = renderOverlay();
+    fireEvent(screen.getByTestId('social-share-prompt'), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 300, height: 200 } } });
     // One tick per act: each second's timer is scheduled by the re-render
     // that the previous tick caused.
     for (let s = SHARE_PROMPT_SECONDS; s > 0; s -= 1) {

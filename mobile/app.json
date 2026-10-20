@@ -3,7 +3,7 @@
     "name": "Bes",
     "slug": "bes",
     "scheme": "bes",
-    "version": "1.0.34",
+    "version": "1.0.37",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -30,7 +30,7 @@
     },
     "android": {
       "package": "com.ginslayer.besapp",
-      "versionCode": 41,
+      "versionCode": 51,
       "adaptiveIcon": {
         "backgroundColor": "#22084A",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -61,7 +61,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Bes records video evidence during emergencies.",
+          "cameraPermission": "Bes uses the camera to record video evidence during emergencies and, when you turn it on, for AI Monitor.",
           "microphonePermission": "Bes records audio during emergencies.",
           "recordAudioAndroid": true,
           "barcodeScannerEnabled": false
@@ -99,7 +99,8 @@
         {
           "android": {
             "enableMinifyInReleaseBuilds": true,
-            "enableShrinkResourcesInReleaseBuilds": true
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "extraProguardRules": "# expo-camera is built from source (see patches/); its barcode scanner is disabled, so ML Kit is compile-only.\n-dontwarn com.google.mlkit.vision.**"
           }
         }
       ],
@@ -107,6 +108,7 @@
       "./plugin/withEdgeToEdgeSystemBars",
       "./plugin/withReleaseSigning",
       "./plugin/withRemoveBarcodeScannerActivity",
+      "./plugin/withEvidenceRecordingGuard",
       "expo-web-browser",
       "expo-video"
     ]

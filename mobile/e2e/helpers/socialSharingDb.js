@@ -6,7 +6,9 @@
 // so nothing can actually be published.
 const path = require('path');
 
-const BACKEND = path.join(__dirname, '..', '..', '..', 'backend');
+// E2E_BACKEND_DIR: run the specs from another checkout (e.g. a release
+// worktree) against the local dev backend's database.
+const BACKEND = process.env.E2E_BACKEND_DIR || path.join(__dirname, '..', '..', '..', 'backend');
 require(path.join(BACKEND, 'node_modules', 'dotenv')).config({ path: path.join(BACKEND, '.env'), quiet: true });
 const prisma = require(path.join(BACKEND, 'src', 'config', 'db'));
 const { encrypt, hashLookup } = require(path.join(BACKEND, 'src', 'services', 'cryptoService'));
@@ -68,6 +70,32 @@ async function latestEmergencySegments(email) {
   return emergency ? emergency.videoSegments.map((s) => s.sequence) : [];
 }
 
+// Offline-first Emergency checks: how many emergencies the user has, and the
+// latest one's server state (status, real activation time, evidence).
+async function emergencyCount(email) {
+  const user = await findUser(email);
+  return prisma.emergencyEvent.count({ where: { userId: user.id } });
+}
+
+async function latestEmergency(email) {
+  const user = await findUser(email);
+  const e = await prisma.emergencyEvent.findFirst({
+    where: { userId: user.id },
+    orderBy: { createdAt: 'desc' },
+    include: { videoSegments: { orderBy: { sequence: 'asc' } }, _count: { select: { locations: true } } },
+  });
+  if (!e) return null;
+  return {
+    id: e.id,
+    status: e.status,
+    createdAt: e.createdAt,
+    endedAt: e.endedAt,
+    hasAudio: Boolean(e.audioUrl),
+    sequences: e.videoSegments.map((s) => s.sequence),
+    locations: e._count.locations,
+  };
+}
+
 async function disconnect() {
   await prisma.$disconnect();
 }
@@ -88,6 +116,8 @@ async function setConnectionStatus(email, provider, status) {
 }
 
 module.exports = {
+  emergencyCount,
+  latestEmergency,
   seedFakeSocialConnections,
   setConnectionStatus,
   makePremium,

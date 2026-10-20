@@ -1,9 +1,11 @@
 // Durable, crash-safe upload queue for emergency evidence (video clips and
 // the audio recording). Recording never waits on it.
 //
-// - Each finished clip is moved out of the camera cache (which the OS may
-//   purge) into Paths.document/emergency-segments/. Its filename alone
-//   describes it — <emergencyId>__v<sequence>__<facing>__<startMs>__<endMs>.<ext>
+// - The camera and recorder write into persistent files (bes-recording/),
+//   never the cache: Android purges app caches under storage pressure, which
+//   deleted clips mid-recording (patches/expo-camera, patches/expo-audio).
+// - Each finished clip is moved into Paths.document/emergency-segments/. Its
+//   filename alone describes it — <emergencyId>__v<sequence>__<facing>__<startMs>__<endMs>.<ext>
 //   (audio: __a0__) — so a crash at any point can be reconciled at launch.
 // - Write order: record ('moving', target path) → move file → record 'pending'.
 // - The local file is deleted only after the server confirms the clip.
@@ -11,16 +13,23 @@
 //   is only removed by an explicit owner action (discardUnuploadedClips).
 // - Uploads run one at a time in the background with backoff (5s, 15s, 60s,
 //   then every 5 min), and resume on app foreground and at the next launch.
+// - Clips of an emergency recorded without signal wait until that emergency
+//   exists on the server (see pendingEmergencies) — the server would reject
+//   them as "not found" before then.
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Directory, File, Paths } from 'expo-file-system';
 
+import { trackEvent } from './analyticsService';
 import { ApiError } from './apiClient';
 import { addVideoSegment, createRecording, updateEmergency } from './emergencyService';
+import { pendingCreateIds, registerEmergencyIdRemap, serverIdFor } from './pendingEmergencies';
 import { uploadFile } from './uploadService';
 
 export type ClipKind = 'video' | 'audio';
-export type ClipState = 'moving' | 'pending' | 'confirmed' | 'conflict' | 'lost';
+// 'incomplete': a recording interrupted by a crash or kill whose file can't be
+// played (no MP4 index). Kept on the device, never uploaded or auto-deleted.
+export type ClipState = 'moving' | 'pending' | 'confirmed' | 'conflict' | 'lost' | 'incomplete';
 export type ClipOutcome = 'confirmed' | 'failed' | 'conflict';
 
 export type ClipRecord = {
@@ -38,14 +47,21 @@ export type ClipRecord = {
   attempts: number;
 };
 
-export type QueueSummary = { waiting: number; conflict: number; lost: number; bytes: number };
+export type QueueSummary = { waiting: number; conflict: number; lost: number; incomplete: number; bytes: number };
 
 export const SEGMENT_QUEUE_STORAGE_KEY = 'bes_segment_queue';
+export const RECORDING_JOURNAL_STORAGE_KEY = 'bes_recording_journal';
+// Where the patched expo-camera / expo-audio write recordings (persistent
+// files, never the cache): <files>/bes-recording/{Camera,Audio}/.
+const RECORDING_DIR = 'bes-recording';
+// Files last written before this process started can't be in progress now.
+const processStartedAt = Date.now();
 const DIR_NAME = 'emergency-segments';
 const BACKOFF_MS = [5_000, 15_000, 60_000, 300_000];
 const isWeb = Platform.OS === 'web';
 
 let records: ClipRecord[] | null = null;
+let journal: JournalEntry[] | null = null;
 let chain: Promise<unknown> = Promise.resolve();
 let working: Promise<void> | null = null;
 let failures = 0;
@@ -118,10 +134,17 @@ async function load(): Promise<ClipRecord[]> {
   return records;
 }
 
+// Best effort: a full disk can make the save fail, but that must never stop a
+// clip being moved or uploaded. The in-memory queue stays authoritative for
+// this session, and a lost save is rebuilt from filenames at the next launch.
 async function persist() {
   notify();
   if (isWeb || !records) return;
-  await AsyncStorage.setItem(SEGMENT_QUEUE_STORAGE_KEY, JSON.stringify(records));
+  try {
+    await AsyncStorage.setItem(SEGMENT_QUEUE_STORAGE_KEY, JSON.stringify(records));
+  } catch (error) {
+    console.warn('[Evidence] Could not save the upload queue', error);
+  }
 }
 
 function notify() {
@@ -164,6 +187,110 @@ function fileExists(uri: string | undefined) {
   }
 }
 
+// ── Recording journal ────────────────────────────────────────────────────
+// An entry is written before every recording starts and removed once the
+// clip reaches the queue (or the emergency stops normally). Entries still
+// here at the next launch are recordings a crash or kill interrupted; their
+// files are recovered by reconcileClipQueue.
+type JournalEntry = {
+  kind: ClipKind;
+  emergencyId: string;
+  sequence: number;
+  facing: ClipRecord['facing'];
+  startedAt: string;
+};
+
+const sameRecording = (a: Pick<JournalEntry, 'kind' | 'emergencyId' | 'sequence'>, b: typeof a) =>
+  a.kind === b.kind && a.emergencyId === b.emergencyId && a.sequence === b.sequence;
+
+async function loadJournal(): Promise<JournalEntry[]> {
+  if (journal) return journal;
+  try {
+    const raw = await AsyncStorage.getItem(RECORDING_JOURNAL_STORAGE_KEY);
+    journal = raw ? (JSON.parse(raw) as JournalEntry[]) : [];
+  } catch {
+    journal = [];
+  }
+  return journal;
+}
+
+async function persistJournal() {
+  if (isWeb || !journal) return;
+  await AsyncStorage.setItem(RECORDING_JOURNAL_STORAGE_KEY, JSON.stringify(journal));
+}
+
+export function journalRecordingStarted(entry: {
+  kind: ClipKind;
+  emergencyId: string;
+  sequence?: number;
+  facing?: 'front' | 'back';
+  startedAt: string;
+}): Promise<void> {
+  if (isWeb) return Promise.resolve();
+  const next: JournalEntry = {
+    kind: entry.kind,
+    emergencyId: entry.emergencyId,
+    sequence: entry.sequence ?? 0,
+    facing: entry.kind === 'video' ? entry.facing ?? 'back' : 'none',
+    startedAt: entry.startedAt,
+  };
+  return locked(async () => {
+    const list = await loadJournal();
+    journal = [...list.filter((e) => !sameRecording(e, next)), next];
+    await persistJournal();
+  }).catch(() => {});
+}
+
+// The emergency stopped normally: every recording it made reached the queue.
+export function clearRecordingJournal(emergencyId: string): Promise<void> {
+  if (isWeb) return Promise.resolve();
+  return locked(async () => {
+    const list = await loadJournal();
+    journal = list.filter((e) => e.emergencyId !== emergencyId);
+    await persistJournal();
+  }).catch(() => {});
+}
+
+const u32 = (b: Uint8Array, i: number) => ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0;
+
+// MP4/M4A files are only playable once the recorder writes the 'moov' index,
+// which happens when recording stops; a crash or kill leaves it out. Walks
+// the top-level boxes without reading the media itself.
+export function hasCompleteMp4Index(uri: string): boolean {
+  let handle: ReturnType<File['open']> | null = null;
+  try {
+    handle = new File(uri).open();
+    const size = handle.size ?? 0;
+    let offset = 0;
+    let moov = false;
+    for (let boxes = 0; offset + 8 <= size && boxes < 10_000; boxes += 1) {
+      handle.offset = offset;
+      const header = handle.readBytes(8);
+      let boxSize = u32(header, 0);
+      const type = String.fromCharCode(header[4], header[5], header[6], header[7]);
+      if (boxSize === 1) {
+        const large = handle.readBytes(8);
+        boxSize = u32(large, 0) * 2 ** 32 + u32(large, 4);
+      } else if (boxSize === 0) {
+        boxSize = size - offset; // runs to the end of the file
+      }
+      if (boxSize < 8 || offset + boxSize > size) return false; // truncated
+      if (type === 'moov') moov = true;
+      offset += boxSize;
+    }
+    return moov && offset === size;
+  } catch {
+    return false;
+  } finally {
+    try {
+      handle?.close();
+    } catch {}
+  }
+}
+
+// Idempotent: a clip already in evidence storage is left as is. The
+// original is only removed after a copy is verified complete; a partial copy
+// is discarded and the original kept.
 async function moveInto(sourceUri: string, name: string): Promise<string> {
   if (isWeb) return sourceUri;
   const target = new File(ensureDirectory(), name);
@@ -173,6 +300,12 @@ async function moveInto(sourceUri: string, name: string): Promise<string> {
     await source.move(target);
   } catch {
     await source.copy(target);
+    if (!target.exists || target.size !== source.size) {
+      try {
+        if (source.exists && target.exists) target.delete();
+      } catch {}
+      throw new Error('Copied clip did not match the original');
+    }
     try {
       source.delete();
     } catch {}
@@ -196,6 +329,8 @@ export async function enqueueClip(
   // the upload can start, so it's never missed).
   onFirstAttempt?: (outcome: ClipOutcome) => void,
 ): Promise<ClipRecord> {
+  // Follow the server's id if an older server ignored the phone's.
+  clip = { ...clip, emergencyId: await serverIdFor(clip.emergencyId) };
   const ext = clip.sourceUri.split('?')[0].split('.').pop() ?? '';
   const facing = clip.kind === 'video' ? clip.facing ?? 'back' : 'none';
   const name = clipFileName({ ...clip, sequence: clip.sequence ?? 0, facing, ext });
@@ -219,7 +354,20 @@ export async function enqueueClip(
     const list = await load();
     if (!list.some((r) => r.id === record.id)) list.push(record);
     await persist();
+    // The queue owns this recording now, so it is no longer in progress.
+    const inProgress = await loadJournal();
+    const handedOff = { kind: clip.kind, emergencyId: clip.emergencyId, sequence: record.sequence };
+    if (inProgress.some((e) => sameRecording(e, handedOff))) {
+      journal = inProgress.filter((e) => !sameRecording(e, handedOff));
+      await persistJournal().catch(() => {});
+    }
   });
+  // Recordings are written outside the cache (patches/expo-camera, expo-audio);
+  // a cache path means that protection is gone (e.g. lost in an Expo upgrade).
+  if (!isWeb && /\/cache\//.test(clip.sourceUri)) {
+    console.warn('[Evidence] Recording was written to the purgeable cache', { kind: clip.kind });
+    trackEvent('evidence_recorded_to_cache', { kind: clip.kind });
+  }
   try {
     record.localUri = await moveInto(clip.sourceUri, name);
   } catch (error) {
@@ -227,14 +375,24 @@ export async function enqueueClip(
     console.warn('Could not move clip to evidence storage', error);
     record.localUri = clip.sourceUri;
   }
+  // If the recording's file is already gone there is nothing to upload: say
+  // so (Evidence shows lost clips) instead of retrying a missing file forever.
+  const saved = isWeb || fileExists(record.localUri);
+  const state: ClipState = saved ? 'pending' : 'lost';
   await locked(async () => {
     const list = await load();
     const stored = list.find((r) => r.id === record.id);
-    if (stored) Object.assign(stored, { localUri: record.localUri, state: 'pending', sourceUri: undefined });
+    if (stored) Object.assign(stored, { localUri: record.localUri, state, sourceUri: undefined });
     await persist();
   });
-  record.state = 'pending';
+  record.state = state;
   record.sourceUri = undefined;
+  if (!saved) {
+    console.error('[Evidence] Clip file was missing before it could be saved', { kind: clip.kind, name });
+    trackEvent('evidence_clip_lost', { kind: clip.kind, reason: 'source_missing' });
+    settle(record.id, 'failed');
+    return record;
+  }
   void runClipQueue();
   return record;
 }
@@ -322,7 +480,9 @@ export function runClipQueue(): Promise<void> {
 async function drainQueue(): Promise<void> {
   for (;;) {
     const list = await locked(load);
-    const next = list.find((r) => r.state === 'pending');
+    const waitingForServer = await pendingCreateIds();
+    const next = list.find((r) => r.state === 'pending' && !waitingForServer.has(r.emergencyId));
+    // Clips of emergencies not yet on the server resume once it's created.
     if (!next) return;
     next.attempts += 1;
     const outcome = await uploadOne(next);
@@ -345,6 +505,28 @@ async function drainQueue(): Promise<void> {
   }
 }
 
+// An older server ignored the phone's emergency id and returned its own:
+// move this emergency's queued clips and journal entries over to it.
+registerEmergencyIdRemap((from, to) =>
+  locked(async () => {
+    const list = await load();
+    let changed = false;
+    for (const record of list) {
+      if (record.emergencyId === from) {
+        record.emergencyId = to;
+        changed = true;
+      }
+    }
+    if (changed) await persist();
+    const entries = await loadJournal();
+    if (entries.some((e) => e.emergencyId === from)) {
+      journal = entries.map((e) => (e.emergencyId === from ? { ...e, emergencyId: to } : e));
+      await persistJournal();
+    }
+    if (retained.delete(from)) retained.add(to);
+  }),
+);
+
 // App launch / foreground: retry now instead of waiting for the backoff.
 export function resumeClipQueue(): Promise<void> {
   if (retryTimer) {
@@ -358,10 +540,11 @@ export function resumeClipQueue(): Promise<void> {
 // whose queue entry was never written (crash right after the move), finishes
 // interrupted moves, and reports clips that can't be found instead of
 // silently dropping them. Returns how many clips were recovered or lost.
-export async function reconcileClipQueue(): Promise<{ recovered: number; lost: number }> {
-  if (isWeb) return { recovered: 0, lost: 0 };
+export async function reconcileClipQueue(): Promise<{ recovered: number; lost: number; incomplete: number }> {
+  if (isWeb) return { recovered: 0, lost: 0, incomplete: 0 };
   let recovered = 0;
   let lost = 0;
+  let incomplete = 0;
   await locked(async () => {
     const list = await load();
     let names: string[] = [];
@@ -411,11 +594,103 @@ export async function reconcileClipQueue(): Promise<{ recovered: number; lost: n
         lost += 1;
       }
     }
+    const interrupted = await recoverInterruptedRecordings(list);
+    recovered += interrupted.recovered;
+    incomplete += interrupted.incomplete;
+
     records = list;
     await persist();
   });
   void runClipQueue();
-  return { recovered, lost };
+  return { recovered, lost, incomplete };
+}
+
+function recordingFiles(kind: ClipKind): Array<{ file: File; mtime: number }> {
+  try {
+    const dir = new Directory(Paths.document, RECORDING_DIR, kind === 'video' ? 'Camera' : 'Audio');
+    if (!dir.exists) return [];
+    return dir
+      .list()
+      .filter((entry): entry is File => entry instanceof File)
+      .map((file) => ({ file, mtime: file.modificationTime ?? 0 }))
+      .sort((a, b) => a.mtime - b.mtime);
+  } catch {
+    return [];
+  }
+}
+
+// Recordings a crash or kill interrupted: files the recorders left in
+// bes-recording/ that no queue entry owns. Each is matched to its journal
+// entry (emergency, sequence, start time), checked for a playable MP4 index,
+// and queued once if valid. Invalid or unidentifiable files are kept and
+// reported as 'incomplete', never deleted. Runs inside the queue lock.
+async function recoverInterruptedRecordings(list: ClipRecord[]): Promise<{ recovered: number; incomplete: number }> {
+  let recovered = 0;
+  let incomplete = 0;
+  const inProgress = [...(await loadJournal())].sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
+  const owned = new Set(list.flatMap((r) => [r.localUri, r.sourceUri]).filter((u): u is string => Boolean(u)));
+
+  for (const kind of ['video', 'audio'] as const) {
+    // Written before this launch, and not already owned by a queue entry.
+    const orphans = recordingFiles(kind).filter(({ file, mtime }) => mtime < processStartedAt && !owned.has(file.uri));
+    for (const entry of inProgress.filter((e) => e.kind === kind)) {
+      const startedMs = Date.parse(entry.startedAt);
+      const index = orphans.findIndex(({ mtime }) => mtime >= startedMs - 1000);
+      if (index < 0) continue;
+      const [{ file, mtime }] = orphans.splice(index, 1);
+      const ext = file.name.split('.').pop() ?? (kind === 'video' ? 'mp4' : 'm4a');
+      const endedAt = new Date(Math.max(mtime, startedMs)).toISOString();
+      const name = clipFileName({ ...entry, endedAt, ext });
+      if (list.some((r) => r.id === name)) continue; // already recovered
+      const valid = hasCompleteMp4Index(file.uri);
+      let localUri = file.uri;
+      try {
+        localUri = await moveInto(file.uri, name);
+      } catch {}
+      list.push({
+        id: name,
+        kind,
+        emergencyId: entry.emergencyId,
+        sequence: entry.sequence,
+        facing: entry.facing,
+        startedAt: entry.startedAt,
+        endedAt,
+        localUri,
+        state: valid ? 'pending' : 'incomplete',
+        attempts: 0,
+      });
+      if (valid) recovered += 1;
+      else incomplete += 1;
+      trackEvent('evidence_recording_recovered', { kind, valid, identified: true });
+    }
+    // Interrupted recordings with no journal entry can't be tied to an
+    // emergency; keep and report them rather than guess.
+    for (const { file, mtime } of orphans) {
+      const id = `unidentified__${file.name}`;
+      if (list.some((r) => r.id === id)) continue;
+      const at = new Date(mtime).toISOString();
+      list.push({
+        id,
+        kind,
+        emergencyId: '',
+        sequence: 0,
+        facing: kind === 'video' ? 'back' : 'none',
+        startedAt: at,
+        endedAt: at,
+        localUri: file.uri,
+        state: 'incomplete',
+        attempts: 0,
+      });
+      incomplete += 1;
+      trackEvent('evidence_recording_recovered', { kind, valid: false, identified: false });
+    }
+  }
+
+  if (inProgress.length) {
+    journal = [];
+    await persistJournal();
+  }
+  return { recovered, incomplete };
 }
 
 export async function getClipQueueSummary(): Promise<QueueSummary> {
@@ -431,6 +706,7 @@ export async function getClipQueueSummary(): Promise<QueueSummary> {
     waiting: list.filter((r) => r.state === 'pending' || r.state === 'moving').length,
     conflict: list.filter((r) => r.state === 'conflict').length,
     lost: list.filter((r) => r.state === 'lost').length,
+    incomplete: list.filter((r) => r.state === 'incomplete').length,
     bytes,
   };
 }
@@ -455,6 +731,7 @@ export async function discardUnuploadedClips(): Promise<number> {
 
 export function __resetClipQueueForTests() {
   records = null;
+  journal = null;
   chain = Promise.resolve();
   working = null;
   failures = 0;

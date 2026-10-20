@@ -2,13 +2,21 @@ import { Emergency, EmergencyVideoSegment } from '../types/Emergency';
 import { Contact } from '../types/contact';
 import { apiRequest } from './apiClient';
 
+// `id` (generated on the phone at activation) makes the create idempotent:
+// retrying it after a lost response or an outage returns the same emergency.
+// `activatedAt`/`endedAt` carry the real times of an emergency recorded
+// while offline (see pendingEmergencies).
 export async function createEmergency(data: {
+  id?: string;
+  activatedAt?: string;
   latitude?: number;
   longitude?: number;
+  status?: 'ACTIVE' | 'RESOLVED';
+  endedAt?: string;
 }): Promise<Emergency> {
   return apiRequest<Emergency>('/api/emergency', {
     method: 'POST',
-    body: JSON.stringify({ ...data, status: 'ACTIVE', contactNotified: false }),
+    body: JSON.stringify({ ...data, status: data.status ?? 'ACTIVE', contactNotified: false }),
   });
 }
 

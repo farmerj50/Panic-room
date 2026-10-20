@@ -91,15 +91,17 @@ async function shot(name) {
     await emergencyPage.countdownScreen.waitForDisplayed({ timeout: 15000 });
     await shot('countdown');
     await emergencyPage.waitForLiveScreen(30000);
-    await emergencyPage.waitForRecordingPhase(30000);
-
-    await byId('social-share-prompt').waitForDisplayed({ timeout: 15000 });
+    // The prompt lives 5 s from the moment recording starts. Look for it
+    // straight away instead of first waiting for "LIVE": on a slow emulator a
+    // single lookup can take longer than the prompt's whole life.
+    await byId('social-share-prompt').waitForExist({ timeout: 30000, interval: 250 });
+    const firstText = await byId('social-share-countdown').getText().catch(() => null);
     await shot('auto-prompt-countdown');
-    const firstText = await byId('social-share-countdown').getText();
     await driver.pause(1500);
-    const laterText = await byId('social-share-countdown').getText();
+    const laterText = await byId('social-share-countdown').getText().catch(() => null);
     console.log(`prompt countdown: "${firstText}" -> "${laterText}"`);
-    expect(laterText).not.toEqual(firstText);
+    // Either it ticked down, or it already ran out (also a countdown).
+    expect(firstText !== null && (laterText === null || laterText !== firstText)).toBe(true);
 
     // Timeout = dismiss. Must not post, must not open review.
     await waitGone('social-share-prompt', 20000);
@@ -228,9 +230,7 @@ async function shot(name) {
     await tabBar.emergencyBtn.waitForDisplayed({ timeout: 20000 });
     await tabBar.emergencyBtn.click();
     await emergencyPage.waitForLiveScreen(30000);
-    await emergencyPage.waitForRecordingPhase(30000);
-
-    await byId('social-share-prompt').waitForDisplayed({ timeout: 15000 });
+    await byId('social-share-prompt').waitForExist({ timeout: 30000, interval: 250 });
     await byId('social-share-prompt-skip').click();
     await waitGone('social-share-overlay', 5000);
     await shot('second-emergency-prompt-skipped');

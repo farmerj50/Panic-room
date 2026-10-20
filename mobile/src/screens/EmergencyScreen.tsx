@@ -31,12 +31,14 @@ import {
   revokeLiveView,
   rotateLiveView,
   shareLiveView,
-  updateEmergency,
   type LiveViewLinkStatus,
 } from '../services/emergencyService';
+import { endEmergency, subscribeToPendingEmergencies } from '../services/pendingEmergencies';
 import { describeSmsResult } from '../utils/smsStatus';
 import {
+  clearRecordingJournal,
   enqueueClip,
+  journalRecordingStarted,
   releaseRetainedClips,
   resumeClipQueue,
   retainClipsFor,
@@ -44,7 +46,14 @@ import {
   waitForClipAttempt,
   type ClipOutcome,
 } from '../services/segmentQueue';
-import { formatMegabytes, getFreeBytes, shouldRecordVideo, storageLevel } from '../services/storageMonitor';
+import {
+  FULL_BELOW_BYTES,
+  formatMegabytes,
+  getFreeBytes,
+  isInsufficientStorageError,
+  shouldRecordVideo,
+  storageLevel,
+} from '../services/storageMonitor';
 import { clearInProgressEmergency, useAppStateEmergencyGuard } from '../hooks/useAppStateEmergencyGuard';
 import { mapUrl } from '../utils/mapUrl';
 import type { Contact } from '../types/contact';
@@ -61,8 +70,11 @@ import { useAuth } from '../context/AuthContext';
 import { useSubscription } from '../context/SubscriptionContext';
 import { trackEvent } from '../services/analyticsService';
 import { setRemindAfterEmergency } from '../services/socialSharingPrompts';
+import { claimForEmergency } from '../features/threatMonitor/services/CameraOwnershipService';
 
 const SOCIAL_PROVIDER_LABELS: Record<SocialProvider, string> = { tiktok: 'TikTok', instagram: 'Instagram' };
+// Retry schedule for the connected-accounts check after a failure at activation.
+export const SHARE_RETRY_DELAYS_MS = [3000, 10000, 30000, 60000];
 
 type CameraFacing = 'front' | 'back';
 
@@ -81,6 +93,11 @@ type VideoSegmentInfo = {
 // this many times before falling back to a full restart.
 const MAX_START_ATTEMPTS = 3;
 const START_RETRY_MS = 750;
+const STORAGE_FULL_NOTICE =
+  'Storage full — video paused and new audio may not be saved. Recordings already made are kept. Free up space now to resume.';
+// Remounts tried when the camera preview fails to start (e.g. still held).
+const CAMERA_MOUNT_RETRIES = 3;
+const CAMERA_MOUNT_RETRY_MS = 750;
 
 // In-session view of a finished segment (the social-share resolver reads
 // these). The durable upload itself is owned by segmentQueue.ts: the clip is
@@ -346,6 +363,11 @@ function EmergencyLiveScreen() {
   const [locationUnavailable, setLocationUnavailable] = useState(false);
   const [statusMessage, setStatusMessage] = useState('Emergency activation starting.');
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
+  // Offline-first activation: 'local' while this emergency exists only on the
+  // phone (no signal), 'synced' once it reached the server after that. Null
+  // when it was on the server from the start (nothing to say).
+  const [serverSync, setServerSync] = useState<'local' | 'synced' | null>(null);
+  const serverSyncUnsubRef = useRef<(() => void) | null>(null);
   // Voice-call outcome gets its own line: it used to share notificationStatus
   // with the SMS result, which arrives later and overwrote it.
   const [callStatus, setCallStatus] = useState<string | null>(null);
@@ -422,17 +444,27 @@ function EmergencyLiveScreen() {
   const allConnectionsRef = useRef<SocialConnection[]>([]);
   // null until a load succeeds — a failed load never produces a message.
   const [allConnections, setAllConnections] = useState<SocialConnection[] | null>(null);
-  const refreshShareableProviders = useCallback(async () => {
-    try {
-      const result = await listConnections();
-      allConnectionsRef.current = result.connections;
-      setAllConnections(result.connections);
-      const shareable = result.connections.filter((c) => c.status === 'connected' && c.enabledForEmergency);
-      setShareableProviders(shareable);
-      return shareable;
-    } catch {
-      return null;
-    }
+  // One request at a time: a retry, an activation and a Share tap that
+  // overlap all share the check already in flight.
+  const connectionsInFlightRef = useRef<Promise<SocialConnection[] | null> | null>(null);
+  const refreshShareableProviders = useCallback((): Promise<SocialConnection[] | null> => {
+    if (connectionsInFlightRef.current) return connectionsInFlightRef.current;
+    const run = (async () => {
+      try {
+        const result = await listConnections();
+        allConnectionsRef.current = result.connections;
+        setAllConnections(result.connections);
+        const shareable = result.connections.filter((c) => c.status === 'connected' && c.enabledForEmergency);
+        setShareableProviders(shareable);
+        return shareable;
+      } catch {
+        return null;
+      }
+    })().finally(() => {
+      connectionsInFlightRef.current = null;
+    });
+    connectionsInFlightRef.current = run;
+    return run;
   }, []);
 
   const { user } = useAuth();
@@ -495,6 +527,33 @@ function EmergencyLiveScreen() {
     }
   }, [isPremium, refreshShareableProviders, remindAfterEmergency, shareableProviders]);
 
+  // Social sharing only. If the connected-accounts check fails at activation
+  // (no signal, a token-refresh race), keep retrying while this emergency is
+  // on screen, so the auto prompt and setup note still appear once the
+  // network is back. Never touches recording, evidence, GPS or contacts.
+  const shareRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadShareableProvidersWithRetry = useCallback(
+    (isCurrent: () => boolean, attempt = 0) => {
+      if (shareRetryTimerRef.current) clearTimeout(shareRetryTimerRef.current);
+      shareRetryTimerRef.current = null;
+      void refreshShareableProviders().then((result) => {
+        if (result !== null || !isCurrent()) return;
+        const delay = SHARE_RETRY_DELAYS_MS[Math.min(attempt, SHARE_RETRY_DELAYS_MS.length - 1)];
+        shareRetryTimerRef.current = setTimeout(() => {
+          if (isCurrent()) loadShareableProvidersWithRetry(isCurrent, attempt + 1);
+        }, delay);
+      });
+    },
+    [refreshShareableProviders],
+  );
+  useEffect(
+    () => () => {
+      if (shareRetryTimerRef.current) clearTimeout(shareRetryTimerRef.current);
+      serverSyncUnsubRef.current?.();
+    },
+    [],
+  );
+
   // A share that failed because the account needs reconnecting: reload so the
   // note switches to "reconnect", even if an earlier note was dismissed.
   const handleShareResult = useCallback((result: { code?: string }) => {
@@ -523,6 +582,20 @@ function EmergencyLiveScreen() {
   const handleCameraReady = useCallback(() => {
     cameraReadyResolverRef.current?.();
     cameraReadyResolverRef.current = null;
+  }, []);
+
+  // The camera can be briefly unavailable (e.g. the AI Monitor is still
+  // letting go of it). Remount a few times before giving up; the ready gate
+  // is left as is, so the start flow's bounded wait still resolves on the
+  // retried mount.
+  const mountRetriesRef = useRef(0);
+  const handleMountError = useCallback((message?: string) => {
+    if (mountRetriesRef.current < CAMERA_MOUNT_RETRIES) {
+      mountRetriesRef.current += 1;
+      setTimeout(() => setCameraSessionKey((v) => v + 1), CAMERA_MOUNT_RETRY_MS);
+      return;
+    }
+    setStatusMessage(message || 'Camera preview could not start.');
   }, []);
 
   // Bounded wait — expo-camera's own docs say to wait for onCameraReady
@@ -660,12 +733,13 @@ function EmergencyLiveScreen() {
 
     const emergencyIdForUpload = activeEmergencyIdRef.current;
     activeEmergencyIdRef.current = null;
-    // Best-effort, like the uploads below: without this the server kept
-    // every past emergency as ACTIVE forever (Evidence showed them all as
-    // still active). Status is display-only server-side.
-    if (emergencyIdForUpload) {
-      updateEmergency(emergencyIdForUpload, { status: 'RESOLVED' }).catch(() => {});
-    }
+    // Without this the server kept every past emergency as ACTIVE forever
+    // (Evidence showed them all as still active). Never waits on the network:
+    // an emergency not yet on the server is created already resolved later,
+    // and a failed status update is retried (pendingEmergencies).
+    serverSyncUnsubRef.current?.();
+    serverSyncUnsubRef.current = null;
+    if (emergencyIdForUpload) void endEmergency(emergencyIdForUpload);
     if (emergencyIdForUpload && audioUri) {
       // Same durable queue as video: kept on the device until uploaded.
       enqueueClip({
@@ -682,6 +756,9 @@ function EmergencyLiveScreen() {
     // are no longer needed on the device.
     pendingSegmentUploadsRef.current = [];
     videoPausedForStorageRef.current = false;
+    // Stopped normally: its recordings were all handed to the queue above
+    // (queued ahead of this under the queue lock), so none are "interrupted".
+    if (emergencyIdForUpload) void clearRecordingJournal(emergencyIdForUpload);
     if (emergencyIdForUpload) void releaseRetainedClips(emergencyIdForUpload);
     void runClipQueue();
   }, [finalizeCurrentSegment, resolveEmergency, stopAudioCapture, stopLocationWatch]);
@@ -701,6 +778,7 @@ function EmergencyLiveScreen() {
     setLocation(null);
     setLocationUnavailable(false);
     setNotificationStatus(null);
+    setServerSync(null);
     setCallStatus(null);
     setStorageNotice(null);
     setLiveViewEnabled(false);
@@ -986,6 +1064,17 @@ function EmergencyLiveScreen() {
   const beginSegmentRecording = (segment: VideoSegmentInfo) => {
     currentSegmentRef.current = segment;
     segment.startAttempts = (segment.startAttempts ?? 0) + 1;
+    // Journal first (not awaited — recording never waits on the queue) so a
+    // crash mid-segment can be recovered at the next launch.
+    if (activeEmergencyIdRef.current) {
+      void journalRecordingStarted({
+        kind: 'video',
+        emergencyId: activeEmergencyIdRef.current,
+        sequence: segment.sequence,
+        facing: segment.facing,
+        startedAt: segment.startedAt,
+      });
+    }
     const recordingPromise = cameraRef.current?.recordAsync({ maxDuration: MAX_SEGMENT_SECONDS });
     videoRecordingPromiseRef.current = recordingPromise ?? null;
     const isCurrent = () => !segment.finalized && currentSegmentRef.current === segment && !emergencyStoppingRef.current;
@@ -1021,6 +1110,16 @@ function EmergencyLiveScreen() {
         void cutToNewSegmentRef.current(facingRef.current, { inPlace: true });
       },
       (error) => {
+        // A full disk won't fix itself by retrying: say so and pause video
+        // (the storage check resumes it once space is back).
+        if (isInsufficientStorageError(error) && isCurrent()) {
+          segment.finalized = true;
+          videoRecordingPromiseRef.current = null;
+          videoPausedForStorageRef.current = true;
+          setStorageNotice(STORAGE_FULL_NOTICE);
+          setStatusMessage('Storage full — video paused. Free up space now.');
+          return;
+        }
         console.warn(`Segment ${segment.sequence} recording failed to start — retrying`, error);
         retryStart();
       },
@@ -1034,10 +1133,17 @@ function EmergencyLiveScreen() {
   const describeStorage = (free: number | null) => {
     const level = storageLevel(free);
     if (level === 'ok' || free === null) return null;
+    if (free < FULL_BELOW_BYTES) return STORAGE_FULL_NOTICE;
     if (level === 'critical') return `Storage almost full (${formatMegabytes(free)} left) — video paused. Audio and GPS continue. Free up space to resume.`;
     if (level === 'reduced') return `Storage low (${formatMegabytes(free)} left) — recording video at lower quality.`;
     return `Storage low (${formatMegabytes(free)} left). Recordings are kept until they upload — connect to Wi-Fi or free up space.`;
   };
+  // While video is paused for storage the notice must say so — the phone's
+  // free-space figure and the recorder's own check can disagree.
+  const describePausedStorage = (free: number | null) =>
+    free === null || free < FULL_BELOW_BYTES
+      ? STORAGE_FULL_NOTICE
+      : `Storage low (${formatMegabytes(free)} left) — video paused until more space is free. Audio and GPS continue.`;
 
   // Runs every few seconds while the camera session is live: cuts a new
   // segment on schedule, applies the low-storage policy (never deleting
@@ -1047,13 +1153,15 @@ function EmergencyLiveScreen() {
     segmentCheckBusyRef.current = true;
     try {
       const free = getFreeBytes();
-      setStorageNotice(describeStorage(free));
+      const staysPaused = videoPausedForStorageRef.current && !shouldRecordVideo(free, true);
+      setStorageNotice(staysPaused ? describePausedStorage(free) : describeStorage(free));
       const segment = currentSegmentRef.current;
       const recording = Boolean(segment && !segment.finalized);
 
       if (!shouldRecordVideo(free, videoPausedForStorageRef.current)) {
         if (recording) {
           videoPausedForStorageRef.current = true;
+          setStorageNotice(describePausedStorage(free));
           await finalizeCurrentSegment();
           setStatusMessage('Storage almost full — video paused. Audio and GPS continue.');
         }
@@ -1144,11 +1252,11 @@ function EmergencyLiveScreen() {
     setSharedTo([]);
     setSetupNoteDismissed(false);
     setupNoteTrackedRef.current = false;
-    void refreshShareableProviders();
 
     triggerEmergency();
 
     const isCurrentSession = () => sessionRef.current === sessionId && !stopping.current;
+    loadShareableProvidersWithRetry(isCurrentSession);
 
     try {
       let camOk = false;
@@ -1169,6 +1277,11 @@ function EmergencyLiveScreen() {
           // Only mount the CameraView after we know permission is granted.
           // Mounting before this causes the browser to fire its own
           // getUserMedia request which logs a second "Permission denied" error.
+          // Emergency always gets the camera: the AI Monitor (if running)
+          // releases it first; this waits at most ~1 s and never throws.
+          await claimForEmergency();
+          if (!isCurrentSession()) return;
+          mountRetriesRef.current = 0;
           setCameraSessionKey((v) => v + 1);
           resetCameraReadyGate();
           setCameraMounted(true);
@@ -1208,7 +1321,7 @@ function EmergencyLiveScreen() {
         // Exited while the create request was in flight: stopEmergencyAssets
         // never saw this id, so close it out here rather than leave an
         // orphaned ACTIVE event in the user's Evidence history.
-        if (result.ok) updateEmergency(result.emergencyId, { status: 'RESOLVED' }).catch(() => {});
+        if (result.ok) void endEmergency(result.emergencyId);
         return;
       }
 
@@ -1217,15 +1330,40 @@ function EmergencyLiveScreen() {
         // Keep this emergency's uploaded clips on the device while it's on
         // screen (the social-share preview plays them).
         retainClipsFor(result.emergencyId);
-        // Live View decides the clip length; never blocks activation.
-        getLiveViewStatus(result.emergencyId)
-          .then((liveView) => {
+        // Live View decides the clip length; never blocks activation. It
+        // needs the emergency on the server, so without signal it's checked
+        // once the emergency gets there.
+        const loadLiveView = (id: string) =>
+          getLiveViewStatus(id)
+            .then((liveView) => {
+              if (!isCurrentSession()) return;
+              segmentIntervalMsRef.current = liveView.enabled ? LIVE_VIEW_SEGMENT_MS : DEFAULT_SEGMENT_MS;
+              setLiveViewEnabled(liveView.enabled);
+              setLiveViewLinks(liveView.links);
+            })
+            .catch(() => {});
+        if (result.serverConfirmed) {
+          setServerSync(null);
+          void loadLiveView(result.emergencyId);
+        } else {
+          setServerSync('local');
+          if (orderedContacts.length > 0) {
+            setNotificationStatus('No connection — trusted contacts have not been alerted yet. Bes will alert them as soon as it reconnects.');
+          }
+          serverSyncUnsubRef.current?.();
+          serverSyncUnsubRef.current = subscribeToPendingEmergencies((event) => {
+            if (event.type !== 'synced' || event.id !== result.emergencyId) return;
+            serverSyncUnsubRef.current?.();
+            serverSyncUnsubRef.current = null;
             if (!isCurrentSession()) return;
-            segmentIntervalMsRef.current = liveView.enabled ? LIVE_VIEW_SEGMENT_MS : DEFAULT_SEGMENT_MS;
-            setLiveViewEnabled(liveView.enabled);
-            setLiveViewLinks(liveView.links);
-          })
-          .catch(() => {});
+            if (event.serverId !== event.id && activeEmergencyIdRef.current === event.id) {
+              activeEmergencyIdRef.current = event.serverId;
+              retainClipsFor(event.serverId);
+            }
+            setServerSync('synced');
+            void loadLiveView(event.serverId);
+          });
+        }
       } else {
         setNotificationStatus('Backend event failed — recording and dialer still active.');
       }
@@ -1451,7 +1589,7 @@ function EmergencyLiveScreen() {
                         testID="emergency-camera-view"
                         accessibilityLabel="emergency-camera-view"
                         onCameraReady={handleCameraReady}
-                        onMountError={(e) => setStatusMessage(e.message || 'Camera preview could not start.')}
+                        onMountError={(e) => handleMountError(e.message)}
                       />
                       <TouchableOpacity
                         activeOpacity={0.82}
@@ -1488,7 +1626,22 @@ function EmergencyLiveScreen() {
 
               <View style={styles.statusPanel}>
                 <Text style={styles.statusText} testID="emergency-status-text" accessibilityLabel="emergency-status-text">{statusMessage}</Text>
-                {notificationStatus && <Text style={styles.notificationText}>{notificationStatus}</Text>}
+                {serverSync && (
+                  <Text
+                    style={serverSync === 'local' ? styles.storageText : styles.notificationText}
+                    testID="emergency-sync-status"
+                    accessibilityLabel={`emergency-sync-${serverSync}`}
+                  >
+                    {serverSync === 'local'
+                      ? 'Recording on this phone — no connection to Bes yet. Evidence uploads automatically once connected.'
+                      : 'Connected — evidence recorded without signal is uploading.'}
+                  </Text>
+                )}
+                {notificationStatus && (
+                  <Text style={styles.notificationText} testID="emergency-notification-text" accessibilityLabel="emergency-notification-text">
+                    {notificationStatus}
+                  </Text>
+                )}
                 {callStatus && (
                   <Text style={styles.notificationText} testID="emergency-call-status-text" accessibilityLabel="emergency-call-status-text">
                     {callStatus}

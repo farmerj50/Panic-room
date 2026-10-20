@@ -21,8 +21,14 @@ export function setupNotificationHandler() {
   Notif.setNotificationHandler({
     handleNotification: async (notification: { request: { identifier: string } }) => {
       const isSosButton = notification.request.identifier === NOTIFICATION_ID;
+      // The SOS button must always be listed in the shade and on the lock
+      // screen — it's only the pop-up banner and sound we suppress. (With
+      // every show flag false, Android never posts a notification that
+      // arrives while the app is open, and both enabling the button and
+      // restoring it at launch happen while the app is open.)
       return {
-        shouldShowAlert: !isSosButton,
+        shouldShowBanner: !isSosButton,
+        shouldShowList: true,
         shouldPlaySound: !isSosButton,
         shouldSetBadge: false,
       };
@@ -76,7 +82,8 @@ async function registerSosCategory() {
 
 /**
  * Posts a persistent notification in the notification shade and on the lock screen.
- * The "ACTIVATE SOS" button can be tapped without unlocking the device.
+ * Tapping "ACTIVATE SOS" skips the Bes app PIN; on a locked phone the OS may
+ * still require device authentication before the app opens.
  * Returns false if expo-notifications isn't installed or permission was denied.
  */
 export async function enableLockScreenButton(): Promise<boolean> {
@@ -100,7 +107,9 @@ export async function enableLockScreenButton(): Promise<boolean> {
         autoDismiss: false,
         priority: Notif.AndroidNotificationPriority?.MAX,
       },
-      trigger: null,
+      // Android: post it on the SOS channel (max importance, public on the
+      // lock screen) rather than Expo's default channel.
+      trigger: Platform.OS === 'android' ? { channelId: CHANNEL_ID } : null,
     });
 
     await AsyncStorage.setItem(ENABLED_KEY, 'true');

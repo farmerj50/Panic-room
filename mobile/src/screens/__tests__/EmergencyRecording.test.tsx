@@ -16,18 +16,21 @@ const mockRecordings: Recording[] = [];
 let mockClipCounter = 0;
 // recordAsync() calls that fail to start (native "could not create video file").
 let mockFailStarts = 0;
+let mockStartError = 'Starting video recording failed - could not create video file.';
 let mockStartCalls = 0;
 let mockCameraMounts = 0;
+// Mounts that fail with onMountError (camera briefly held by something else).
+let mockMountErrors = 0;
 
 jest.mock('expo-camera', () => {
   const React = require('react');
-  const CameraView = React.forwardRef((props: { onCameraReady?: () => void }, ref: unknown) => {
+  const CameraView = React.forwardRef((props: { onCameraReady?: () => void; onMountError?: (e: { message: string }) => void }, ref: unknown) => {
     React.useImperativeHandle(ref, () => ({
       recordAsync: jest.fn(() => {
         mockStartCalls += 1;
         if (mockFailStarts > 0) {
           mockFailStarts -= 1;
-          return Promise.reject(new Error('Starting video recording failed - could not create video file.'));
+          return Promise.reject(new Error(mockStartError));
         }
         return (
           new Promise((resolve) => {
@@ -44,6 +47,11 @@ jest.mock('expo-camera', () => {
     }));
     React.useEffect(() => {
       mockCameraMounts += 1;
+      if (mockMountErrors > 0) {
+        mockMountErrors -= 1;
+        const e = setTimeout(() => props.onMountError?.({ message: 'Camera component could not be rendered' }), 10);
+        return () => clearTimeout(e);
+      }
       const t = setTimeout(() => props.onCameraReady?.(), 10);
       return () => clearTimeout(t);
     }, []);
@@ -80,7 +88,7 @@ jest.mock('../../context/TourContext', () => ({
 }));
 
 let mockCallMode = 'none';
-const mockRunCoreActivation = jest.fn().mockResolvedValue({ ok: true, emergencyId: 'e1', location: null });
+const mockRunCoreActivation = jest.fn().mockResolvedValue({ ok: true, emergencyId: 'e1', location: null, serverConfirmed: true });
 const mockContacts = [
   { id: 'c1', name: 'Sam', phoneNumber: '+15551230001', isPriority: true },
   { id: 'c2', name: 'Riley', phoneNumber: '+15551230002', isPriority: false },
@@ -132,9 +140,23 @@ jest.mock('../../services/emergencyService', () => ({
   revokeLiveView: (...args: unknown[]) => mockRevokeLiveView(...args),
 }));
 
+const mockEndEmergency = jest.fn().mockResolvedValue(undefined);
+let mockSyncListeners: Array<(e: unknown) => void> = [];
+jest.mock('../../services/pendingEmergencies', () => ({
+  endEmergency: (...args: unknown[]) => mockEndEmergency(...args),
+  subscribeToPendingEmergencies: (l: (e: unknown) => void) => {
+    mockSyncListeners.push(l);
+    return () => {
+      mockSyncListeners = mockSyncListeners.filter((x) => x !== l);
+    };
+  },
+}));
+
 const mockEnqueueClip = jest.fn();
 jest.mock('../../services/segmentQueue', () => ({
   enqueueClip: (...args: unknown[]) => mockEnqueueClip(...args),
+  journalRecordingStarted: jest.fn().mockResolvedValue(undefined),
+  clearRecordingJournal: jest.fn().mockResolvedValue(undefined),
   releaseRetainedClips: jest.fn().mockResolvedValue(undefined),
   resumeClipQueue: jest.fn().mockResolvedValue(undefined),
   retainClipsFor: jest.fn(),
@@ -146,6 +168,18 @@ let mockFreeBytes: number | null = 50 * 1024 * 1024 * 1024;
 jest.mock('../../services/storageMonitor', () => ({
   ...jest.requireActual('../../services/storageMonitor'),
   getFreeBytes: () => mockFreeBytes,
+}));
+
+// The AI Monitor hand-off: records how many cameras were mounted when
+// Emergency claimed the camera.
+const mockClaimAtMounts: number[] = [];
+let mockClaimDelayMs = 0;
+jest.mock('../../features/threatMonitor/services/CameraOwnershipService', () => ({
+  claimForEmergency: jest.fn(() => {
+    mockClaimAtMounts.push(mockCameraMounts);
+    if (!mockClaimDelayMs) return Promise.resolve({ outcome: 'released' });
+    return new Promise((resolve) => setTimeout(() => resolve({ outcome: 'released' }), mockClaimDelayMs));
+  }),
 }));
 
 import EmergencyScreen from '../EmergencyScreen';
@@ -178,6 +212,10 @@ describe('continuous emergency recording', () => {
     mockFailStarts = 0;
     mockStartCalls = 0;
     mockCameraMounts = 0;
+    mockStartError = 'Starting video recording failed - could not create video file.';
+    mockMountErrors = 0;
+    mockClaimAtMounts.length = 0;
+    mockClaimDelayMs = 0;
     mockFreeBytes = 50 * 1024 * MB;
     mockLiveView.enabled = false;
     mockLiveView.links = [];
@@ -191,6 +229,38 @@ describe('continuous emergency recording', () => {
   afterEach(() => {
     jest.useRealTimers();
     jest.restoreAllMocks();
+  });
+
+  test('claims the camera from the AI Monitor before mounting its own', async () => {
+    await startEmergency();
+    expect(mockClaimAtMounts).toEqual([0]);
+  });
+
+  test('still records when the AI Monitor takes the full second to let go', async () => {
+    mockClaimDelayMs = 1000;
+    render(<EmergencyScreen />);
+    await advance(8000);
+    expect(mockClaimAtMounts).toEqual([0]);
+    expect(mockRecordings).toHaveLength(1);
+  });
+
+  test('remounts the camera when it is briefly unavailable, then records', async () => {
+    mockMountErrors = 2;
+    render(<EmergencyScreen />);
+    await advance(9000);
+    expect(mockCameraMounts).toBe(3);
+    expect(mockRecordings).toHaveLength(1);
+    expect(screen.queryByText(/could not be rendered|could not start/)).toBeNull();
+  });
+
+  test('reports the camera error after the remount attempts run out', async () => {
+    mockMountErrors = 10;
+    render(<EmergencyScreen />);
+    await advance(12000);
+    // first mount + 3 retries + the start flow's existing not-ready remount
+    expect(mockCameraMounts).toBe(5);
+    expect(mockRecordings).toHaveLength(0);
+    expect(screen.getByText(/could not be rendered/)).toBeTruthy();
   });
 
   test('recording restarts automatically when the camera stops on its own (5-minute cap)', async () => {
@@ -310,6 +380,45 @@ describe('continuous emergency recording', () => {
     await advance(20_000, 5000);
     expect(mockRecordings).toHaveLength(0);
   });
+
+  test('a full disk shows an explicit storage-full notice and pauses video', async () => {
+    mockFreeBytes = 0;
+    render(<EmergencyScreen />);
+    await advance(7000);
+    expect(mockRecordings).toHaveLength(0);
+    expect(screen.getByText(/Storage full — video paused/)).toBeTruthy();
+  });
+
+  test('a recording that fails because storage ran out is not retried in a loop; the user is told', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockStartError = 'Video recording failed: Insufficient storage space. The available storage (0 bytes) is below the required threshold of 52428800 bytes.';
+    mockFailStarts = 5;
+    render(<EmergencyScreen />);
+    await advance(7000);
+    expect(mockStartCalls).toBe(1);
+    expect(screen.getAllByText(/Storage full/).length).toBeGreaterThan(0);
+    // The phone still reports some free space: the notice must not claim video is recording.
+    mockFreeBytes = 140 * MB;
+    await advance(6000);
+    expect(screen.queryByText(/recording video at lower quality/)).toBeNull();
+    expect(screen.getByText(/video paused until more space is free/)).toBeTruthy();
+  });
+
+  test('journals each segment before recording so a crash can be recovered, and clears it on a normal exit', async () => {
+    const queue = jest.requireMock('../../services/segmentQueue');
+    queue.journalRecordingStarted.mockClear();
+    queue.clearRecordingJournal.mockClear();
+    await startEmergency();
+    expect(queue.journalRecordingStarted).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'video', emergencyId: 'e1', sequence: 1 }),
+    );
+    expect(queue.clearRecordingJournal).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('emergency-exit-btn'));
+    });
+    await advance(2000);
+    expect(queue.clearRecordingJournal).toHaveBeenCalledWith('e1');
+  });
 });
 
 describe('Live View actions', () => {
@@ -425,6 +534,54 @@ describe('social share availability', () => {
     mockListConnections.mockRejectedValueOnce(new Error('401 refresh race')).mockResolvedValue({ connections: [TIKTOK] });
     await startEmergency();
     expect(mockOverlayProps?.providers).toEqual([TIKTOK]);
+  });
+
+  test('a failed check at activation is retried, so the prompt can still show once the network is back', async () => {
+    // Mount sees nothing; the activation check fails (no signal); the first
+    // retry, 3 s later, succeeds.
+    mockListConnections
+      .mockResolvedValueOnce({ connections: [] })
+      .mockRejectedValueOnce(new Error('Network request failed'))
+      .mockResolvedValue({ connections: [TIKTOK] });
+    await startEmergency();
+    await advance(3500);
+    expect(mockOverlayProps?.providers).toEqual([TIKTOK]);
+  });
+
+  test('keeps retrying with growing gaps while the check fails, and stops after exit', async () => {
+    mockListConnections.mockResolvedValueOnce({ connections: [] }).mockRejectedValue(new Error('Network request failed'));
+    await startEmergency();
+    const afterActivation = mockListConnections.mock.calls.length;
+    await advance(3000 + 10000);
+    expect(mockListConnections.mock.calls.length).toBe(afterActivation + 2);
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('emergency-exit-btn'));
+    });
+    const atExit = mockListConnections.mock.calls.length;
+    await advance(200000);
+    expect(mockListConnections.mock.calls.length).toBe(atExit);
+  });
+
+  test('overlapping checks share one request (no duplicates)', async () => {
+    let resolveSlow: (v: unknown) => void = () => {};
+    mockListConnections.mockResolvedValueOnce({ connections: [] }).mockImplementationOnce(() => new Promise((r) => (resolveSlow = r)));
+    render(<EmergencyScreen />);
+    await advance(7000); // activation check is now in flight
+    const inFlight = mockListConnections.mock.calls.length;
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('emergency-share-btn')); // would re-check: joins the one in flight
+    });
+    expect(mockListConnections.mock.calls.length).toBe(inFlight);
+    await act(async () => resolveSlow({ connections: [TIKTOK] }));
+    expect(mockOverlayProps?.providers).toEqual([TIKTOK]);
+  });
+
+  test('does not retry once the check succeeds', async () => {
+    mockListConnections.mockResolvedValue({ connections: [TIKTOK] });
+    await startEmergency();
+    const calls = mockListConnections.mock.calls.length;
+    await advance(120000);
+    expect(mockListConnections.mock.calls.length).toBe(calls);
   });
 
   test('Share re-checks connections when none are loaded, then opens sharing', async () => {
@@ -582,3 +739,62 @@ describe('social sharing setup note (emergency screen)', () => {
     expect(mockRecordings.length).toBeGreaterThanOrEqual(2);
   });
 });
+
+describe('offline-first activation (no signal)', () => {
+  const liveViewMock = () => jest.requireMock('../../services/emergencyService').getLiveViewStatus as jest.Mock;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    mockRecordings.length = 0;
+    mockFreeBytes = 50 * 1024 * MB;
+    mockLiveView.enabled = false;
+    mockSyncListeners = [];
+    mockEndEmergency.mockClear();
+    liveViewMock().mockClear();
+    mockEnqueueClip.mockReset();
+    mockEnqueueClip.mockImplementation(async (clip: { sourceUri: string }) => ({ id: clip.sourceUri, localUri: clip.sourceUri }));
+    mockRunCoreActivation.mockResolvedValue({ ok: true, emergencyId: 'local-1', location: null, serverConfirmed: false });
+  });
+
+  afterEach(() => {
+    mockRunCoreActivation.mockResolvedValue({ ok: true, emergencyId: 'e1', location: null, serverConfirmed: true });
+    jest.useRealTimers();
+  });
+
+  test('records on the phone, says so, and never claims contacts were alerted', async () => {
+    await startEmergency();
+    expect(screen.getByLabelText('emergency-sync-local')).toBeTruthy();
+    expect(screen.getByTestId('emergency-notification-text').props.children).toMatch(/have not been alerted yet/);
+    expect(screen.getByTestId('emergency-share-btn')).toBeTruthy(); // sharing is still offered
+    expect(liveViewMock()).not.toHaveBeenCalled(); // needs the server
+  });
+
+  test('clips recorded without signal go into the durable upload queue under the local id', async () => {
+    await startEmergency();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('emergency-exit-btn'));
+    });
+    await advance(1000);
+    const videoClips = mockEnqueueClip.mock.calls.filter(([c]) => c.kind === 'video');
+    expect(videoClips.length).toBeGreaterThanOrEqual(1);
+    expect(videoClips.every(([c]) => c.emergencyId === 'local-1')).toBe(true);
+    expect(mockEndEmergency).toHaveBeenCalledWith('local-1');
+  });
+
+  test('once it reaches the server: status updates and Live View is loaded', async () => {
+    await startEmergency();
+    await act(async () => {
+      for (const l of mockSyncListeners) l({ type: 'synced', id: 'local-1', serverId: 'local-1', endedBeforeSync: false });
+    });
+    expect(screen.getByLabelText('emergency-sync-synced')).toBeTruthy();
+    expect(liveViewMock()).toHaveBeenCalledWith('local-1');
+  });
+
+  test('online activation shows no sync line at all', async () => {
+    mockRunCoreActivation.mockResolvedValue({ ok: true, emergencyId: 'e1', location: null, serverConfirmed: true });
+    await startEmergency();
+    expect(screen.queryByTestId('emergency-sync-status')).toBeNull();
+    expect(liveViewMock()).toHaveBeenCalledWith('e1');
+  });
+});
+

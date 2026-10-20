@@ -24,6 +24,7 @@ import { getExistingOnboardingVariant } from '../services/experiments';
 import { hasFiredHomeViewedFirst, markHomeViewedFirstFired } from '../services/sessionFlags';
 import { getCameraStatus } from '../services/corePermissions';
 import SocialSharingCard from '../components/SocialSharingCard';
+import AIMonitorCard from '../features/threatMonitor/components/AIMonitorCard';
 
 import appIcon from '../../assets/icon.png';
 import heroBg from '../../assets/images/hero-bg.webp';
@@ -375,6 +376,7 @@ export default function HomeScreen() {
           </View>
 
           <SocialSharingCard />
+          <AIMonitorCard />
 
           <View style={[styles.panelGrid, !isWide && styles.stackedGrid]}>
             <LinearGradient
