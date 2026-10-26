@@ -80,6 +80,11 @@ Unchanged: the production threat engine and `THREAT_DETECTORS`, where the confro
   - a flip clears events and old-camera frames are ignored;
   - an Emergency claim stops and clears it.
 - **Full Jest:** 50 suites, 533 passed, 2 skipped. `tsc` is clean, and the frozen fingerprint is unchanged.
+- **Emulator smoke** (x86_64 test APK, all AI flags plus behavior, local backend):
+  - `aiBehavior.e2e.js` passed 4/4: the panel defaults, running plus 2 flips plus a clean stop, SOS handing off to Emergency (recording), and background leaving it idle.
+  - `aiProximity.e2e.js` passed 5/5, including 20 flips and camera permission being revoked.
+
+  The emulator camera shows no people, so detection itself is checked only on real phones.
 
 Synthetic detection, 20 seeds each, "active" event raised. These numbers show the logic works, not how accurate it is in the real world.
 
