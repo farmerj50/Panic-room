@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -9,6 +9,8 @@ import CrowdMetricsPanel from '../components/CrowdMetricsPanel';
 import DetectionOverlay from '../components/DetectionOverlay';
 import MonitorControls from '../components/MonitorControls';
 import ProximityAlertSettings from '../components/ProximityAlertSettings';
+import BehaviorEventsPanel from '../components/BehaviorEventsPanel';
+import { BEHAVIOR_LABEL } from '../services/BehaviorEventEngine';
 import ThreatDashboard from '../components/ThreatDashboard';
 import { isAiMonitorEnabled } from '../config/threatMonitorConfig';
 import { useThreatMonitor } from '../hooks/useThreatMonitor';
@@ -60,7 +62,28 @@ function AIMonitor() {
   const [viewSize, setViewSize] = useState({ width: 0, height: 0 });
 
   const granted = permission?.granted === true;
-  const { proximityAlert, dismissProximityAlert } = monitor;
+  const { proximityAlert, dismissProximityAlert, behaviorAlert, dismissBehaviorAlert } = monitor;
+
+  useEffect(() => {
+    if (!behaviorAlert) return;
+    const timer = setTimeout(dismissBehaviorAlert, PROXIMITY_BANNER_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [behaviorAlert]);
+
+  // Which people are linked by a current (non-ended) movement event.
+  const links = useMemo(() => {
+    if (!monitor.behaviorEnabled || !monitor.behavior) return null;
+    const m = new Map<number, Set<number>>();
+    for (const e of monitor.behavior.events) {
+      for (const id of e.trackIds) {
+        const others = m.get(id) ?? new Set<number>();
+        e.trackIds.filter((x) => x !== id).forEach((x) => others.add(x));
+        m.set(id, others);
+      }
+    }
+    return new Map([...m].map(([id, others]) => [id, [...others]]));
+  }, [monitor.behaviorEnabled, monitor.behavior]);
 
   useEffect(() => {
     if (!proximityAlert) return;
@@ -117,6 +140,7 @@ function AIMonitor() {
             viewSize={viewSize}
             mirrored={monitor.facing === 'front'}
             proximity={monitor.proximityEnabled ? monitor.proximity : null}
+            links={links}
           />
         )}
         {!monitor.cameraProps.active && (
@@ -133,7 +157,14 @@ function AIMonitor() {
             <Text style={styles.statusText}>Switching camera…</Text>
           </View>
         )}
-        {proximityAlert && monitor.status === 'running' && (
+        {behaviorAlert && monitor.status === 'running' && (
+          <TouchableOpacity style={[styles.banner, styles.bannerBehavior]} onPress={dismissBehaviorAlert} testID="ai-behavior-banner" accessibilityLabel="ai-behavior-banner">
+            <Text style={styles.bannerText}>
+              {BEHAVIOR_LABEL[behaviorAlert.event.kind]} in camera view ({behaviorAlert.event.trackIds.map((id) => `#${id}`).join(', ')})
+            </Text>
+          </TouchableOpacity>
+        )}
+        {proximityAlert && !behaviorAlert && monitor.status === 'running' && (
           <TouchableOpacity style={styles.banner} onPress={dismissProximityAlert} testID="ai-proximity-banner" accessibilityLabel="ai-proximity-banner">
             <Text style={styles.bannerText}>Someone is getting closer in camera view (#{proximityAlert.trackId})</Text>
           </TouchableOpacity>
@@ -190,6 +221,15 @@ function AIMonitor() {
         >
           <Text style={styles.sosText}>SOS — Emergency</Text>
         </TouchableOpacity>
+
+        {monitor.behaviorEnabled && (
+          <BehaviorEventsPanel
+            running={monitor.status === 'running'}
+            snapshot={monitor.behavior}
+            alertsOn={monitor.behaviorAlertsOn}
+            onAlertsChange={monitor.setBehaviorAlertsOn}
+          />
+        )}
 
         {monitor.proximityEnabled && (
           <ProximityAlertSettings settings={monitor.proximitySettings} onChange={monitor.setProximitySettings} />
@@ -272,6 +312,7 @@ const styles = StyleSheet.create({
     top: 12,
   },
   banner: { backgroundColor: 'rgba(251,191,36,0.95)', borderRadius: 12, bottom: 12, left: 12, padding: 10, position: 'absolute', right: 12 },
+  bannerBehavior: { backgroundColor: 'rgba(201,184,255,0.95)' },
   bannerText: { color: '#1a1300', fontSize: 14, fontWeight: '800', textAlign: 'center' },
   dot: { backgroundColor: '#8e88a8', borderRadius: 4, height: 8, width: 8 },
   dotOn: { backgroundColor: '#34d399' },

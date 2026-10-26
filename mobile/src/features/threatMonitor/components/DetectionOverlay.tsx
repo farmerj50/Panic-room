@@ -11,10 +11,12 @@ type Props = {
   mirrored?: boolean;
   // Per-person getting closer / moving away, when that feature is on.
   proximity?: Map<number, PersonProximity> | null;
+  // Track → the other people it has a movement event with (behavior feature).
+  links?: Map<number, number[]> | null;
 };
 
 // Boxes and temporary track numbers over the live preview. Display only.
-export default function DetectionOverlay({ people, frameSize, viewSize, mirrored, proximity }: Props) {
+export default function DetectionOverlay({ people, frameSize, viewSize, mirrored, proximity, links }: Props) {
   if (!frameSize) return null;
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill} testID="ai-monitor-overlay">
@@ -23,6 +25,7 @@ export default function DetectionOverlay({ people, frameSize, viewSize, mirrored
         if (!rect) return null;
         const fast = p.motion.suddenChange;
         const state = proximity?.get(p.trackId)?.state;
+        const linked = links?.get(p.trackId);
         return (
           <View
             key={p.trackId}
@@ -38,6 +41,11 @@ export default function DetectionOverlay({ people, frameSize, viewSize, mirrored
                 accessibilityLabel={`ai-monitor-proximity-${p.trackId}-${state}`}
               >
                 {PROXIMITY_SYMBOL[state]} {PROXIMITY_LABEL[state]}
+              </Text>
+            )}
+            {linked && linked.length > 0 && (
+              <Text style={[styles.chip, styles.link, state ? styles.linkLow : null]} numberOfLines={1} testID={`ai-monitor-link-${p.trackId}`}>
+                ↔ {linked.map((id) => `#${id}`).join(' ')}
               </Text>
             )}
           </View>
@@ -76,4 +84,6 @@ const styles = StyleSheet.create({
     top: 16,
   },
   chipCloser: { color: '#fbbf24' },
+  link: { color: '#c9b8ff' },
+  linkLow: { top: 30 },
 });

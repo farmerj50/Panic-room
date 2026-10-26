@@ -35,6 +35,12 @@ export function isAiProximityEnabled(): boolean {
   return isAiMonitorEnabled() && process.env.EXPO_PUBLIC_AI_PROXIMITY_ENABLED === '1';
 }
 
+// Behavioral event candidates between people (pursuit-like movement, close
+// sudden interaction, possible struggle). Off unless the build sets the flag.
+export function isAiBehaviorEventsEnabled(): boolean {
+  return isAiMonitorEnabled() && process.env.EXPO_PUBLIC_AI_BEHAVIOR_EVENTS_ENABLED === '1';
+}
+
 // How detected events are kept and shown (see threat/events/ThreatEventLog).
 export const THREAT_EVENT_CONFIG = {
   // An ongoing event with no fresh evidence for this long is shown as ended.

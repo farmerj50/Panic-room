@@ -9,6 +9,7 @@ import {
   MONITOR_CONFIG,
   THREAT_EVENT_CONFIG,
   isAiCameraFlipEnabled,
+  isAiBehaviorEventsEnabled,
   isAiProximityEnabled,
   isAiTestHooksEnabled,
   isThreatDetectionEnabled,
@@ -19,6 +20,7 @@ import { computeCrowdMetrics } from '../services/CrowdMetricsService';
 import { PersonTracker } from '../services/PersonTrackingService';
 import { ProximityEstimator, type PersonProximity, type ProximitySensitivity } from '../services/ProximityEstimator';
 import { ProximityAlerter } from '../services/proximityAlerts';
+import { BehaviorEventEngine, type BehaviorEvent, type BehaviorSnapshot } from '../services/BehaviorEventEngine';
 import { NOT_YET_SUPPORTED, THREAT_DETECTORS } from '../threat/detectors';
 import { detectionState, detectorStatuses } from '../threat/events/detectionState';
 import { sessionThreatEvents, type ThreatEvent } from '../threat/events/ThreatEventLog';
@@ -35,6 +37,8 @@ export type ProximityAlert = { trackId: number; at: number };
 
 export const FACING_KEY = 'bes_ai_monitor_facing';
 export const PROXIMITY_SETTINGS_KEY = 'bes_ai_proximity_settings';
+export const BEHAVIOR_ALERTS_KEY = 'bes_ai_behavior_alerts';
+export type BehaviorAlert = { event: BehaviorEvent; at: number };
 const DEFAULT_PROXIMITY_SETTINGS: ProximitySettings = { alertEnabled: false, vibrate: false, sensitivity: 'normal' };
 // If the restarted camera never reports running, stop blocking further flips.
 const FLIP_TIMEOUT_MS = 5000;
@@ -91,11 +95,25 @@ export function useThreatMonitor() {
   const [proximitySettings, setProximitySettingsState] = useState<ProximitySettings>(DEFAULT_PROXIMITY_SETTINGS);
   const proximitySettingsRef = useRef(DEFAULT_PROXIMITY_SETTINGS);
 
+  // Behavioral event candidates between people (flagged). Shown in the panel;
+  // a banner only for newly active events, and only if the user opted in.
+  const behaviorEnabled = useMemo(() => isAiBehaviorEventsEnabled(), []);
+  const behaviorRef = useRef(new BehaviorEventEngine());
+  const [behavior, setBehavior] = useState<BehaviorSnapshot | null>(null);
+  const [behaviorAlert, setBehaviorAlert] = useState<BehaviorAlert | null>(null);
+  const [behaviorAlertsOn, setBehaviorAlertsOnState] = useState(false);
+  const behaviorAlertsRef = useRef(false);
+  const behaviorFailedRef = useRef(false);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         if (flipEnabled && (await AsyncStorage.getItem(FACING_KEY)) === 'front' && !cancelled && !activeRef.current) setFacing('front');
+        if (behaviorEnabled && (await AsyncStorage.getItem(BEHAVIOR_ALERTS_KEY)) === '1' && !cancelled) {
+          behaviorAlertsRef.current = true;
+          setBehaviorAlertsOnState(true);
+        }
         if (proximityEnabled) {
           const raw = await AsyncStorage.getItem(PROXIMITY_SETTINGS_KEY);
           if (raw && !cancelled) {
@@ -111,7 +129,14 @@ export function useThreatMonitor() {
     return () => {
       cancelled = true;
     };
-  }, [flipEnabled, proximityEnabled]);
+  }, [flipEnabled, proximityEnabled, behaviorEnabled]);
+
+  const setBehaviorAlertsOn = useCallback((on: boolean) => {
+    behaviorAlertsRef.current = on;
+    setBehaviorAlertsOnState(on);
+    if (!on) setBehaviorAlert(null);
+    AsyncStorage.setItem(BEHAVIOR_ALERTS_KEY, on ? '1' : '0').catch(() => {});
+  }, []);
 
   const setProximitySettings = useCallback((patch: Partial<ProximitySettings>) => {
     const next = { ...proximitySettingsRef.current, ...patch };
@@ -127,8 +152,11 @@ export function useThreatMonitor() {
     poseCarryRef.current.reset();
     proximityRef.current.reset();
     alerterRef.current.reset();
+    behaviorRef.current.reset();
     setProximity(null);
     setProximityAlert(null);
+    setBehavior(null);
+    setBehaviorAlert(null);
     setAssessment(null);
     setFrame(null);
   }, []);
@@ -173,6 +201,7 @@ export function useThreatMonitor() {
     framesRef.current = 0;
     resetSceneState();
     threatFailedRef.current = false;
+    behaviorFailedRef.current = false;
     forceFailRef.current = false;
     setThreatFailed(false);
     firstFrameAtRef.current = null;
@@ -311,6 +340,22 @@ export function useThreatMonitor() {
         trackEvent('ai_monitor_proximity_alert');
       }
     }
+    if (behaviorEnabled && !behaviorFailedRef.current) {
+      // Candidates only: never contacts anyone or starts Emergency. A failure
+      // here stops this analysis, never people detection.
+      try {
+        const snap = behaviorRef.current.update(monitorFrame);
+        setBehavior(snap);
+        if (snap.alert && behaviorAlertsRef.current) {
+          setBehaviorAlert({ event: snap.alert, at: Date.now() });
+          trackEvent('ai_monitor_behavior_alert', { kind: snap.alert.kind });
+        }
+      } catch (error) {
+        console.warn('[AIMonitor] behavior analysis failed', error);
+        behaviorFailedRef.current = true;
+        setBehavior(null);
+      }
+    }
     if (!threatsEnabled || threatFailedRef.current) return;
     // Advisory only: the assessment is shown to the user, never acted on.
     // A failure here stops threat analysis but never people detection.
@@ -326,7 +371,7 @@ export function useThreatMonitor() {
       setAssessment(null);
       sessionThreatEvents.endAll(Date.now(), 'stopped');
     }
-  }, [threatsEnabled, proximityEnabled]);
+  }, [threatsEnabled, proximityEnabled, behaviorEnabled]);
 
   const running = status === 'running';
   const detection = useMemo(
@@ -397,6 +442,12 @@ export function useThreatMonitor() {
     proximity,
     proximityAlert,
     dismissProximityAlert: () => setProximityAlert(null),
+    behaviorEnabled,
+    behavior,
+    behaviorAlert,
+    dismissBehaviorAlert: () => setBehaviorAlert(null),
+    behaviorAlertsOn,
+    setBehaviorAlertsOn,
     proximitySettings,
     setProximitySettings,
     cameraProps: {
