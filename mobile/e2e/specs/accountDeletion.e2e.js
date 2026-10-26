@@ -63,9 +63,11 @@ describe('PanicRoom account deletion', () => {
     await shot('screen-free-user');
 
     // Disabled until a password is entered.
+    await scrollTo('~delete-account-confirm-btn');
     expect(await $('~delete-account-confirm-btn').getAttribute('enabled')).toBe('false');
     await $('~delete-account-password-input').setValue(password);
     try { await driver.hideKeyboard(); } catch {}
+    await scrollTo('~delete-account-confirm-btn');
     expect(await $('~delete-account-confirm-btn').getAttribute('enabled')).toBe('true');
     await shot('screen-password-entered');
 
@@ -129,10 +131,12 @@ describe('PanicRoom account deletion', () => {
         await scrollTo('~delete-account-password-input');
         await $('~delete-account-password-input').setValue(password);
         try { await driver.hideKeyboard(); } catch {}
+        await scrollTo('~delete-account-confirm-btn');
         expect(await $('~delete-account-confirm-btn').getAttribute('enabled')).toBe('false');
 
         await scrollTo('~delete-account-subscription-ack');
         await $('~delete-account-subscription-ack').click();
+        await scrollTo('~delete-account-confirm-btn');
         await scrollTo('~delete-account-confirm-btn');
         expect(await $('~delete-account-confirm-btn').getAttribute('enabled')).toBe('true');
         await shot('screen-pro-acknowledged');
