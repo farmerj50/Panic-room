@@ -26,6 +26,14 @@ const byId = (id) => $(`android=new UiSelector().resourceId("${id}")`);
 const shot = (name) => browser.saveScreenshot(path.join(SHOTS, `${name}.png`));
 const FILL = '/sdcard/Download/bes-fill';
 const freeMb = () => Math.round(Number(shell('df -k /data | tail -1').trim().split(/\s+/)[3]) / 1024);
+// One dd can stop short of the target, so keep filling until df shows ~80 MB.
+// On a freshly wiped AVD the app's StatFs reading stays ~140 MB above df, so
+// the "video paused" tier (< 100 MB) may be unreachable there.
+function fillStorage() {
+  for (let i = 0; i < 5 && freeMb() > 100; i++) {
+    shell(`dd if=/dev/zero of=${FILL}-${Date.now()} bs=1048576 count=${freeMb() - 80} 2>/dev/null; true`);
+  }
+}
 
 // The app retries when it comes back to the foreground (and on a timer).
 async function nudgeForeground() {
@@ -170,8 +178,7 @@ async function exitEmergency() {
 
   it('low storage with signal (regression): video pauses with a message, recording continues', async () => {
     online(true);
-    const need = freeMb() - 80;
-    if (need > 0) shell(`dd if=/dev/zero of=${FILL}-${Date.now()} bs=1048576 count=${need} 2>/dev/null; true`);
+    fillStorage();
     await tabBar.emergencyBtn.click();
     await emergencyPage.waitForLiveScreen(30000);
     await emergencyPage.waitForRecordingPhase(30000);
@@ -185,8 +192,7 @@ async function exitEmergency() {
 
   it('low storage without signal: video pauses with a message, audio is kept and uploaded later', async () => {
     const before = await db.emergencyCount(email);
-    const need = freeMb() - 80;
-    if (need > 0) shell(`dd if=/dev/zero of=${FILL}-${Date.now()} bs=1048576 count=${need} 2>/dev/null; true`);
+    fillStorage();
     await startEmergencyOffline();
     await $('~emergency-sync-local').waitForExist({ timeout: 15000 });
     const storage = await $('~emergency-storage-text').getText();

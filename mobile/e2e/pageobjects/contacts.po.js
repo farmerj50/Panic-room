@@ -146,7 +146,10 @@ class ContactsPage {
     await this.nameInput.waitForDisplayed({ timeout: 10000 });
     await this.nameInput.setValue(name);
     await this.phoneInput.setValue(phone);
-    await this.saveBtn.click();
+    // With the keyboard up (and a contact already listed) Save can sit below
+    // the fold.
+    if (await driver.isKeyboardShown().catch(() => false)) await driver.hideKeyboard().catch(() => {});
+    await this.scrollToElementAndClick('~contacts-save-btn');
     await this.dismissSmsInviteOfferIfPresent();
   }
 
