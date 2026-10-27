@@ -18,7 +18,7 @@
 
 # Privacy Policy
 
-**Last updated: October 19, 2026**
+**Last updated: October 27, 2026**
 
 This Privacy Policy describes how Bes ("Bes," "we," "us," or "our") collects,
 uses, and protects information when you use the Bes mobile application and
@@ -81,19 +81,24 @@ an emergency.
 
 ### AI Monitor (optional, Android)
 - AI Monitor is off until you open it and start it. While it runs, it uses
-  your camera to detect people, body posture and crowd movement **entirely on
-  your phone**. Camera frames are analyzed in memory and discarded: **AI
+  your camera to detect people, body posture, how close people are and how
+  they move relative to each other, and crowd movement **entirely on your
+  phone**. Camera frames are analyzed in memory and discarded: **AI
   Monitor does not record, store or upload images or video, and does not
   identify people** (no face recognition or identity of any kind).
-- The events it shows (for example a possible fall or crowd panic) are kept
-  in your phone's memory while the app is open and are not sent to us.
+- The events it shows (for example a possible fall, crowd panic, someone
+  getting closer, or a possible struggle) are kept in your phone's memory
+  while the app is open and are not sent to us.
 - If you turn on "Help improve AI Monitor", your answers (for example
   "correct", "wrong type" or "false warning"), the event type, its times and
   the wording shown are stored **on your phone only**. They leave your phone
   only if you choose to share them yourself, and you can delete them at any
   time. Feedback never changes how detection works on its own.
-- We receive only that AI Monitor was started or stopped, how long it ran
-  and its average analysis rate — never images, detections or locations.
+- We receive only basic usage events: that AI Monitor was started or
+  stopped, how long it ran, its average analysis rate, that the camera was
+  switched, and that an optional in-app alert you turned on was shown (with
+  its general type, for example "possible struggle"). We never receive
+  images, video, body positions, detection details or your location.
 
 ### Automatically collected information
 - Basic technical data needed to operate the Service (e.g., session tokens,

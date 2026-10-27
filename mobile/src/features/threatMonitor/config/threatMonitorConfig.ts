@@ -8,10 +8,10 @@ export function isAiMonitorEnabled(): boolean {
   return process.env.EXPO_PUBLIC_AI_MONITOR_ENABLED === '1' && Platform.OS === 'android' && isBesVisionAvailable;
 }
 
-// Threat candidates (Phase 2: falls and crowd events) are for AI development
-// and test builds only: they need EXPO_PUBLIC_AI_THREATS_ENABLED=1 on top of
-// the AI Monitor flag. Production builds set neither. Fight and assault
-// detection is not enabled by any flag (see threat/detectors).
+// Threat candidates (Phase 2: falls and crowd events) need
+// EXPO_PUBLIC_AI_THREATS_ENABLED=1 on top of the AI Monitor flag. Production
+// builds set both (since 1.0.36). The fight/assault threat detector is not
+// enabled by any flag (see threat/detectors).
 export function isThreatDetectionEnabled(): boolean {
   return isAiMonitorEnabled() && process.env.EXPO_PUBLIC_AI_THREATS_ENABLED === '1';
 }
@@ -24,9 +24,9 @@ export function isAiTestHooksEnabled(): boolean {
   return isThreatDetectionEnabled() && process.env.EXPO_PUBLIC_AI_TEST_HOOKS === '1';
 }
 
-// 1.0.37 milestone, off until verified on phones (no build profile sets them):
-// a front/back camera flip, and per-person "getting closer / moving away in
-// camera view" with an opt-in in-app alert. Rollback = leave the flag unset.
+// A front/back camera flip, and per-person "getting closer / moving away in
+// camera view" with an opt-in in-app alert. Production builds set both
+// (since 1.0.37). Rollback = build with the flag unset.
 export function isAiCameraFlipEnabled(): boolean {
   return isAiMonitorEnabled() && process.env.EXPO_PUBLIC_AI_CAMERA_FLIP_ENABLED === '1';
 }
@@ -36,7 +36,8 @@ export function isAiProximityEnabled(): boolean {
 }
 
 // Behavioral event candidates between people (pursuit-like movement, close
-// sudden interaction, possible struggle). Off unless the build sets the flag.
+// sudden interaction, possible struggle) with an opt-in in-app banner.
+// Production builds set the flag (since 1.0.38). Rollback = build without it.
 export function isAiBehaviorEventsEnabled(): boolean {
   return isAiMonitorEnabled() && process.env.EXPO_PUBLIC_AI_BEHAVIOR_EVENTS_ENABLED === '1';
 }
