@@ -280,7 +280,7 @@ describe("viewer page and data", () => {
     expect(js.text).toContain("history.replaceState");
   });
 
-  test("state shows only this emergency: first name, clips, latest GPS — no identities, keys or tokens", async () => {
+  test("state shows only this emergency: owner name (as the alert texts use it), clips, latest GPS — no identities, keys or tokens", async () => {
     const ctx = await setup();
     const key = await addClip(ctx.token, ctx.userId, ctx.emergencyId, 1);
     await addClip(ctx.token, ctx.userId, ctx.emergencyId, 2);
@@ -298,13 +298,13 @@ describe("viewer page and data", () => {
 
     const res = await state(ctx.viewerToken);
     expect(res.status).toBe(200);
-    expect(res.body.ownerFirstName).toBe("Alex");
+    expect(res.body.ownerName).toBe("Alex Rivera");
     expect(res.body.status).toBe("active");
     expect(res.body.segments.map((s) => s.sequence)).toEqual([1, 2]);
     expect(res.body.latestLocation).toEqual(expect.objectContaining({ latitude: 40.75, longitude: -73.98, recordedAt }));
 
     const text = JSON.stringify(res.body);
-    for (const secret of ["Rivera", "Sam", PHONE_A, PHONE_A.slice(-4), key, ctx.viewerToken, ctx.userId, ctx.contact.id, otherEmergency]) {
+    for (const secret of ["Sam", PHONE_A, PHONE_A.slice(-4), key, ctx.viewerToken, ctx.userId, ctx.contact.id, otherEmergency]) {
       expect(text).not.toContain(secret);
     }
   });

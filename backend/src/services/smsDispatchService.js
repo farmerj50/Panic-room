@@ -5,7 +5,7 @@ const prisma = require("../config/db");
 const { decrypt, hashLookup } = require("./cryptoService");
 const smsServices = require("./smsServices");
 const { isSmsEnabled, evaluateContacts } = require("./smsEligibilityService");
-const { firstNameOf, phoneHashFor } = require("./smsConsentService");
+const { displayNameOf, phoneHashFor } = require("./smsConsentService");
 const liveView = require("./liveViewService");
 
 const ALERT_WINDOW_MS = 2 * 60 * 1000;
@@ -152,7 +152,7 @@ async function dispatchEmergencyAlerts({ event, userId }) {
   await sweepStaleReservations().catch((error) => console.warn("SMS sweep failed:", error?.message || error));
 
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { nameEncrypted: true } });
-  const senderName = firstNameOf(user);
+  const senderName = displayNameOf(user);
   const emergency = liveView.isLiveViewEnabled()
     ? await prisma.emergencyEvent.findUnique({ where: { id: event.id } })
     : null;

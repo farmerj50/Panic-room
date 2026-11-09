@@ -50,6 +50,28 @@ function firstNameOf(user) {
   }
 }
 
+// The account's name as contacts should see it in emergency alerts: the full
+// name, whitespace-normalized, without control characters, capped so a very
+// long profile name can't crowd out the location in an SMS or announcement.
+// Null when the account has no usable name (callers fall back to wording
+// without one).
+const MAX_DISPLAY_NAME = 60;
+function displayNameOf(user) {
+  if (!user?.nameEncrypted) return null;
+  try {
+    const name = String(decrypt(user.nameEncrypted) || "")
+      .replace(/[\u0000-\u001f\u007f<>]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!name) return null;
+    if (name.length <= MAX_DISPLAY_NAME) return name;
+    const cut = name.slice(0, MAX_DISPLAY_NAME);
+    return (cut.lastIndexOf(" ") > 0 ? cut.slice(0, cut.lastIndexOf(" ")) : cut).trim();
+  } catch {
+    return null;
+  }
+}
+
 function maskPhone(rawPhone) {
   const digits = String(rawPhone || "").replace(/\D/g, "");
   return digits.length >= 4 ? `•••-•••-${digits.slice(-4)}` : "•••";
@@ -224,6 +246,7 @@ module.exports = {
   phoneHashFor,
   currentPhoneHash,
   firstNameOf,
+  displayNameOf,
   maskPhone,
   publicBaseUrl,
   issueInvite,

@@ -293,7 +293,7 @@ describe("dispatch", () => {
     expect(res.body).toEqual(expect.objectContaining({ smsAvailable: true, eligibleCount: 1, ineligibleCount: 3, queuedCount: 1 }));
     expect(smsServices.sendAlertSms).toHaveBeenCalledTimes(1);
     expect(smsServices.sendAlertSms.mock.calls[0][0].to).toBe(PHONE_A);
-    expect(smsServices.sendAlertSms.mock.calls[0][0].body).toMatch(/^Bes Safety Alert: Alex activated an emergency\. Reply STOP to opt out, HELP for help\.$/);
+    expect(smsServices.sendAlertSms.mock.calls[0][0].body).toMatch(/^Bes Safety Alert: Alex Rivera activated an emergency\. Reply STOP to opt out, HELP for help\.$/);
   });
 
   test("the location is included only when the emergency has coordinates", async () => {

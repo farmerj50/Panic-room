@@ -42,6 +42,17 @@ model EmergencyEvent {
   contactNotified      Boolean                 @default(false)
   notificationError    String?
   notificationAttempts Int                     @default(0)
+  // Optional phone recovery tracking after the SOS ends (see
+  // services/recoveryTrackingService.js). Null for every emergency that never
+  // used it. Started only by the owner's own phone, in the request that ends
+  // an ACTIVE emergency, and only with the account's recorded consent
+  // (copied here as it was at that moment). Never restarted once ended.
+  recoveryStatus       String? // 'RECOVERY_TRACKING' | 'ENDED'
+  recoveryConsentAt    DateTime?
+  recoveryStartedAt    DateTime?
+  recoveryExpiresAt    DateTime?
+  recoveryEndedAt      DateTime?
+  recoveryEndReason    String? // 'recovered' | 'remote_stop' | 'expired' | 'consent_withdrawn'
 
   @@index([userId])
 }
@@ -74,6 +85,8 @@ model EmergencyLocation {
   latitudeEncrypted  String
   longitudeEncrypted String
   accuracy           Float?
+  // Phone battery 0–100 when the point was recorded, if the phone reported it.
+  batteryLevel       Int?
   recordedAt         DateTime
   createdAt          DateTime       @default(now())
 
@@ -243,6 +256,9 @@ model User {
   // Set only at Google sign-up or by an authenticated, password-confirmed
   // link — never by matching emails.
   googleSubHash             String?                    @unique
+  // When the person opted in to phone recovery tracking in Emergency
+  // Settings (null = not opted in). Cleared when they turn it off.
+  recoveryTrackingConsentAt DateTime?
   accountDeletionChallenges AccountDeletionChallenge[]
   contacts                  TrustedContact[]
   emergencies               EmergencyEvent[]

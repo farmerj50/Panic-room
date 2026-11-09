@@ -12,7 +12,7 @@
 //    its `generation`. Revoke/rotate bumps generation, and every media
 //    request re-checks the link, so a leaked media URL dies immediately.
 //  - A link only ever reaches its own emergency. Viewer responses carry the
-//    owner's first name and nothing about the contacts.
+//    owner's name (as on their account) and nothing about the contacts.
 //
 // Nothing here may block an emergency: callers wrap these in try/catch.
 
@@ -21,13 +21,16 @@ const crypto = require("crypto");
 const prisma = require("../config/db");
 const { decrypt, encrypt, safeDecrypt } = require("./cryptoService");
 const { signPayload, verifyPayload } = require("./storageService");
-const { currentPhoneHash, firstNameOf } = require("./smsConsentService");
+const { currentPhoneHash, displayNameOf } = require("./smsConsentService");
+const recovery = require("./recoveryTrackingService");
+const { buildRoute } = require("./routeService");
 
 const HARD_TTL_MS = 72 * 60 * 60 * 1000;
 const AFTER_END_TTL_MS = 24 * 60 * 60 * 1000;
 const MEDIA_URL_TTL_MS = 10 * 60 * 1000;
 const PURGE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
 const RECENT_LOCATIONS = 20;
+const VIEWER_ROUTE_POINTS = 500;
 
 function isLiveViewEnabled() {
   return process.env.LIVE_VIEW_ENABLED === "true";
@@ -45,10 +48,21 @@ function liveViewUrl(baseUrl, token) {
   return `${baseUrl}/live#${token}`;
 }
 
+// Recovery tracking keeps the SOS's links working while it runs: the "ended"
+// moment the 24h rule counts from is when tracking ends, and the hard cap
+// stretches to tracking's own expiry. Emergencies without recovery tracking
+// are unchanged.
 function effectiveExpiry(link, emergency) {
-  const hard = new Date(link.hardExpiresAt).getTime();
+  let hard = new Date(link.hardExpiresAt).getTime();
   if (!emergency?.endedAt) return hard;
-  return Math.min(hard, new Date(emergency.endedAt).getTime() + AFTER_END_TTL_MS);
+  let endedAt = new Date(emergency.endedAt).getTime();
+  if (emergency.recoveryStatus) {
+    hard = Math.max(hard, new Date(emergency.recoveryExpiresAt).getTime());
+    const recoveryEnd = recovery.recoveryEndOf(emergency);
+    if (recoveryEnd === null) return hard; // still tracking
+    endedAt = recoveryEnd;
+  }
+  return Math.min(hard, endedAt + AFTER_END_TTL_MS);
 }
 
 // 'valid' | 'revoked' | 'expired' | 'number_changed'
@@ -226,22 +240,25 @@ function decryptPoint(point) {
   const lat = Number(safeDecrypt(point.latitudeEncrypted));
   const lng = Number(safeDecrypt(point.longitudeEncrypted));
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  return { latitude: lat, longitude: lng, accuracy: point.accuracy ?? undefined, recordedAt: point.recordedAt };
+  return {
+    latitude: lat,
+    longitude: lng,
+    accuracy: point.accuracy ?? undefined,
+    batteryLevel: point.batteryLevel ?? undefined,
+    recordedAt: point.recordedAt,
+  };
 }
 
 // What the browser viewer sees. Scoped to the link's emergency only; no
 // storage keys, contact details or phone numbers.
 async function viewerState(link, { countOpen = false } = {}) {
   const emergencyId = link.emergencyId;
-  const [user, segments, recent] = await Promise.all([
+  const [user, segments, history] = await Promise.all([
     prisma.user.findUnique({ where: { id: link.userId }, select: { nameEncrypted: true } }),
     prisma.emergencyVideoSegment.findMany({ where: { emergencyId }, orderBy: { sequence: "asc" } }),
-    prisma.emergencyLocation.findMany({
-      where: { emergencyId },
-      orderBy: { recordedAt: "desc" },
-      take: RECENT_LOCATIONS,
-    }),
+    prisma.emergencyLocation.findMany({ where: { emergencyId }, orderBy: { recordedAt: "desc" } }),
   ]);
+  const recent = history.slice(0, RECENT_LOCATIONS);
   await prisma.liveViewLink.update({
     where: { id: link.id },
     data: { lastViewedAt: new Date(), ...(countOpen ? { viewCount: { increment: 1 } } : {}) },
@@ -258,14 +275,30 @@ async function viewerState(link, { countOpen = false } = {}) {
     }
   }
 
+  const tracking = recovery.trackingView(emergency);
+  const route = buildRoute(history.map(decryptPoint).filter(Boolean), {
+    trackingActive: tracking.state !== "CLOSED",
+    maxPoints: VIEWER_ROUTE_POINTS,
+  });
+
   return {
-    ownerFirstName: firstNameOf(user) || null,
+    ownerName: displayNameOf(user) || null,
     status: emergency.status === "RESOLVED" ? "ended" : "active",
     startedAt: emergency.createdAt,
     endedAt: emergency.endedAt,
     expiresAt: new Date(effectiveExpiry(link, emergency)),
     latestLocation,
     recentLocations,
+    // Only the tracking state and timing — nothing about consent or reasons.
+    tracking: { state: tracking.state, expiresAt: tracking.recovery?.expiresAt ?? null },
+    route: {
+      points: route.points.map((p) => [p.latitude, p.longitude, p.recordedAt]),
+      start: route.start,
+      latest: route.latest,
+      batteryLevel: route.batteryLevel,
+      stops: route.stops,
+      freshness: route.freshness,
+    },
     segments: segments.map((segment) => ({
       sequence: segment.sequence,
       facing: segment.facing,

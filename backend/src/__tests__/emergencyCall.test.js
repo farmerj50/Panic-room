@@ -117,3 +117,48 @@ describe("emergency calls and texts report why they failed", () => {
     expect(res.body.error).not.toMatch(/AC[0-9a-f]{32}/);
   });
 });
+
+describe("the call announcement names who activated the emergency", () => {
+  const ids = [];
+  afterEach(() => jest.clearAllMocks());
+  afterAll(async () => {
+    await prisma.user.deleteMany({ where: { id: { in: ids } } });
+  });
+
+  async function userNamed(name) {
+    const { userId, accessToken } = await makeUser();
+    ids.push(userId);
+    if (name !== undefined) await prisma.user.update({ where: { id: userId }, data: { nameEncrypted: encrypt(name) } });
+    return accessToken;
+  }
+
+  const call = (token, message) =>
+    request(app).post("/api/emergency/call").set("Authorization", `Bearer ${token}`).send({ contacts: CONTACTS, message });
+
+  // The message today's (and older) app versions send.
+  const APP_MESSAGE = "Bes emergency activated. Location: https://maps.google.com/?q=40,-74. Please check on this person immediately.";
+
+  test("full name inserted into the app's message (works for installed app versions)", async () => {
+    sendVoiceCall.mockResolvedValue({ sid: "CA1" });
+    await call(await userNamed("  Sam   Taylor "), APP_MESSAGE);
+    expect(sendVoiceCall.mock.calls[0][0].message).toBe(
+      "Bes emergency activated by Sam Taylor. Location: https://maps.google.com/?q=40,-74. Please check on this person immediately.",
+    );
+  });
+
+  test("no name on the account: the announcement is unchanged", async () => {
+    sendVoiceCall.mockResolvedValue({ sid: "CA1" });
+    await call(await userNamed(), APP_MESSAGE);
+    expect(sendVoiceCall.mock.calls[0][0].message).toBe(APP_MESSAGE);
+    await call(await userNamed("   "), APP_MESSAGE);
+    expect(sendVoiceCall.mock.calls[1][0].message).toBe(APP_MESSAGE);
+  });
+
+  test("another message shape gets the name as a lead-in; markup characters and very long names are cleaned", async () => {
+    sendVoiceCall.mockResolvedValue({ sid: "CA1" });
+    await call(await userNamed("Jo <b>Lee</b>"), "Please call me.");
+    expect(sendVoiceCall.mock.calls[0][0].message).toBe("Bes emergency activated by Jo b Lee /b. Please call me.");
+    await call(await userNamed(`Ann ${"x".repeat(80)}`), APP_MESSAGE);
+    expect(sendVoiceCall.mock.calls[1][0].message).toMatch(/^Bes emergency activated by Ann\. Location:/);
+  });
+});

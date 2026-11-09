@@ -3,10 +3,24 @@ const { decrypt, encrypt, safeDecrypt } = require("../services/cryptoService");
 const { hasVoiceProviderConfig, sendVoiceCall } = require("../services/smsServices");
 const { getSignedDownloadUrl } = require("../services/storageService");
 const { dispatchEmergencyAlerts } = require("../services/smsDispatchService");
-const { firstNameOf } = require("../services/smsConsentService");
+const { displayNameOf } = require("../services/smsConsentService");
 const liveView = require("../services/liveViewService");
+const recovery = require("../services/recoveryTrackingService");
+const { buildRoute } = require("../services/routeService");
 
 const VALID_STATUSES = new Set(["ACTIVE", "RESOLVED"]);
+
+// The spoken announcement names who activated the emergency. Built here (not
+// on the phone) so app versions already installed get it too: their text is
+// "Bes emergency activated. Location: …", which becomes "Bes emergency
+// activated by Sam Taylor. Location: …". Without a usable name the
+// announcement is unchanged.
+function announcementWithName(message, name) {
+  if (!name) return message;
+  const lead = /^Bes emergency activated\b/;
+  if (lead.test(message)) return message.replace(lead, `Bes emergency activated by ${name}`);
+  return `Bes emergency activated by ${name}. ${message}`;
+}
 
 function getBaseUrl(req) {
   return process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`;
@@ -37,6 +51,10 @@ function toNullableNumber(value) {
   if (value === undefined || value === null || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function consentOf(userId) {
+  return prisma.user.findUnique({ where: { id: userId }, select: { recoveryTrackingConsentAt: true } });
 }
 
 function encryptedNumberToFloat(value) {
@@ -78,6 +96,7 @@ function serializeEmergencyEvent(event, req) {
     contactNotified: event.contactNotified,
     notificationError: event.notificationError ?? undefined,
     notificationAttempts: event.notificationAttempts,
+    tracking: recovery.trackingView(event),
   };
 }
 
@@ -102,7 +121,8 @@ function clientTime(value, notBefore) {
 
 exports.createEmergencyEvent = async (req, res, next) => {
   try {
-    const { id, activatedAt, endedAt, latitude, longitude, status, audioUrl, videoUrl, contactNotified } = req.body;
+    const { id, activatedAt, endedAt, latitude, longitude, status, audioUrl, videoUrl, contactNotified, recoveryTracking } =
+      req.body;
     const parsedLatitude = toNullableNumber(latitude);
     const parsedLongitude = toNullableNumber(longitude);
     if (status !== undefined && !VALID_STATUSES.has(status)) {
@@ -125,6 +145,12 @@ exports.createEmergencyEvent = async (req, res, next) => {
     const startedAt = clientTime(activatedAt);
     const resolved = status === "RESOLVED";
     const resolvedAt = resolved ? clientTime(endedAt, startedAt) ?? new Date() : null;
+    // An SOS that ran entirely without signal arrives already ended; the
+    // phone may have gone into recovery tracking at that end time.
+    const recoveryFields =
+      resolved && recoveryTracking === true
+        ? recovery.recoveryStartFields({}, await consentOf(req.user.id), resolvedAt)
+        : null;
 
     let event;
     try {
@@ -142,6 +168,7 @@ exports.createEmergencyEvent = async (req, res, next) => {
           audioUrl: audioUrl ? encrypt(audioUrl) : null,
           videoUrl: videoUrl ? encrypt(videoUrl) : null,
           contactNotified: contactNotified || false,
+          ...(recoveryFields || {}),
         },
         include,
       });
@@ -172,7 +199,7 @@ exports.createEmergencyEvent = async (req, res, next) => {
 exports.updateEmergencyEvent = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { audioUrl, videoUrl, status } = req.body;
+    const { audioUrl, videoUrl, status, recoveryTracking } = req.body;
 
     const event = await prisma.emergencyEvent.findFirst({ where: { id, userId: req.user.id } });
     if (!event) return res.status(404).json({ error: "Emergency event not found" });
@@ -190,6 +217,10 @@ exports.updateEmergencyEvent = async (req, res, next) => {
       data.status = status;
       // First resolution only — Live View expiry counts from here.
       if (status === "RESOLVED" && !event.endedAt) data.endedAt = new Date();
+      // Recovery tracking can only begin as the SOS itself ends.
+      if (status === "RESOLVED" && event.status === "ACTIVE" && recoveryTracking === true) {
+        Object.assign(data, recovery.recoveryStartFields(event, await consentOf(req.user.id), data.endedAt || new Date()) || {});
+      }
     }
 
     const updated = await prisma.emergencyEvent.update({
@@ -222,9 +253,12 @@ exports.callEmergencyContacts = async (req, res, next) => {
       });
     }
 
-    const body =
-      message ||
-      "Bes emergency activated. Please check your text messages for the user's latest location.";
+    const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { nameEncrypted: true } });
+    const body = announcementWithName(
+      (typeof message === "string" && message.trim()) ||
+        "Bes emergency activated. Please check your text messages for the user's latest location.",
+      displayNameOf(user),
+    );
 
     const results = await Promise.allSettled(
       contacts.map((contact) => sendVoiceCall({ to: contact.phoneNumber, message: body }))
@@ -448,7 +482,14 @@ function parsePoint(raw) {
   if (longitude === null || longitude < -180 || longitude > 180) return null;
   if (raw.recordedAt === undefined || Number.isNaN(recordedAt.getTime())) return null;
   const accuracy = toNullableNumber(raw.accuracy);
-  return { latitude, longitude, recordedAt, accuracy: accuracy !== null && accuracy >= 0 ? accuracy : null };
+  const battery = toNullableNumber(raw.batteryLevel);
+  return {
+    latitude,
+    longitude,
+    recordedAt,
+    accuracy: accuracy !== null && accuracy >= 0 ? accuracy : null,
+    batteryLevel: battery !== null && battery >= 0 && battery <= 100 ? Math.round(battery) : null,
+  };
 }
 
 exports.addLocations = async (req, res, next) => {
@@ -468,18 +509,20 @@ exports.addLocations = async (req, res, next) => {
     const emergency = await prisma.emergencyEvent.findFirst({ where: { id, userId: req.user.id } });
     if (!emergency) return res.status(404).json({ error: "Emergency event not found" });
 
-    const windowStart = new Date(emergency.createdAt).getTime() - CLOCK_SKEW_MS;
-    let windowEnd = Date.now() + CLOCK_SKEW_MS;
-    if (emergency.status === "RESOLVED") {
-      if (!isBatch || !emergency.endedAt) return res.status(409).json({ error: "Emergency has ended" });
-      windowEnd = new Date(emergency.endedAt).getTime() + BACKFILL_GRACE_MS;
-    }
+    // Accepted: points observed while the SOS was active, or while recovery
+    // tracking was on (see recoveryTrackingService.pointWindow). Once
+    // tracking is stopped or expired, only points recorded before that
+    // moment are taken (offline backfill), and the phone is told to stop.
+    const window = recovery.pointWindow(emergency, { clockSkewMs: CLOCK_SKEW_MS, backfillGraceMs: BACKFILL_GRACE_MS });
+    const tracking = recovery.trackingView(emergency);
+    const stoppedBody = (error) => ({ error, ...(window.stopped ? { code: "TRACKING_STOPPED" } : {}), tracking });
+    if (!isBatch && !window.live) return res.status(409).json(stoppedBody("Emergency has ended"));
     const inWindow = points.filter((point) => {
       const t = point.recordedAt.getTime();
-      return t >= windowStart && t <= windowEnd;
+      return t >= window.start && t <= window.end;
     });
     if (inWindow.length === 0) {
-      return res.status(409).json({ error: "Points are outside this emergency's time window" });
+      return res.status(409).json(stoppedBody("Points are outside this emergency's time window"));
     }
 
     // Live single points: at most one per 10s. Extra fixes are acknowledged
@@ -501,6 +544,7 @@ exports.addLocations = async (req, res, next) => {
         latitudeEncrypted: encrypt(point.latitude),
         longitudeEncrypted: encrypt(point.longitude),
         accuracy: point.accuracy,
+        batteryLevel: point.batteryLevel,
         recordedAt: point.recordedAt,
       })),
       skipDuplicates: true, // offline-queue retries are idempotent on recordedAt
@@ -510,7 +554,91 @@ exports.addLocations = async (req, res, next) => {
       await prisma.emergencyEvent.update({ where: { id }, data: { locationsThinned: { increment: thinned } } });
     }
 
-    res.status(201).json({ accepted: created.count, ignored: points.length - created.count });
+    res.status(201).json({ accepted: created.count, ignored: points.length - created.count, tracking });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ── Route history and recovery tracking (owner side) ─────────────────────
+async function decryptedPoints(emergencyId) {
+  const rows = await prisma.emergencyLocation.findMany({ where: { emergencyId }, orderBy: { recordedAt: "asc" } });
+  return rows
+    .map((row) => {
+      const latitude = encryptedNumberToFloat(row.latitudeEncrypted);
+      const longitude = encryptedNumberToFloat(row.longitudeEncrypted);
+      if (latitude === null || longitude === null) return null;
+      return { latitude, longitude, accuracy: row.accuracy, batteryLevel: row.batteryLevel, recordedAt: row.recordedAt };
+    })
+    .filter(Boolean);
+}
+
+exports.decryptedPoints = decryptedPoints;
+
+function routeResponse(event, points) {
+  const tracking = recovery.trackingView(event);
+  return {
+    emergencyId: event.id,
+    tracking,
+    locationsThinned: event.locationsThinned,
+    ...buildRoute(points, { trackingActive: tracking.state !== "CLOSED" }),
+  };
+}
+
+// GET /api/emergency/:id/route — the owner's own emergencies only.
+exports.getRoute = async (req, res, next) => {
+  try {
+    const event = await prisma.emergencyEvent.findFirst({ where: { id: req.params.id, userId: req.user.id } });
+    if (!event) return res.status(404).json({ error: "Emergency event not found" });
+    res.json(routeResponse(event, await decryptedPoints(event.id)));
+  } catch (error) {
+    next(error);
+  }
+};
+
+// GET /api/emergency/:id/tracking — light state check the phone uses to
+// reconcile after being offline.
+exports.getTracking = async (req, res, next) => {
+  try {
+    const event = await prisma.emergencyEvent.findFirst({ where: { id: req.params.id, userId: req.user.id } });
+    if (!event) return res.status(404).json({ error: "Emergency event not found" });
+    res.json(recovery.trackingView(event));
+  } catch (error) {
+    next(error);
+  }
+};
+
+// POST /api/emergency/:id/recovery/stop { reason: 'recovered' | 'remote_stop' }
+// From the phone itself ("Phone recovered") or any device signed in to the
+// same account (Evidence → "Stop tracking"). Final immediately.
+exports.stopRecoveryTracking = async (req, res, next) => {
+  try {
+    const reason = req.body?.reason === "recovered" ? "recovered" : "remote_stop";
+    const event = await recovery.stopRecovery({ emergencyId: req.params.id, userId: req.user.id, reason });
+    if (!event) return res.status(404).json({ error: "Emergency event not found" });
+    res.json(recovery.trackingView(event));
+  } catch (error) {
+    next(error);
+  }
+};
+
+// GET/PUT /api/emergency/recovery-consent { enabled } — the Emergency
+// Settings opt-in. Turning it off also ends any recovery tracking running now.
+exports.getRecoveryConsent = async (req, res, next) => {
+  try {
+    const user = await consentOf(req.user.id);
+    res.json({ enabled: Boolean(user?.recoveryTrackingConsentAt), consentedAt: user?.recoveryTrackingConsentAt ?? null });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.setRecoveryConsent = async (req, res, next) => {
+  try {
+    if (typeof req.body?.enabled !== "boolean") return res.status(400).json({ error: "enabled must be true or false" });
+    await recovery.setConsent(req.user.id, req.body.enabled);
+    const user = await consentOf(req.user.id);
+    res.json({ enabled: Boolean(user?.recoveryTrackingConsentAt), consentedAt: user?.recoveryTrackingConsentAt ?? null });
   } catch (error) {
     next(error);
   }
@@ -519,7 +647,7 @@ exports.addLocations = async (req, res, next) => {
 // ── Live View (owner side) ────────────────────────────────────────────────
 async function shareMessageFor(req, url) {
   const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { nameEncrypted: true } });
-  const name = firstNameOf(user);
+  const name = displayNameOf(user);
   return `${name ? `${name} activated` : "I activated"} a Bes emergency. Watch live video and location: ${url}`;
 }
 

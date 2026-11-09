@@ -43,6 +43,8 @@ const VIEWER_HEAD = `<style>
   .status.ended { background: #e8e8e8; color: #333; }
   video { width: 100%; max-height: 70vh; background: #000; border-radius: 12px; }
   iframe { width: 100%; height: 320px; border: 0; border-radius: 12px; }
+  #route svg { width: 100%; height: auto; display: block; }
+  #stops { padding-left: 20px; }
   .clips { display: flex; flex-wrap: wrap; gap: 8px; }
   .clips button { padding: 6px 12px; font-weight: 600; background: #fff; border: 1px solid #bbb; }
   .clips button.current { background: #ef445b; color: #fff; border-color: #ef445b; }
@@ -66,10 +68,19 @@ const SHELL_BODY = `
   <audio id="audio" controls preload="none"></audio>
 </section>
 <section id="location-section" class="hidden">
-  <h2>Last known location</h2>
+  <h2 id="location-heading">Last known location</h2>
   <p id="location-text"></p>
+  <p id="location-details" class="muted"></p>
   <iframe id="map" title="Map of last known location" loading="lazy" referrerpolicy="no-referrer"></iframe>
   <p><a id="maps-link" target="_blank" rel="noopener noreferrer">Open in Maps</a></p>
+</section>
+<section id="route-section" class="hidden">
+  <h2>Route</h2>
+  <div id="route"></div>
+  <p id="route-legend" class="muted"></p>
+  <h3>Stops</h3>
+  <p id="stops-empty" class="muted">No stops of 3 minutes or longer so far.</p>
+  <ol id="stops"></ol>
 </section>
 <p class="muted">If you believe this person is in danger, call your local emergency number. This private link was sent to you by a Bes user and stops working when it expires or is turned off.</p>
 <p class="muted">Bes · <a href="/legal/privacy">Privacy</a> · <a href="/legal/terms">Terms</a></p>`;
