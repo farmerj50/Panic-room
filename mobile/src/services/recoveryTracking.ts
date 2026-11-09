@@ -271,12 +271,11 @@ export async function reconcileRecoveryTracking({ now = Date.now(), restartUpdat
   if (!(await getRecoveryTracking())) return;
   if (restartUpdates) {
     // After a reboot, a force-stop or an OS kill the updates are gone until
-    // the app runs again — resume them now.
-    let running = false;
-    try {
-      running = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
-    } catch {}
-    if (!running) await startRecoveryLocationUpdates();
+    // the app runs again. Restarted even when they look running: Expo
+    // re-registers the task by itself at app start, before the app counts
+    // as foregrounded, so they come back WITHOUT the foreground service and
+    // its notification (seen on the emulator after a force-stop).
+    await startRecoveryLocationUpdates();
     if ((await getActiveGpsEmergency()) !== state.emergencyId) await setActiveGpsEmergency(state.emergencyId);
   }
 }

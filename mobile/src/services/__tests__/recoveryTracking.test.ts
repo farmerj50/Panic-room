@@ -168,6 +168,15 @@ describe('lifecycle', () => {
     expect(await getRecoveryTracking()).not.toBeNull();
   });
 
+  test('updates Expo restored on its own (no foreground service) are restarted in recovery mode on foreground', async () => {
+    await beginRecoveryTracking(ID, ENDED);
+    mockLocation.running = true; // re-registered at app start, before the app was foregrounded
+    mockLocation.starts = [];
+    await reconcileRecoveryTracking();
+    expect(mockLocation.starts).toHaveLength(1);
+    expect(mockLocation.starts[0].foregroundService).toBeTruthy();
+  });
+
   test('the server ending it (expired / stopped elsewhere) is followed on the next check', async () => {
     await beginRecoveryTracking(ID, ENDED);
     mockApiRequest.mockResolvedValue({ state: 'CLOSED', recovery: { endReason: 'remote_stop' } });

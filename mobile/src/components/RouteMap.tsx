@@ -85,7 +85,7 @@ export default function RouteMap({ points, stops }: Props) {
   if (!layout) return null;
 
   return (
-    <View style={[styles.card, { width, height }]} testID="route-map" accessible accessibilityLabel="route-map">
+    <View style={[styles.card, { width, height }]} testID="route-map" accessibilityLabel="route-map">
       {layout.tiles.map((tile) =>
         failedTiles[tile.key] ? (
           <View key={tile.key} style={[styles.tile, styles.tileFallback, { left: tile.x, top: tile.y }]} />

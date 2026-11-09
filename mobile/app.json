@@ -3,7 +3,7 @@
     "name": "Bes",
     "slug": "bes",
     "scheme": "bes",
-    "version": "1.0.38",
+    "version": "1.0.39",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -30,7 +30,7 @@
     },
     "android": {
       "package": "com.ginslayer.besapp",
-      "versionCode": 52,
+      "versionCode": 53,
       "adaptiveIcon": {
         "backgroundColor": "#22084A",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -86,7 +86,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
+          "icon": "./assets/notification-icon.png",
           "color": "#ef445b",
           "androidMode": "default",
           "androidCollapsedTitle": "Bes SOS",
@@ -100,7 +100,7 @@
           "android": {
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
-            "extraProguardRules": "# expo-camera is built from source (see patches/); its barcode scanner is disabled, so ML Kit is compile-only.\n-dontwarn com.google.mlkit.vision.**"
+            "extraProguardRules": "# expo-camera is built from source (see patches/); its barcode scanner is disabled, so ML Kit is compile-only.\n-dontwarn com.google.mlkit.vision.**\n# Expo record conversion: without this R8 breaks Location.startLocationUpdatesAsync (NullPointerException converting its options), so background location never starts in release builds.\n-keep class expo.modules.kotlin.records.** { *; }\n# Loaded by name from manifest meta-data (AppLoaderProvider); without it background location jobs crash the app when it isn't running.\n-keep class expo.modules.adapters.react.apploader.** { *; }"
           }
         }
       ],

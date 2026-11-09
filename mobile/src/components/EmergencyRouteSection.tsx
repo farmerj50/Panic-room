@@ -44,7 +44,7 @@ function StopRow({ stop, index }: { stop: RouteStop; index: number }) {
   }, [stop]);
   const stayed = stop.ongoing ? `still there · ${formatDuration(stop.durationSeconds)} so far` : `stayed ${formatDuration(stop.durationSeconds)}`;
   return (
-    <View style={styles.stop} testID="route-stop" accessible accessibilityLabel={`route-stop-${index + 1}`}>
+    <View style={styles.stop} testID="route-stop" accessibilityLabel={`route-stop-${index + 1}`}>
       <Text style={styles.stopTitle}>
         Stop {index + 1} · arrived {clock(stop.arrivedAt)} · {stayed}
       </Text>
@@ -122,8 +122,12 @@ export default function EmergencyRouteSection({ emergencyId }: { emergencyId: st
   ].filter(Boolean);
 
   return (
-    <View style={styles.section} testID="route-section" accessible accessibilityLabel="route-section">
-      {status ? <Text style={styles.tracking} testID="route-tracking-status">{status}</Text> : null}
+    <View style={styles.section} testID="route-section" accessibilityLabel="route-section">
+      {status ? (
+        <Text style={styles.tracking} testID="route-tracking-status" accessibilityLabel="route-tracking-status">
+          {status}
+        </Text>
+      ) : null}
       {route.tracking.state === 'RECOVERY_TRACKING' ? (
         <TouchableOpacity
           style={styles.stopBtn}
