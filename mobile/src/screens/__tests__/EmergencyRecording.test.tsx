@@ -141,6 +141,12 @@ jest.mock('../../services/emergencyService', () => ({
 }));
 
 const mockEndEmergency = jest.fn().mockResolvedValue(undefined);
+let mockRecoveryEligible = false;
+const mockBeginRecovery = jest.fn().mockResolvedValue(true);
+jest.mock('../../services/recoveryTracking', () => ({
+  shouldStartRecoveryTracking: () => Promise.resolve(mockRecoveryEligible),
+  beginRecoveryTracking: (...args: unknown[]) => mockBeginRecovery(...args),
+}));
 let mockSyncListeners: Array<(e: unknown) => void> = [];
 jest.mock('../../services/pendingEmergencies', () => ({
   endEmergency: (...args: unknown[]) => mockEndEmergency(...args),
@@ -778,7 +784,40 @@ describe('offline-first activation (no signal)', () => {
     const videoClips = mockEnqueueClip.mock.calls.filter(([c]) => c.kind === 'video');
     expect(videoClips.length).toBeGreaterThanOrEqual(1);
     expect(videoClips.every(([c]) => c.emergencyId === 'local-1')).toBe(true);
-    expect(mockEndEmergency).toHaveBeenCalledWith('local-1');
+    expect(mockEndEmergency).toHaveBeenCalledWith('local-1', expect.any(String), { recoveryTracking: false });
+    expect(mockBeginRecovery).not.toHaveBeenCalled();
+  });
+
+  test('recovery tracking opted in: ending the SOS hands over to it, at the same end time', async () => {
+    mockRecoveryEligible = true;
+    mockBeginRecovery.mockClear();
+    try {
+      await startEmergency();
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('emergency-exit-btn'));
+      });
+      await advance(1000);
+      expect(mockBeginRecovery).toHaveBeenCalledWith('local-1', expect.any(String));
+      const endedAt = mockBeginRecovery.mock.calls[0][1];
+      expect(mockEndEmergency).toHaveBeenCalledWith('local-1', endedAt, { recoveryTracking: true });
+    } finally {
+      mockRecoveryEligible = false;
+    }
+  });
+
+  test('recovery tracking could not start (e.g. location updates refused): the SOS ends as before', async () => {
+    mockRecoveryEligible = true;
+    mockBeginRecovery.mockClear().mockResolvedValueOnce(false);
+    try {
+      await startEmergency();
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('emergency-exit-btn'));
+      });
+      await advance(1000);
+      expect(mockEndEmergency).toHaveBeenCalledWith('local-1', expect.any(String), { recoveryTracking: false });
+    } finally {
+      mockRecoveryEligible = false;
+    }
   });
 
   test('once it reaches the server: status updates and Live View is loaded', async () => {

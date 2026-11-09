@@ -4,6 +4,7 @@ import { AppState } from 'react-native';
 import { resumeLocationQueue } from '../services/locationQueue';
 import { resumePendingEmergencies, subscribeToPendingEmergencies } from '../services/pendingEmergencies';
 import { reconcileClipQueue, resumeClipQueue } from '../services/segmentQueue';
+import { reconcileRecoveryTracking } from '../services/recoveryTracking';
 
 // Signed-in app shell: recovers emergency evidence left by a crash or
 // restart (clips and GPS points still waiting to upload) and retries
@@ -21,6 +22,9 @@ export function useEvidenceQueues() {
       .catch((error) => console.warn('Evidence queue reconcile failed', error));
     void resumeLocationQueue();
     void resumePendingEmergencies();
+    // Recovery tracking: expire, follow a remote stop, or resume updates
+    // Android stopped (reboot, force-stop) — see recoveryTracking.ts.
+    void reconcileRecoveryTracking();
 
     // An emergency reached the server: upload what was waiting for it.
     const unsubscribe = subscribeToPendingEmergencies((event) => {
@@ -33,6 +37,7 @@ export function useEvidenceQueues() {
       void resumePendingEmergencies();
       void resumeClipQueue();
       void resumeLocationQueue();
+      void reconcileRecoveryTracking();
     });
     return () => {
       subscription.remove();

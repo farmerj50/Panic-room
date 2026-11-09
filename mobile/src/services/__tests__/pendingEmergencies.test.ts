@@ -160,3 +160,27 @@ test('ended while its create was in flight: the resolved status is still sent', 
   await resumePendingEmergencies();
   expect(mockUpdateEmergency).toHaveBeenCalledWith(ID, { status: 'RESOLVED' });
 });
+
+describe('recovery tracking flag on the SOS end', () => {
+  test('ended without signal: the later create carries the end time and the recovery request', async () => {
+    await registerPendingEmergency({ id: ID, activatedAt: AT });
+    mockCreateEmergency.mockRejectedValueOnce(new Error('offline'));
+    await endEmergency(ID, '2026-10-18T09:10:00.000Z', { recoveryTracking: true });
+    await syncPendingEmergencies();
+    const sent = mockCreateEmergency.mock.calls[mockCreateEmergency.mock.calls.length - 1][0];
+    expect(sent).toMatchObject({ id: ID, status: 'RESOLVED', endedAt: '2026-10-18T09:10:00.000Z', recoveryTracking: true });
+  });
+
+  test('ended online: the status update asks for recovery tracking; a failed one is retried with the same request', async () => {
+    mockUpdateEmergency.mockRejectedValueOnce(new Error('Network request failed'));
+    await endEmergency(ID, AT, { recoveryTracking: true });
+    expect(mockUpdateEmergency).toHaveBeenLastCalledWith(ID, { status: 'RESOLVED', recoveryTracking: true });
+    await syncPendingEmergencies();
+    expect(mockUpdateEmergency).toHaveBeenLastCalledWith(ID, { status: 'RESOLVED', recoveryTracking: true });
+  });
+
+  test('without recovery tracking nothing extra is sent', async () => {
+    await endEmergency(ID, AT);
+    expect(mockUpdateEmergency).toHaveBeenLastCalledWith(ID, { status: 'RESOLVED' });
+  });
+});

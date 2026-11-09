@@ -52,7 +52,7 @@ model EmergencyEvent {
   recoveryStartedAt    DateTime?
   recoveryExpiresAt    DateTime?
   recoveryEndedAt      DateTime?
-  recoveryEndReason    String? // 'recovered' | 'remote_stop' | 'expired' | 'consent_withdrawn'
+  recoveryEndReason    String? // 'recovered' | 'remote_stop' | 'expired' | 'consent_withdrawn' | 'permission_revoked'
 
   @@index([userId])
 }

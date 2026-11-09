@@ -34,6 +34,8 @@ import {
   type LiveViewLinkStatus,
 } from '../services/emergencyService';
 import { endEmergency, subscribeToPendingEmergencies } from '../services/pendingEmergencies';
+import { beginRecoveryTracking, shouldStartRecoveryTracking } from '../services/recoveryTracking';
+import { isTourActive } from '../services/tourModeState';
 import { describeSmsResult } from '../utils/smsStatus';
 import {
   clearRecordingJournal,
@@ -179,6 +181,21 @@ function retrySegmentEntry(entry: PendingSegmentUpload) {
 type EmergencyPhase = 'countdown' | 'activating' | 'recording' | 'error';
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Ends the SOS on the server, going into phone recovery tracking first when
+// the person opted in (Emergency Settings) and Android still allows
+// background location. Never blocks leaving the screen.
+async function endEmergencyMaybeRecovering(emergencyId: string) {
+  const endedAt = new Date().toISOString();
+  let recoveryTracking = false;
+  try {
+    recoveryTracking =
+      !isTourActive() && (await shouldStartRecoveryTracking()) && (await beginRecoveryTracking(emergencyId, endedAt));
+  } catch (error) {
+    console.warn('[Recovery] could not start recovery tracking', error);
+  }
+  await endEmergency(emergencyId, endedAt, { recoveryTracking });
+}
 
 const DEFAULT_CAMERA_FACING: CameraFacing = Platform.OS === 'web' ? 'front' : 'back';
 
@@ -739,7 +756,7 @@ function EmergencyLiveScreen() {
     // and a failed status update is retried (pendingEmergencies).
     serverSyncUnsubRef.current?.();
     serverSyncUnsubRef.current = null;
-    if (emergencyIdForUpload) void endEmergency(emergencyIdForUpload);
+    if (emergencyIdForUpload) void endEmergencyMaybeRecovering(emergencyIdForUpload);
     if (emergencyIdForUpload && audioUri) {
       // Same durable queue as video: kept on the device until uploaded.
       enqueueClip({

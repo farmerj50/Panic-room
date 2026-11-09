@@ -21,7 +21,7 @@
 const prisma = require("../config/db");
 
 const RECOVERY_TTL_MS = 72 * 60 * 60 * 1000;
-const END_REASONS = new Set(["recovered", "remote_stop", "expired", "consent_withdrawn"]);
+const END_REASONS = new Set(["recovered", "remote_stop", "expired", "consent_withdrawn", "permission_revoked"]);
 
 function expiresAtOf(event) {
   return event.recoveryExpiresAt ? new Date(event.recoveryExpiresAt).getTime() : null;

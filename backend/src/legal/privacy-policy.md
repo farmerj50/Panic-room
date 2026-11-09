@@ -18,7 +18,7 @@
 
 # Privacy Policy
 
-**Last updated: October 27, 2026**
+**Last updated: November 9, 2026**
 
 This Privacy Policy describes how Bes ("Bes," "we," "us," or "our") collects,
 uses, and protects information when you use the Bes mobile application and
@@ -58,9 +58,30 @@ an emergency.
   used for advertising, and can be turned off at any time in Emergency
   Settings.
 - **Location history during an emergency** — while an emergency is active,
-  Bes uploads your GPS location about every 15 seconds, stored encrypted. If
-  you lose signal, the app keeps those points on your phone (encrypted) and
-  uploads them when the connection returns.
+  Bes uploads your GPS location about every 15 seconds, stored encrypted,
+  together with the GPS accuracy and, when available, your phone's battery
+  percentage. If you lose signal, the app keeps those points on your phone
+  (encrypted) and uploads them when the connection returns, with the time
+  each was recorded. From this history Bes shows you, in Evidence, the route,
+  the places the phone stayed 3 minutes or longer ("stops"), and how long.
+  Approximate street addresses for stops are looked up by your phone's own
+  map service when you open them; Bes does not store them.
+- **Phone recovery tracking (optional, off by default)** — if you turn on
+  "Keep tracking my phone after an emergency until I mark it recovered" in
+  Emergency Settings, Bes explains the feature and asks for your consent and
+  for "Allow all the time" location access first, and records when you
+  consented. Then, when an emergency ends, Bes keeps collecting this phone's
+  location in the background — about every 30 seconds, even when the app is
+  closed or not in use, with a notification showing it is on — and adds it,
+  with accuracy and battery percentage, to that emergency's encrypted
+  location history. Points recorded without signal are stored encrypted on
+  the phone and uploaded later. Recovery tracking stops when you tap "Phone
+  recovered", when you stop it from another device signed in to your account
+  (Evidence → Stop tracking), when you turn the setting off or remove the
+  location permission, or automatically 72 hours after the emergency ended.
+  Once stopped it never restarts for that emergency, and locations recorded
+  after it stopped are not accepted. It is used only for this safety
+  feature, never for advertising, and is free.
 - **Audio and video recordings** captured during an emergency, uploaded in
   short clips while it is happening and retrievable only via short-lived,
   single-purpose links. Clips that can't be uploaded yet stay on your phone
@@ -140,9 +161,14 @@ guarantee absolute security.
 
 - **Twilio** — when you activate an emergency and contact notification is
   enabled, your trusted contacts' phone numbers and a notification message
-  (including, if available, your location) are sent through Twilio's SMS
-  and voice-calling infrastructure to reach them. Twilio's handling of that
+  (including your name as it appears on your account and, if available,
+  your location) are sent through Twilio's SMS and voice-calling
+  infrastructure to reach them. Twilio's handling of that
   data is governed by [Twilio's own privacy policy](https://www.twilio.com/legal/privacy).
+- **Map providers** — maps in the app are drawn with OpenStreetMap map
+  images, and the Live View page links to Google Maps. These services
+  receive the map area being shown (not your name or account). Opening a
+  stop's address uses your phone's own geocoding service.
 - **Hosting/infrastructure providers** — our backend and file storage run on
   [Railway](https://railway.app) (or successor infrastructure), which
   processes data on our behalf under its own terms.
@@ -183,11 +209,16 @@ provider (Twilio), which uses them only to deliver the alerts. See
 
 When Live View is available, each of your trusted contacts gets a private
 link for each emergency. Anyone who has a contact's link can open it in a
-web browser, without the Bes app, and see your first name, the video clips
-and audio recorded during that emergency, and your location history from
-it. A link shows only that one emergency. It stops working 24 hours after
-the emergency ends (and never more than 72 hours after it started), when you
-turn it off in the app, or when that contact's phone number changes. We
+web browser, without the Bes app, and see your name as it appears on your
+account, the video clips and audio recorded during that emergency, and your
+location history from it: the route, stops, latest known location with its
+time and GPS accuracy, your battery percentage when available, and whether
+updates are current or delayed. A link shows only that one emergency. It
+stops working 24 hours after the emergency ends (and never more than 72
+hours after it started), when you turn it off in the app, or when that
+contact's phone number changes. If phone recovery tracking runs after the
+emergency, the link keeps showing the phone's location while tracking runs,
+and stops working 24 hours after tracking ends. We
 record when a link was last opened and how many times, and show this only to
 you. Expired link records are deleted after 30 days.
 

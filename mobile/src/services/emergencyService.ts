@@ -1,4 +1,4 @@
-import { Emergency, EmergencyVideoSegment } from '../types/Emergency';
+import { Emergency, EmergencyRoute, EmergencyTracking, EmergencyVideoSegment } from '../types/Emergency';
 import { Contact } from '../types/contact';
 import { apiRequest } from './apiClient';
 
@@ -13,6 +13,8 @@ export async function createEmergency(data: {
   longitude?: number;
   status?: 'ACTIVE' | 'RESOLVED';
   endedAt?: string;
+  // Ask to go into recovery tracking at endedAt (only honoured with consent).
+  recoveryTracking?: boolean;
 }): Promise<Emergency> {
   return apiRequest<Emergency>('/api/emergency', {
     method: 'POST',
@@ -26,7 +28,7 @@ export async function getEmergencies(): Promise<Emergency[]> {
 
 export async function updateEmergency(
   id: string,
-  data: { audioUrl?: string; videoUrl?: string; status?: string },
+  data: { audioUrl?: string; videoUrl?: string; status?: string; recoveryTracking?: boolean },
 ): Promise<Emergency> {
   return apiRequest<Emergency>(`/api/emergency/${id}`, {
     method: 'PATCH',
@@ -108,6 +110,31 @@ export async function addVideoSegment(
     method: 'POST',
     body: JSON.stringify(data),
   });
+}
+
+// ── Route history and recovery tracking ─────────────────────────────────────
+export async function getEmergencyRoute(emergencyId: string): Promise<EmergencyRoute> {
+  return apiRequest<EmergencyRoute>(`/api/emergency/${emergencyId}/route`);
+}
+
+export async function getEmergencyTracking(emergencyId: string): Promise<EmergencyTracking> {
+  return apiRequest<EmergencyTracking>(`/api/emergency/${emergencyId}/tracking`);
+}
+
+// 'recovered' from the tracked phone itself; 'remote_stop' from any other
+// device signed in to the account (Evidence).
+export async function stopRecoveryTracking(
+  emergencyId: string,
+  reason: 'recovered' | 'remote_stop' | 'permission_revoked',
+): Promise<EmergencyTracking> {
+  return apiRequest<EmergencyTracking>(`/api/emergency/${emergencyId}/recovery/stop`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export async function setRecoveryTrackingConsent(enabled: boolean): Promise<{ enabled: boolean; consentedAt: string | null }> {
+  return apiRequest(`/api/emergency/recovery-consent`, { method: 'PUT', body: JSON.stringify({ enabled }) });
 }
 
 // ── Live View (private browser links for trusted contacts) ─────────────────

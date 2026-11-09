@@ -153,3 +153,12 @@ describe('an emergency recorded without signal', () => {
     expect(mockApiRequest).not.toHaveBeenCalledWith(`/api/emergency/${EMERGENCY}/locations`, expect.anything());
   });
 });
+
+test('battery level travels with the point when the phone reports it', async () => {
+  await recordLocationPoint(EMERGENCY, { ...NYC, accuracy: 9, batteryLevel: 37 }, T0);
+  await flushLocationQueue();
+  expect(sentPoints()[0]).toMatchObject({ accuracy: 9, batteryLevel: 37 });
+  await recordLocationPoint(EMERGENCY, { latitude: 40.72, longitude: -74.006 }, T0 + 20_000);
+  await flushLocationQueue();
+  expect(sentPoints()[1]).not.toHaveProperty('batteryLevel');
+});

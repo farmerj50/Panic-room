@@ -14,6 +14,9 @@ import { getEmergencies } from '../services/emergencyService';
 import { Emergency, EmergencyVideoSegment } from '../types/Emergency';
 import { contentColumn } from '../config/layout';
 import PendingEvidenceNotice from '../components/PendingEvidenceNotice';
+import EmergencyRouteSection from '../components/EmergencyRouteSection';
+import RecoveryTrackingBanner from '../components/RecoveryTrackingBanner';
+import { trackingLabel } from '../utils/routeFormat';
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleString();
@@ -39,6 +42,8 @@ export default function EvidenceScreen() {
   const navigation = useNavigation();
   const [events, setEvents] = useState<Emergency[]>([]);
   const [loading, setLoading] = useState(true);
+  // Emergencies whose route is open (loaded on demand).
+  const [openRoutes, setOpenRoutes] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     getEmergencies()
@@ -57,6 +62,7 @@ export default function EvidenceScreen() {
         <View style={{ width: 40 }} />
       </View>
       <PendingEvidenceNotice />
+      <RecoveryTrackingBanner />
 
       {loading ? (
         <ActivityIndicator color="#7C3AED" style={{ marginTop: 40 }} />
@@ -75,6 +81,9 @@ export default function EvidenceScreen() {
                 <Text style={styles.statusText}>{ev.status}</Text>
                 <Text style={styles.dateText}>{fmtDate(ev.createdAt)}</Text>
               </View>
+              {ev.tracking?.state === 'RECOVERY_TRACKING' ? (
+                <Text style={styles.tracking}>{trackingLabel(ev.tracking)}</Text>
+              ) : null}
 
               {ev.latitude != null && (
                 <TouchableOpacity
@@ -114,6 +123,15 @@ export default function EvidenceScreen() {
                   <Text style={styles.mediaNone}>No video</Text>
                 )}
               </View>
+
+              <TouchableOpacity
+                onPress={() => setOpenRoutes((open) => ({ ...open, [ev.id]: !open[ev.id] }))}
+                testID="evidence-route-btn"
+                accessibilityLabel="evidence-route-btn"
+              >
+                <Text style={styles.routeToggle}>{openRoutes[ev.id] ? '▾ Hide route' : '▸ Route and stops'}</Text>
+              </TouchableOpacity>
+              {openRoutes[ev.id] ? <EmergencyRouteSection emergencyId={ev.id} /> : null}
             </View>
           ))}
         </ScrollView>
@@ -156,4 +174,6 @@ const styles = StyleSheet.create({
   media: { gap: 8 },
   mediaLink: { color: '#a29bfe', fontSize: 13, fontWeight: '600' },
   mediaNone: { color: '#555', fontSize: 13 },
+  tracking: { color: '#f5c542', fontSize: 12, fontWeight: '700', marginBottom: 8 },
+  routeToggle: { color: '#4ECDC4', fontSize: 13, fontWeight: '700', marginTop: 12 },
 });

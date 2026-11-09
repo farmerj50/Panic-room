@@ -38,7 +38,10 @@ export async function watchLocation(
   callback: (loc: WatchedLocation) => void,
 ): Promise<Location.LocationSubscription> {
   return Location.watchPositionAsync(
-    { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 10 },
+    // No distance filter: a phone that isn't moving keeps reporting (the
+    // GPS queue still stores at most one point per 15 s), so the route
+    // history and Live View can tell "parked here" from "lost signal".
+    { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 0 },
     (loc) =>
       callback({
         latitude: loc.coords.latitude,

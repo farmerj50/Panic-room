@@ -11,6 +11,7 @@ import { getMicrophoneStatus, requestMicrophonePermission } from '../services/co
 import { mapUrl } from '../utils/mapUrl';
 import { setPendingHiddenSos } from '../hooks/useAppStateEmergencyGuard';
 import { recordLocationPoint, setActiveGpsEmergency } from '../services/locationQueue';
+import { getBatteryPercent } from '../services/batteryLevel';
 import {
   isOnServer,
   newEmergencyId as createLocalEmergencyId,
@@ -58,6 +59,13 @@ export type EmergencySettings = {
    * dialog (see confirmCallEmergencyNumber in EmergencyScreen.tsx).
    */
   emergencyCallMode: 'priority' | 'contacts' | 'ask' | 'none';
+  /**
+   * Phone recovery tracking (opt-in, default off): after an SOS ends, keep
+   * sharing this phone's location with trusted contacts until it's marked
+   * recovered, stopped from another device, or 72 hours pass. Turning it on
+   * records consent on the server; see services/recoveryTracking.ts.
+   */
+  recoveryTrackingEnabled: boolean;
   // Bumped when a call-mode default changes, so a migration runs once and a
   // later deliberate choice is never overwritten.
   callModeVersion?: number;
@@ -73,6 +81,7 @@ const DEFAULT_SETTINGS: EmergencySettings = {
   audioAutoRecord: true,
   emergencyCallMode: 'contacts',
   callModeVersion: CALL_MODE_VERSION,
+  recoveryTrackingEnabled: false,
 };
 
 const SETTINGS_KEY = 'panicroom_emergency_settings';
@@ -279,7 +288,7 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
           // GPS history (always on, independent of Live View): queued on the
           // device first, so points survive lost signal. Never awaited.
           const id = gpsEmergencyIdRef.current;
-          if (id) void recordLocationPoint(id, loc);
+          if (id) void getBatteryPercent().then((batteryLevel) => recordLocationPoint(id, { ...loc, batteryLevel }));
         });
         locationSubRef.current?.remove();
         locationSubRef.current = sub;

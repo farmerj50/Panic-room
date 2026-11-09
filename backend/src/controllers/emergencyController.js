@@ -608,12 +608,12 @@ exports.getTracking = async (req, res, next) => {
   }
 };
 
-// POST /api/emergency/:id/recovery/stop { reason: 'recovered' | 'remote_stop' }
+// POST /api/emergency/:id/recovery/stop { reason: 'recovered' | 'remote_stop' | 'permission_revoked' }
 // From the phone itself ("Phone recovered") or any device signed in to the
 // same account (Evidence → "Stop tracking"). Final immediately.
 exports.stopRecoveryTracking = async (req, res, next) => {
   try {
-    const reason = req.body?.reason === "recovered" ? "recovered" : "remote_stop";
+    const reason = ["recovered", "permission_revoked"].includes(req.body?.reason) ? req.body.reason : "remote_stop";
     const event = await recovery.stopRecovery({ emergencyId: req.params.id, userId: req.user.id, reason });
     if (!event) return res.status(404).json({ error: "Emergency event not found" });
     res.json(recovery.trackingView(event));

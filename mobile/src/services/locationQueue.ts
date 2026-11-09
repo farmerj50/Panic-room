@@ -21,11 +21,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ApiError, apiRequest } from './apiClient';
 import { pendingCreateIds, registerEmergencyIdRemap, serverIdFor } from './pendingEmergencies';
 import { getItemAsync, setItemAsync } from './secureStorage';
+import { publishTracking } from './trackingEvents';
+import type { EmergencyTracking } from '../types/Emergency';
 
 export type QueuedPoint = {
   latitude: number;
   longitude: number;
   accuracy?: number | null;
+  batteryLevel?: number | null;
   recordedAt: string;
 };
 
@@ -140,7 +143,7 @@ function scheduleRetry() {
 // the person moved more than 25m) and sends it right away.
 export async function recordLocationPoint(
   localEmergencyId: string,
-  loc: { latitude: number; longitude: number; accuracy?: number | null; timestamp?: number },
+  loc: { latitude: number; longitude: number; accuracy?: number | null; batteryLevel?: number | null; timestamp?: number },
   now = Date.now(),
 ): Promise<boolean> {
   try {
@@ -154,6 +157,7 @@ export async function recordLocationPoint(
       latitude: loc.latitude,
       longitude: loc.longitude,
       accuracy: loc.accuracy ?? null,
+      ...(loc.batteryLevel != null ? { batteryLevel: loc.batteryLevel } : {}),
       recordedAt: new Date(loc.timestamp ?? now).toISOString(),
     };
     await locked(async () => {
@@ -189,10 +193,11 @@ async function flushOnce(): Promise<void> {
       let remove = false;
       try {
         if (batch.length > 0) {
-          await apiRequest(`/api/emergency/${emergencyId}/locations`, {
+          const response = await apiRequest<{ tracking?: EmergencyTracking }>(`/api/emergency/${emergencyId}/locations`, {
             method: 'POST',
             body: JSON.stringify({ points: batch, thinned }),
           });
+          publishTracking(emergencyId, response?.tracking);
         }
         remove = true;
       } catch (error) {
@@ -200,6 +205,9 @@ async function flushOnce(): Promise<void> {
         // emergency deleted, or outside its time window) — stop retrying them.
         if (error instanceof ApiError && [400, 404, 409].includes(error.status)) {
           console.warn(`GPS points rejected for emergency (${error.status}) — not retried.`);
+          // Recovery tracking was stopped (remotely, or it expired): the
+          // phone stops too and never restarts it.
+          if (error.code === 'TRACKING_STOPPED') publishTracking(emergencyId, { state: 'CLOSED', recovery: null });
           remove = true;
         } else {
           hadFailure = true;

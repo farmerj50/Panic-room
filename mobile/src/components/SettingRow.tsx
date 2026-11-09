@@ -4,7 +4,7 @@ import { StyleSheet, Switch, Text, View } from 'react-native';
 // private component) so LinkedAccountsScreen's permissions panel can reuse
 // the same toggle-row look instead of inventing a new one.
 export default function SettingRow({
-  title, description, value, onToggle, loading, platform,
+  title, description, value, onToggle, loading, platform, testID,
 }: {
   title: string;
   description: string;
@@ -12,6 +12,7 @@ export default function SettingRow({
   onToggle: (v: boolean) => void;
   loading?: boolean;
   platform?: string;
+  testID?: string;
 }) {
   return (
     <View style={styles.settingRow}>
@@ -23,6 +24,8 @@ export default function SettingRow({
         <Text style={styles.settingDesc}>{description}</Text>
       </View>
       <Switch
+        testID={testID}
+        accessibilityLabel={testID}
         value={value}
         onValueChange={loading ? undefined : onToggle}
         disabled={loading}

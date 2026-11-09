@@ -25,6 +25,7 @@ import { hasFiredHomeViewedFirst, markHomeViewedFirstFired } from '../services/s
 import { getCameraStatus } from '../services/corePermissions';
 import SocialSharingCard from '../components/SocialSharingCard';
 import AIMonitorCard from '../features/threatMonitor/components/AIMonitorCard';
+import RecoveryTrackingBanner from '../components/RecoveryTrackingBanner';
 
 import appIcon from '../../assets/icon.png';
 import heroBg from '../../assets/images/hero-bg.webp';
@@ -187,6 +188,7 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: isWide ? 30 : 42 }]}
       >
+        <RecoveryTrackingBanner />
         <ImageBackground
           source={heroBg}
           resizeMode="cover"

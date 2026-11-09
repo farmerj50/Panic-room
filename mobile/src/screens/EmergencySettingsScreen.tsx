@@ -31,7 +31,10 @@ import {
 import {
   confirmBackgroundLocationDisclosure,
   confirmForegroundLocationDisclosure,
+  confirmRecoveryTrackingDisclosure,
 } from '../utils/locationDisclosure';
+import { setRecoveryTrackingConsent } from '../services/emergencyService';
+import { endRecoveryTracking } from '../services/recoveryTracking';
 import { confirmNotificationsDisclosure } from '../utils/permissionDisclosures';
 import { trackEvent } from '../services/analyticsService';
 import { contentColumn } from '../config/layout';
@@ -116,6 +119,59 @@ export default function EmergencySettingsScreen() {
         setLockScreenActive(false);
         await updateEmergencySettings({ lockScreenEnabled: false });
       }
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  // ── Phone recovery tracking (free, opt-in) ────────────────────────────────
+  // Order: our own explanation and consent first, then Android's location
+  // prompts (each with its in-app disclosure), then the consent is recorded
+  // on the server — without that the server won't start tracking, so this
+  // needs a connection to turn on.
+  const toggleRecoveryTracking = async (value: boolean) => {
+    setSaving('recovery');
+    try {
+      if (!value) {
+        await updateEmergencySettings({ recoveryTrackingEnabled: false });
+        await endRecoveryTracking('consent_withdrawn');
+        await setRecoveryTrackingConsent(false).catch(() => {});
+        return;
+      }
+      if (!(await confirmRecoveryTrackingDisclosure())) return;
+      const fg = await Location.getForegroundPermissionsAsync();
+      if (fg.status !== 'granted') {
+        if (!(await confirmForegroundLocationDisclosure())) return;
+        if ((await Location.requestForegroundPermissionsAsync()).status !== 'granted') {
+          Alert.alert('Location Required', 'Recovery tracking needs location access. Open Settings to change it.', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          ]);
+          return;
+        }
+      }
+      const bg = await Location.getBackgroundPermissionsAsync();
+      if (bg.status !== 'granted') {
+        if (!(await confirmBackgroundLocationDisclosure())) return;
+        if ((await Location.requestBackgroundPermissionsAsync()).status !== 'granted') {
+          Alert.alert(
+            '"Allow all the time" Required',
+            'Recovery tracking keeps working after you leave Bes, so it needs "Allow all the time" location access. Open Settings to change it.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => Linking.openSettings() },
+            ],
+          );
+          return;
+        }
+      }
+      try {
+        await setRecoveryTrackingConsent(true);
+      } catch {
+        Alert.alert('No connection', 'Recovery tracking can only be turned on with an internet connection. Please try again.');
+        return;
+      }
+      await updateEmergencySettings({ recoveryTrackingEnabled: true });
     } finally {
       setSaving(null);
     }
@@ -269,6 +325,21 @@ export default function EmergencySettingsScreen() {
             onToggle={toggleBgLocation}
             loading={saving === 'bgLoc'}
             platform="iOS & Android"
+          />
+          <View style={styles.rowDivider} />
+          <SettingRow
+            title="Keep tracking my phone after an emergency until I mark it recovered."
+            description={
+              'Off by default. When an emergency ends, Bes keeps sharing this phone\'s location (about every ' +
+              '30 seconds, even with the app closed) with your trusted contacts\' Live View, until you tap ' +
+              '"Phone recovered", stop it from another device in Evidence, or 72 hours pass. Needs "Allow all ' +
+              'the time" location access. Free.'
+            }
+            value={emergencySettings.recoveryTrackingEnabled}
+            onToggle={toggleRecoveryTracking}
+            loading={saving === 'recovery'}
+            testID="recovery-tracking-switch"
+            platform="Android"
           />
         </SectionCard>
 

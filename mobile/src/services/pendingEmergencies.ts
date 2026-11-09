@@ -16,6 +16,7 @@ import * as Crypto from 'expo-crypto';
 
 import { ApiError } from './apiClient';
 import { createEmergency, updateEmergency } from './emergencyService';
+import { publishTracking } from './trackingEvents';
 
 export type PendingEmergency = {
   id: string;
@@ -25,11 +26,13 @@ export type PendingEmergency = {
   // Set when the person ended the emergency before it reached the server:
   // it's then created already resolved, with its real end time.
   endedAt?: string;
+  // The phone went into recovery tracking when this SOS ended.
+  recoveryTracking?: boolean;
   attempts: number;
 };
 
 // Emergencies already on the server whose "resolved" status couldn't be sent.
-type PendingResolve = { id: string; endedAt: string };
+type PendingResolve = { id: string; endedAt: string; recoveryTracking?: boolean };
 
 // Phone id -> server id, when an older server ignored the phone's id: every
 // later clip, GPS point or status update for it goes to the server's id.
@@ -138,13 +141,20 @@ export async function registerPendingEmergency(entry: Omit<PendingEmergency, 'at
 // The person ended the emergency. Not on the server yet: remember the end
 // time (it's created resolved later). Already there: send the status, and
 // keep retrying it if that fails.
-export async function endEmergency(localId: string, endedAt = new Date().toISOString()): Promise<void> {
+// recoveryTracking: the phone is going into recovery tracking (the server
+// only allows it with the account's consent, and says so in its reply).
+export async function endEmergency(
+  localId: string,
+  endedAt = new Date().toISOString(),
+  { recoveryTracking = false }: { recoveryTracking?: boolean } = {},
+): Promise<void> {
   const id = await serverIdFor(localId);
   const stillLocal = await locked(async () => {
     const s = await load();
     const pending = s.creates.find((c) => c.id === id);
     if (pending) {
       pending.endedAt = endedAt;
+      if (recoveryTracking) pending.recoveryTracking = true;
       await save();
       return true;
     }
@@ -156,12 +166,13 @@ export async function endEmergency(localId: string, endedAt = new Date().toISOSt
     return;
   }
   try {
-    await updateEmergency(id, { status: 'RESOLVED' });
+    const updated = await updateEmergency(id, { status: 'RESOLVED', ...(recoveryTracking ? { recoveryTracking } : {}) });
+    publishTracking(id, updated?.tracking);
   } catch (error) {
     if (error instanceof ApiError && (error.status === 404 || error.status === 409)) return;
     await locked(async () => {
       const s = await load();
-      if (!s.resolves.some((r) => r.id === id)) s.resolves.push({ id, endedAt });
+      if (!s.resolves.some((r) => r.id === id)) s.resolves.push({ id, endedAt, ...(recoveryTracking ? { recoveryTracking } : {}) });
       await save();
     });
     scheduleRetry();
@@ -179,8 +190,10 @@ async function syncOne(entry: PendingEmergency): Promise<'done' | 'retry'> {
       longitude: entry.longitude,
       status: entry.endedAt ? 'RESOLVED' : 'ACTIVE',
       endedAt: entry.endedAt,
+      ...(entry.endedAt && entry.recoveryTracking ? { recoveryTracking: true } : {}),
     });
     serverId = created.id;
+    publishTracking(created.id, created.tracking);
   } catch (error) {
     // 400/409: the server won't take this id (malformed, or — practically
     // impossible — already someone else's). Create it without one and follow
@@ -212,7 +225,9 @@ async function syncOne(entry: PendingEmergency): Promise<'done' | 'retry'> {
     const s = await load();
     s.creates = s.creates.filter((c) => c.id !== entry.id);
     if (serverId !== entry.id) s.aliases[entry.id] = serverId;
-    if (endedMeanwhile && !s.resolves.some((r) => r.id === serverId)) s.resolves.push({ id: serverId, endedAt: endedMeanwhile });
+    if (endedMeanwhile && !s.resolves.some((r) => r.id === serverId)) {
+      s.resolves.push({ id: serverId, endedAt: endedMeanwhile, ...(entry.recoveryTracking ? { recoveryTracking: true } : {}) });
+    }
     await save();
   });
   emit({ type: 'synced', id: entry.id, serverId, endedBeforeSync: Boolean(entry.endedAt) });
@@ -229,7 +244,11 @@ async function syncAll(): Promise<void> {
   }
   for (const resolve of [...s.resolves]) {
     try {
-      await updateEmergency(resolve.id, { status: 'RESOLVED' });
+      const updated = await updateEmergency(resolve.id, {
+        status: 'RESOLVED',
+        ...(resolve.recoveryTracking ? { recoveryTracking: true } : {}),
+      });
+      publishTracking(resolve.id, updated?.tracking);
     } catch (error) {
       if (!(error instanceof ApiError && (error.status === 404 || error.status === 409))) {
         retry = true;

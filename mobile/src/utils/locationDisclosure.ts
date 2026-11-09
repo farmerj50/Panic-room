@@ -26,3 +26,12 @@ export function confirmBackgroundLocationDisclosure(): Promise<boolean> {
     'Bes collects location data to enable Background Location Monitoring, emergency location sharing, and safety features even when the app is closed or not in use. Location data is used to provide these safety features and is not used for advertising.\n\nOn the next screen, select "Allow all the time."',
   );
 }
+
+// Phone recovery tracking (Emergency Settings). Explicit opt-in: shown before
+// any permission request, and turning the setting on records consent.
+export function confirmRecoveryTrackingDisclosure(): Promise<boolean> {
+  return confirm(
+    'Keep tracking after an emergency?',
+    'If you turn this on, when an emergency ends Bes keeps collecting this phone\'s location in the background — about every 30 seconds, even when the app is closed or not in use — and shares it with your trusted contacts through their private Live View link.\n\nTracking stops when you tap "Phone recovered", when you stop it from another device signed in to your account (Evidence), or automatically after 72 hours. Locations recorded without signal are stored encrypted on the phone and uploaded later. Location data is used only for this safety feature, never for advertising.\n\nYou can turn this off at any time. Bes will ask for "Allow all the time" location access.',
+  );
+}
