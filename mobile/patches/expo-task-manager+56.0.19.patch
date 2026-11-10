@@ -1,0 +1,39 @@
+diff --git a/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskService.java b/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskService.java
+--- a/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskService.java
++++ b/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskService.java
+@@ -611,12 +611,35 @@
+   private void invalidateAppRecord(String appScopeKey) {
+     HeadlessAppLoader appLoader = getAppLoader();
+     if (appLoader != null) {
++      WeakReference<TaskManagerInterface> headlessRef = sHeadlessTaskManagers.get(appScopeKey);
++      // Bes patch: if an Activity has taken over the React host that the headless
++      // loader started, the host is not destroyed and its JS task manager stays
++      // alive. Keep using it; otherwise later events wait for a host start that
++      // never comes (the host is already running) and are never delivered.
++      boolean hostOwnedByActivity = isReactHostOwnedByActivity();
+       if (getAppLoader().invalidateApp(appScopeKey)) {
+         sHeadlessTaskManagers.remove(appScopeKey);
++        if (hostOwnedByActivity && headlessRef != null && headlessRef.get() != null
++            && getTaskManager(appScopeKey) == null) {
++          sTaskManagers.put(appScopeKey, headlessRef);
++          Log.i(TAG, "Kept task manager for '" + appScopeKey + "' after the app UI took over the headless host.");
++        }
+       }
+     }
+   }
+ 
++  private boolean isReactHostOwnedByActivity() {
++    try {
++      Context context = mContextRef.get();
++      if (context == null) return false;
++      ReactHost reactHost = ((ReactApplication) context.getApplicationContext()).getReactHost();
++      return reactHost != null
++        && reactHost.getLifecycleState() != com.facebook.react.common.LifecycleState.BEFORE_CREATE;
++    } catch (Exception e) {
++      return false;
++    }
++  }
++
+   private void finishJobAfterTimeout(final JobService jobService, final JobParameters params, long timeout) {
+     Handler handler = new Handler();
+     handler.postDelayed(() -> jobService.jobFinished(params, false), timeout);

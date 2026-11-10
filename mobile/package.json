@@ -7,7 +7,9 @@
       "android": {
         "buildFromSource": [
           "expo-camera",
-          "expo-audio"
+          "expo-audio",
+          "expo-task-manager",
+          "unimodules-app-loader"
         ]
       }
     }
