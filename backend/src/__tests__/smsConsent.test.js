@@ -479,6 +479,27 @@ describe("program page, deletion and retention", () => {
     expect(res.text).toContain(consent.consentTextFor("[the Bes user]").replace(/&/g, "&amp;"));
   });
 
+  test("/sms-alerts states alerts are optional and shows a static, non-submittable example invitation", async () => {
+    const res = await request(app).get("/sms-alerts");
+    expect(res.status).toBe(200);
+    const text = res.text.replace(/<[^>]+>/g, "");
+    expect(text).toContain("SMS alerts are optional");
+    expect(text).toContain("Emergency text alerts are entirely optional");
+    expect(text).toContain("independently chooses Accept SMS Alerts or Decline");
+    expect(text).toContain("Declining has no effect on the Bes user's account");
+    expect(text).toContain("No emergency text messages are sent unless the contact explicitly taps Accept SMS Alerts");
+    expect(text).toMatch(/reply STOP at any time to unsubscribe, or HELP for assistance/);
+
+    // Example shows both options, mirrors the real wording, and can't submit anything.
+    expect(res.text).toContain("Example invitation page");
+    expect(res.text).toContain(consent.consentTextFor("Alex").replace(/&/g, "&amp;"));
+    expect(res.text).toMatch(/<button class="primary" type="button" disabled>Accept SMS Alerts<\/button>/);
+    expect(res.text).toMatch(/<button class="secondary" type="button" disabled>Decline<\/button>/);
+    expect(res.text).not.toMatch(/<form/i);
+    expect(res.text).not.toContain("/sms-consent/");
+    expect(res.text).not.toContain("{{");
+  });
+
   test("account deletion keeps consent evidence (unlinked) and opt-outs, removes invites", async () => {
     const { userId, token } = await makeUser();
     const contact = await makeContact(userId);
