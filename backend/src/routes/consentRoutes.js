@@ -54,6 +54,44 @@ function genericError(res) {
   sendPage(res, 500, "Something went wrong", `<h1>Something went wrong</h1><p>Please try the link again in a moment.</p>${footer}`);
 }
 
+// The invitation a contact sees. Shared by the real page (interactive: a form
+// that posts the choice) and the static example on /sms-alerts (no form,
+// disabled buttons), so the public example can't drift from the real page.
+function invitationHtml(inviterName, maskedPhone, { interactive }) {
+  const name = escapeHtml(inviterName);
+  const buttons = interactive
+    ? `<form method="post">
+  <div class="actions">
+    <button class="primary" type="submit" name="choice" value="accept">Accept SMS Alerts</button>
+    <button class="secondary" type="submit" name="choice" value="decline">Decline</button>
+  </div>
+</form>`
+    : `<div class="actions">
+    <button class="primary" type="button" disabled>Accept SMS Alerts</button>
+    <button class="secondary" type="button" disabled>Decline</button>
+  </div>`;
+  return `<h1>${name} added you as a trusted contact</h1>
+<p>${name} uses <strong>Bes</strong>, a personal safety app, and wants you to get a text alert if they ever activate an emergency.</p>
+<div class="card">
+  <p><strong>Alerts will be sent to: ${escapeHtml(maskedPhone)}</strong></p>
+  <p>${escapeHtml(consentTextFor(inviterName))}</p>
+</div>
+<p class="muted">You don't need the Bes app. Declining has no effect on ${name}'s account. Read our <a href="/legal/privacy">Privacy Policy</a> and <a href="/legal/terms">Terms</a>.</p>
+${buttons}`;
+}
+
+// Static example for the public program page. Placeholder name and number;
+// not tied to any invitation, and its buttons do nothing.
+function exampleInvitationHtml() {
+  const inner = invitationHtml("Alex", "•••-•••-1234", { interactive: false })
+    .replace("<h1>", "<h3>")
+    .replace("</h1>", "</h3>");
+  return `<div class="card" role="figure" aria-label="Example invitation page">
+<p class="muted"><strong>Example</strong> (sample name and number; the buttons on this example do nothing)</p>
+${inner}
+</div>`;
+}
+
 // ── /sms-consent/:token ───────────────────────────────────────────────────
 const consentRouter = express.Router();
 consentRouter.use(protectPage);
@@ -65,24 +103,11 @@ consentRouter.get("/:token", async (req, res) => {
     const page = await getInviteForPage(req.params.token);
     if (page.state !== "valid") return resultPage(res, page.state);
 
-    const name = escapeHtml(page.inviterName);
     sendPage(
       res,
       200,
       "Emergency text alerts",
-      `<h1>${name} added you as a trusted contact</h1>
-<p>${name} uses <strong>Bes</strong>, a personal safety app, and wants you to get a text alert if they ever activate an emergency.</p>
-<div class="card">
-  <p><strong>Alerts will be sent to: ${escapeHtml(page.maskedPhone)}</strong></p>
-  <p>${escapeHtml(consentTextFor(page.inviterName))}</p>
-</div>
-<p class="muted">You don't need the Bes app. Declining has no effect on ${name}'s account. Read our <a href="/legal/privacy">Privacy Policy</a> and <a href="/legal/terms">Terms</a>.</p>
-<form method="post">
-  <div class="actions">
-    <button class="primary" type="submit" name="choice" value="accept">Accept SMS Alerts</button>
-    <button class="secondary" type="submit" name="choice" value="decline">Decline</button>
-  </div>
-</form>
+      `${invitationHtml(page.inviterName, page.maskedPhone, { interactive: true })}
 ${footer}`,
     );
   } catch {
@@ -118,7 +143,9 @@ programRouter.get("/", protectPage, (req, res) => {
   // shows, so this page can never drift from what contacts actually see.
   const wording = consentTextFor("[the Bes user]");
   res.removeHeader("X-Robots-Tag"); // public program page — fine to index
-  sendPage(res, 200, "Emergency Text Alerts", markdownToHtml(markdown.replace("{{CONSENT_TEXT}}", wording)));
+  const html = markdownToHtml(markdown.replace("{{CONSENT_TEXT}}", wording))
+    .replace("<p>{{CONSENT_EXAMPLE}}</p>", () => exampleInvitationHtml());
+  sendPage(res, 200, "Emergency Text Alerts", html);
 });
 
 module.exports = { consentRouter, programRouter };

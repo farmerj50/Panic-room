@@ -2,6 +2,14 @@
 
 Bes is a personal safety app. When a Bes user activates an emergency, Bes can send a text message alert to the people they've chosen as trusted contacts, but **only to contacts who have opted in themselves**.
 
+## SMS alerts are optional
+
+- Emergency text alerts are **entirely optional**.
+- Each trusted contact independently chooses **Accept SMS Alerts** or **Decline** on their own invitation page. Nobody can accept on their behalf.
+- Declining has **no effect on the Bes user's account**. The Bes user can still list the person as a contact and use every feature of Bes.
+- **No emergency text messages are sent unless the contact explicitly taps Accept SMS Alerts.** Declining, ignoring the invitation, or letting it expire means no texts.
+- Contacts who accept can reply **STOP** at any time to unsubscribe, or **HELP** for assistance.
+
 ## Who receives messages
 
 Only phone numbers whose owners have accepted an invitation. Bes users cannot sign anyone up: each trusted contact must give their own consent, and that consent applies only to the phone number it was given for.
@@ -13,6 +21,12 @@ Only phone numbers whose owners have accepted an invitation. Bes users cannot si
 3. You tap **Accept SMS Alerts** to opt in, or **Decline**. Each link works once and expires after 14 days.
 
 We record your choice, the date and time, and the version of the wording you agreed to.
+
+## Example invitation page
+
+This is what a trusted contact sees when they open their invitation link. Both choices are always shown, and nothing is selected for them.
+
+{{CONSENT_EXAMPLE}}
 
 ## Consent wording shown to contacts
 
